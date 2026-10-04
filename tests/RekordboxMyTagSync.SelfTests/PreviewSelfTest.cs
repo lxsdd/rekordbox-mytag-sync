@@ -126,6 +126,29 @@ public static class PreviewSelfTest
             }
         });
         AssertInvalidConflict(missingContentProvenance, "provenance for missing ContentId did not fail closed");
+
+        var invalidRegexMapping = PreviewEngine.Create(request with
+        {
+            BridgeTracks = new[] { bridgeOne },
+            Mappings = new[]
+            {
+                new MappingRule("MOOD", "Mood", TransformKind.RegexReplace, Pattern: null)
+            },
+            ManagedAssignments = Array.Empty<ManagedAssignment>()
+        });
+        AssertInvalidConflict(invalidRegexMapping, "invalid RegexReplace mapping did not become a preview conflict");
+
+        var conflictingAliasPreview = PreviewEngine.Create(request with
+        {
+            BridgeTracks = new[] { bridgeOne },
+            ManagedAssignments = Array.Empty<ManagedAssignment>(),
+            PathAliases = new[]
+            {
+                new PathAlias(aliasRoot, canonicalRoot),
+                new PathAlias(aliasRoot + Path.DirectorySeparatorChar, Path.Combine(temp, "PreviewOtherMusic"))
+            }
+        });
+        AssertInvalidConflict(conflictingAliasPreview, "conflicting path aliases did not become a preview conflict");
     }
 
     private static BridgeTrack Track(
