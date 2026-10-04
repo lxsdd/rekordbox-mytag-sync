@@ -1,3 +1,5 @@
+using System.IO;
+
 namespace RekordboxMyTagSync.Core;
 
 public sealed record PathAlias(string SourceRoot, string TargetRoot);
