@@ -1,5 +1,7 @@
 using System.IO.Compression;
 using System.Text;
+using System.Text.Json;
+using System.Xml.Linq;
 using RekordboxMyTagSync.Core;
 
 static void AssertSequence(string name, IReadOnlyList<string> actual, params string[] expected)
@@ -27,6 +29,23 @@ static string WriteBridgeFixture(string directory, bool schemaV2, string? extraJ
     writer.WriteLine(header);
     writer.WriteLine(line);
     return path;
+}
+
+static void WriteRekordboxSettings(string appRoot, string databaseDirectory)
+{
+    var dir = Path.Combine(appRoot, "rekordbox6");
+    Directory.CreateDirectory(dir);
+    new XDocument(new XElement("ROOT",
+        new XElement("VALUE", new XAttribute("name", "masterDbDirectory"), new XAttribute("val", databaseDirectory))))
+        .Save(Path.Combine(dir, "rekordbox3.settings"));
+}
+
+static void WriteRekordboxAgentOptions(string appRoot, string databasePath)
+{
+    var dir = Path.Combine(appRoot, "rekordboxAgent", "storage");
+    Directory.CreateDirectory(dir);
+    var payload = JsonSerializer.Serialize(new { options = new object[][] { new object[] { "db-path", databasePath } } });
+    File.WriteAllText(Path.Combine(dir, "options.json"), payload, new UTF8Encoding(false));
 }
 
 var direct = new MappingRule("GENRE", "Genre");
@@ -76,10 +95,38 @@ try
     try { _ = BridgeSnapshot.Read(emptyExtra); }
     catch (InvalidDataException) { rejectedEmptyExtra = true; }
     if (!rejectedEmptyExtra) throw new InvalidOperationException("bridge v2 empty extra JSON was not rejected");
+
+    var programRoot = Path.Combine(temp, "Program Files");
+    Directory.CreateDirectory(Path.Combine(programRoot, "Pioneer", "rekordbox 6.8.5"));
+    Directory.CreateDirectory(Path.Combine(programRoot, "rekordbox", "rekordbox 7.1.4"));
+    var appRoot = Path.Combine(temp, "AppData", "Roaming", "Pioneer");
+    var dbDir = Path.Combine(temp, "LibraryA");
+    Directory.CreateDirectory(dbDir);
+    var dbPath = Path.Combine(dbDir, "master.db");
+    File.WriteAllBytes(dbPath, new byte[] { 1, 2, 3 });
+    WriteRekordboxSettings(appRoot, dbDir);
+    WriteRekordboxAgentOptions(appRoot, dbPath);
+
+    var discovery = RekordboxDiscovery.Discover(new RekordboxDiscoveryOptions(programRoot, appRoot));
+    if (discovery.Installations.Count != 2 || discovery.Installations[0].MajorVersion != 6 || discovery.Installations[1].MajorVersion != 7)
+        throw new InvalidOperationException("rekordbox 6/7 installation discovery failed");
+    if (discovery.Libraries.Count != 1 || !discovery.Libraries[0].Safe || discovery.Libraries[0].Evidence.Count != 2 || discovery.Libraries[0].UsedBy.Count != 2)
+        throw new InvalidOperationException("same rekordbox database was not deduplicated across rb6/rb7 evidence");
+    if (!RekordboxDiscovery.PathsEqual(discovery.Libraries[0].DatabasePath, dbPath))
+        throw new InvalidOperationException("discovered database path mismatch");
+
+    var otherDbDir = Path.Combine(temp, "LibraryB");
+    Directory.CreateDirectory(otherDbDir);
+    var otherDb = Path.Combine(otherDbDir, "master.db");
+    File.WriteAllBytes(otherDb, new byte[] { 4, 5, 6 });
+    WriteRekordboxAgentOptions(appRoot, otherDb);
+    var conflict = RekordboxDiscovery.Discover(new RekordboxDiscoveryOptions(programRoot, appRoot));
+    if (conflict.Libraries.Count != 2 || conflict.Libraries.Any(x => x.Safe) || !conflict.Diagnostics.Any(x => x.Contains("database-path conflict", StringComparison.Ordinal)))
+        throw new InvalidOperationException("settings/options database conflict did not fail closed");
 }
 finally
 {
     try { Directory.Delete(temp, true); } catch { }
 }
 
-Console.WriteLine("Mapping + bridge contract self-tests PASS");
+Console.WriteLine("Mapping + bridge + rekordbox discovery self-tests PASS");
