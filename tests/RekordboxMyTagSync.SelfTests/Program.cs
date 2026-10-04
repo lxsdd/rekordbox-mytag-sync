@@ -118,6 +118,7 @@ try
 
     PathMatcherSelfTest.Run(temp);
     PreviewSelfTest.Run(temp);
+    RekordboxDatabaseSelfTest.Run(temp);
 
     var otherDbDir = Path.Combine(temp, "LibraryB");
     Directory.CreateDirectory(otherDbDir);
@@ -133,4 +134,4 @@ finally
     try { Directory.Delete(temp, true); } catch { }
 }
 
-Console.WriteLine("Mapping + bridge + rekordbox discovery + preview self-tests PASS");
+Console.WriteLine("Mapping + bridge + rekordbox discovery + preview + encrypted database self-tests PASS");
