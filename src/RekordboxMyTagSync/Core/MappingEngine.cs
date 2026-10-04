@@ -24,8 +24,8 @@ public static class MappingEngine
                 TransformKind.RegexReplace when rule.Pattern is not null => Regex.Replace(value, rule.Pattern, rule.Replacement, RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(250)),
                 _ => value
             };
-            value = rule.Prefix + value;
             if (rule.IgnoreEmpty && string.IsNullOrWhiteSpace(value)) continue;
+            value = rule.Prefix + value;
             if (!output.Contains(value, StringComparer.OrdinalIgnoreCase)) output.Add(value);
         }
         return output;
