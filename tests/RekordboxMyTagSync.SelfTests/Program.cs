@@ -112,7 +112,8 @@ try
         throw new InvalidOperationException("rekordbox 6/7 installation discovery failed");
     if (discovery.Libraries.Count != 1 || !discovery.Libraries[0].Safe || discovery.Libraries[0].Evidence.Count != 2 || discovery.Libraries[0].UsedBy.Count != 2)
         throw new InvalidOperationException("same rekordbox database was not deduplicated across rb6/rb7 evidence");
-    if (!RekordboxDiscovery.PathsEqual(discovery.Libraries[0].DatabasePath, dbPath))
+    var expectedDatabasePath = Path.GetFullPath(dbPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    if (!string.Equals(discovery.Libraries[0].DatabasePath, expectedDatabasePath, StringComparison.OrdinalIgnoreCase))
         throw new InvalidOperationException("discovered database path mismatch");
 
     PathMatcherSelfTest.Run(temp);
