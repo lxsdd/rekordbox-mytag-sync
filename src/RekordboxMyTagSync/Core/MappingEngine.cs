@@ -7,7 +7,7 @@ public sealed record MappingRule(string SourceField, string TargetMyTag, Transfo
 
 public static class MappingEngine
 {
-    private static readonly Regex Year = new(@"(?<!\\d)(?<year>\\d{4})(?!\\d)", RegexOptions.CultureInvariant);
+    private static readonly Regex Year = new(@"(?<!\d)(?<year>\d{4})(?!\d)", RegexOptions.CultureInvariant);
     public static IReadOnlyList<string> Apply(MappingRule rule, IReadOnlyList<string> sourceValues)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rule.SourceField);
