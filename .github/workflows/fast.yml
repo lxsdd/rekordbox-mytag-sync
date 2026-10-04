@@ -5,11 +5,14 @@ on:
 permissions:
   contents: read
 jobs:
-  build:
+  build-and-selftest:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - run: dotnet build src/RekordboxMyTagSync/RekordboxMyTagSync.csproj -c Release
+      - name: Build product
+        run: dotnet build src/RekordboxMyTagSync/RekordboxMyTagSync.csproj -c Release
+      - name: Run deterministic mapping self-tests
+        run: dotnet run --project tests/RekordboxMyTagSync.SelfTests/RekordboxMyTagSync.SelfTests.csproj -c Release
