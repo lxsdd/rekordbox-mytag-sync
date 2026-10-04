@@ -117,6 +117,7 @@ try
         throw new InvalidOperationException("discovered database path mismatch");
 
     PathMatcherSelfTest.Run(temp);
+    PreviewSelfTest.Run(temp);
 
     var otherDbDir = Path.Combine(temp, "LibraryB");
     Directory.CreateDirectory(otherDbDir);
@@ -132,4 +133,4 @@ finally
     try { Directory.Delete(temp, true); } catch { }
 }
 
-Console.WriteLine("Mapping + bridge + rekordbox discovery self-tests PASS");
+Console.WriteLine("Mapping + bridge + rekordbox discovery + preview self-tests PASS");
