@@ -115,7 +115,7 @@ try
     if (!RekordboxDiscovery.PathsEqual(discovery.Libraries[0].DatabasePath, dbPath))
         throw new InvalidOperationException("discovered database path mismatch");
 
-    var otherDbDir = Path.Combine(temp, "LibraryB");
+    PathMatcherSelfTest.Run(temp);\n\n    var otherDbDir = Path.Combine(temp, "LibraryB");
     Directory.CreateDirectory(otherDbDir);
     var otherDb = Path.Combine(otherDbDir, "master.db");
     File.WriteAllBytes(otherDb, new byte[] { 4, 5, 6 });
