@@ -65,6 +65,79 @@ public static class PreviewSelfTest
                                      string.Equals(x.Tag?.Value, "Manual", StringComparison.OrdinalIgnoreCase)))
             throw new InvalidOperationException("manual/unmanaged MyTag assignment was scheduled for removal");
 
+        var definitions = new RekordboxMyTagDefinition[]
+        {
+            new("G1", "Genre", null, 0, 0),
+            new("V1", "House", "G1", 0, 0),
+            new("G2", "mOoD", null, 1, 0),
+            new("V2", "OLD", "G2", 0, 0),
+            new("V3", "Manual", "G2", 1, 0),
+            new("V4", "eUPHORIC", "G2", 2, 0)
+        };
+        var mutationPlan = MyTagMutationPlanner.Create(request, preview, definitions);
+        if (!mutationPlan.IsValid)
+            throw new InvalidOperationException("baseline mutation plan should be valid: " + string.Join(" | ", mutationPlan.Errors));
+        if (mutationPlan.Operations.Count != 2)
+            throw new InvalidOperationException($"expected 2 mutation operations, got {mutationPlan.Operations.Count}");
+        AssertMutation(mutationPlan, MyTagMutationKind.AddAssignment, "C1", "V4", "Mood", "Euphoric");
+        AssertMutation(mutationPlan, MyTagMutationKind.RemoveAssignment, "C1", "V2", "Mood", "Old");
+        if (mutationPlan.Operations.Any(x => string.Equals(x.MyTagId, "V3", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("manual/unmanaged MyTag assignment entered mutation plan");
+
+        var staleRequest = request with
+        {
+            BridgeTracks = new[]
+            {
+                Track(
+                    bridgeOne.Path,
+                    bridgeOne.Subsong,
+                    bridgeOne.Core,
+                    new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["MOOD"] = new[] { "Calm" }
+                    }),
+                bridgeTwo
+            }
+        };
+        var stalePlan = MyTagMutationPlanner.Create(staleRequest, preview, definitions);
+        AssertInvalidPlan(stalePlan, "stale approved preview did not fail closed");
+        if (!stalePlan.Errors.Any(x => x.Contains("stale", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("stale mutation plan did not report fingerprint staleness");
+
+        var missingDefinitionPlan = MyTagMutationPlanner.Create(
+            request,
+            preview,
+            definitions.Where(x => !string.Equals(x.Id, "V4", StringComparison.OrdinalIgnoreCase)).ToArray());
+        AssertInvalidPlan(missingDefinitionPlan, "missing MyTag definition did not fail closed");
+
+        var ambiguousDefinitions = definitions
+            .Concat(new[]
+            {
+                new RekordboxMyTagDefinition("G3", "Mood", null, 2, 0),
+                new RekordboxMyTagDefinition("V5", "Euphoric", "G3", 0, 0)
+            })
+            .ToArray();
+        var ambiguousPlan = MyTagMutationPlanner.Create(request, preview, ambiguousDefinitions);
+        AssertInvalidPlan(ambiguousPlan, "ambiguous same-name MyTag group did not fail closed");
+
+        var idempotentRequest = request with
+        {
+            BridgeTracks = new[] { bridgeOne },
+            Mappings = new[] { new MappingRule("GENRE", "Genre") },
+            RekordboxTracks = new[]
+            {
+                targetOne with
+                {
+                    Assignments = new[] { new MyTagAssignment("Genre", "House") }
+                }
+            },
+            ManagedAssignments = Array.Empty<ManagedAssignment>()
+        };
+        var idempotentPreview = PreviewEngine.Create(idempotentRequest);
+        var idempotentPlan = MyTagMutationPlanner.Create(idempotentRequest, idempotentPreview, definitions);
+        if (!idempotentPlan.IsValid || idempotentPlan.Operations.Count != 0)
+            throw new InvalidOperationException("already-correct assignment should produce an empty valid mutation plan");
+
         var reordered = PreviewEngine.Create(request with
         {
             BridgeTracks = new[] { bridgeTwo, bridgeOne },
@@ -187,6 +260,29 @@ public static class PreviewSelfTest
                 string.Equals(x.Tag?.Group, group, StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(x.Tag?.Value, value, StringComparison.OrdinalIgnoreCase)))
             throw new InvalidOperationException($"missing preview detail {kind}: {contentId} {group}/{value}");
+    }
+
+    private static void AssertMutation(
+        MyTagMutationPlan plan,
+        MyTagMutationKind kind,
+        string contentId,
+        string myTagId,
+        string group,
+        string value)
+    {
+        if (!plan.Operations.Any(x =>
+                x.Kind == kind &&
+                string.Equals(x.ContentId, contentId, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(x.MyTagId, myTagId, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(x.Tag.Group, group, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(x.Tag.Value, value, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException($"missing mutation {kind}: {contentId} {myTagId} {group}/{value}");
+    }
+
+    private static void AssertInvalidPlan(MyTagMutationPlan plan, string message)
+    {
+        if (plan.IsValid || plan.Operations.Count != 0 || plan.Errors.Count == 0)
+            throw new InvalidOperationException(message);
     }
 
     private static void AssertInvalidConflict(PreviewResult result, string message)
