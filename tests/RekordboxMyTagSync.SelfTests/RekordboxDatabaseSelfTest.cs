@@ -204,6 +204,8 @@ public static class RekordboxDatabaseSelfTest
             DBID TEXT PRIMARY KEY, DBVersion TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
         CREATE TABLE djmdContent(
             ID TEXT PRIMARY KEY, FolderPath TEXT, rb_local_deleted INTEGER DEFAULT 0);
+        CREATE TABLE agentRegistry(
+            id INTEGER PRIMARY KEY, localUpdateCount INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE djmdMyTag(
             ID TEXT PRIMARY KEY, UUID TEXT, Seq INTEGER, Name TEXT, Attribute INTEGER, ParentID TEXT,
             rb_data_status INTEGER DEFAULT 0, rb_local_data_status INTEGER DEFAULT 0,
@@ -221,6 +223,8 @@ public static class RekordboxDatabaseSelfTest
             DBID TEXT PRIMARY KEY, DBVersion TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
         CREATE TABLE djmdContent(
             ID TEXT PRIMARY KEY, FolderPath TEXT, rb_local_deleted INTEGER DEFAULT 0);
+        CREATE TABLE agentRegistry(
+            id INTEGER PRIMARY KEY, localUpdateCount INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE djmdMyTag(
             ID TEXT PRIMARY KEY, UUID TEXT, Seq INTEGER, Name TEXT, Attribute INTEGER, ParentID TEXT,
             rb_data_status INTEGER DEFAULT 0, rb_local_data_status INTEGER DEFAULT 0,
