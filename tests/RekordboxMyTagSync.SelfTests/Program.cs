@@ -120,6 +120,7 @@ try
     PreviewSelfTest.Run(temp);
     RekordboxDatabaseSelfTest.Run(temp);
     ProvenanceSelfTest.Run(temp);
+    BackupRestoreSelfTest.Run(temp);
 
     var otherDbDir = Path.Combine(temp, "LibraryB");
     Directory.CreateDirectory(otherDbDir);
@@ -135,4 +136,4 @@ finally
     try { Directory.Delete(temp, true); } catch { }
 }
 
-Console.WriteLine("Mapping + bridge + rekordbox discovery + preview + encrypted database + provenance self-tests PASS");
+Console.WriteLine("Mapping + bridge + rekordbox discovery + preview + encrypted database + provenance + rolling backup/restore self-tests PASS");
