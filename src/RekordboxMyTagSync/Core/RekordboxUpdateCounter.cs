@@ -31,4 +31,40 @@ internal static class RekordboxUpdateCounter
             throw new InvalidDataException("agentRegistry contains multiple localUpdateCount rows.");
         return count;
     }
+
+    internal static long Advance(SqliteConnection connection, long expectedCurrent, int changeCount)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        if (expectedCurrent < 0)
+            throw new ArgumentOutOfRangeException(nameof(expectedCurrent));
+        if (changeCount < 1)
+            throw new ArgumentOutOfRangeException(nameof(changeCount));
+
+        var current = Read(connection);
+        if (current != expectedCurrent)
+            throw new InvalidDataException(
+                $"agentRegistry localUpdateCount changed from expected {expectedCurrent} to {current}.");
+
+        long next;
+        try
+        {
+            next = checked(current + changeCount);
+        }
+        catch (OverflowException ex)
+        {
+            throw new InvalidDataException("agentRegistry localUpdateCount overflow.", ex);
+        }
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE agentRegistry
+            SET int_1 = $next
+            WHERE registry_id = 'localUpdateCount' AND int_1 = $current;
+            """;
+        command.Parameters.AddWithValue("$next", next);
+        command.Parameters.AddWithValue("$current", current);
+        if (command.ExecuteNonQuery() != 1)
+            throw new InvalidDataException("agentRegistry localUpdateCount compare-and-set failed.");
+        return next;
+    }
 }
