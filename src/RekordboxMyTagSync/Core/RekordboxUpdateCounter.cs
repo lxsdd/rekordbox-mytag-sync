@@ -6,10 +6,11 @@ namespace RekordboxMyTagSync.Core;
 
 internal static class RekordboxUpdateCounter
 {
-    internal static long Read(SqliteConnection connection)
+    internal static long Read(SqliteConnection connection, SqliteTransaction? transaction = null)
     {
         ArgumentNullException.ThrowIfNull(connection);
         using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = "SELECT int_1 FROM agentRegistry WHERE registry_id = 'localUpdateCount';";
         using var reader = command.ExecuteReader();
         if (!reader.Read() || reader.IsDBNull(0))
@@ -32,7 +33,11 @@ internal static class RekordboxUpdateCounter
         return count;
     }
 
-    internal static long Advance(SqliteConnection connection, long expectedCurrent, int changeCount)
+    internal static long Advance(
+        SqliteConnection connection,
+        long expectedCurrent,
+        int changeCount,
+        SqliteTransaction? transaction = null)
     {
         ArgumentNullException.ThrowIfNull(connection);
         if (expectedCurrent < 0)
@@ -40,7 +45,7 @@ internal static class RekordboxUpdateCounter
         if (changeCount < 1)
             throw new ArgumentOutOfRangeException(nameof(changeCount));
 
-        var current = Read(connection);
+        var current = Read(connection, transaction);
         if (current != expectedCurrent)
             throw new InvalidDataException(
                 $"agentRegistry localUpdateCount changed from expected {expectedCurrent} to {current}.");
@@ -56,6 +61,7 @@ internal static class RekordboxUpdateCounter
         }
 
         using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             UPDATE agentRegistry
             SET int_1 = $next
