@@ -38,7 +38,7 @@ public static class RekordboxSqlCipherDatabase
         {
             ["djmdProperty"] = ["DBID", "DBVersion"],
             ["djmdContent"] = ["ID", "FolderPath", "rb_local_deleted"],
-            ["agentRegistry"] = ["id", "localUpdateCount"],
+            ["agentRegistry"] = ["registry_id", "int_1"],
             ["djmdMyTag"] =
             [
                 "ID", "UUID", "Seq", "Name", "Attribute", "ParentID",
