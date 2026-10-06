@@ -118,6 +118,7 @@ try
 
     PathMatcherSelfTest.Run(temp);
     PreviewSelfTest.Run(temp);
+    RekordboxMutationPreflightSelfTest.Run(temp);
     RekordboxUpdateCounterSelfTest.Run();
     RekordboxDatabaseSelfTest.Run(temp);
     ProvenanceSelfTest.Run(temp);
@@ -137,4 +138,4 @@ finally
     try { Directory.Delete(temp, true); } catch { }
 }
 
-Console.WriteLine("Mapping + bridge + rekordbox discovery + preview + update counter + encrypted database + provenance + rolling backup/restore self-tests PASS");
+Console.WriteLine("Mapping + bridge + rekordbox discovery + preview + mutation preflight + update counter + encrypted database + provenance + rolling backup/restore self-tests PASS");
