@@ -11,18 +11,24 @@ internal static class RekordboxUpdateCounter
         ArgumentNullException.ThrowIfNull(connection);
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT int_1 FROM agentRegistry WHERE registry_id = 'localUpdateCount';";
-        var value = command.ExecuteScalar();
-        if (value is null || value is DBNull)
+        using var reader = command.ExecuteReader();
+        if (!reader.Read() || reader.IsDBNull(0))
             throw new InvalidDataException("agentRegistry localUpdateCount row is missing or NULL.");
+
+        long count;
         try
         {
-            var count = Convert.ToInt64(value, CultureInfo.InvariantCulture);
-            if (count < 0) throw new InvalidDataException("agentRegistry localUpdateCount is negative.");
-            return count;
+            count = Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture);
         }
         catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
         {
             throw new InvalidDataException("agentRegistry localUpdateCount is not a valid integer.", ex);
         }
+
+        if (count < 0)
+            throw new InvalidDataException("agentRegistry localUpdateCount is negative.");
+        if (reader.Read())
+            throw new InvalidDataException("agentRegistry contains multiple localUpdateCount rows.");
+        return count;
     }
 }
