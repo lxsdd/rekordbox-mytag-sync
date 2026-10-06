@@ -27,6 +27,19 @@ public static class RekordboxUpdateCounterSelfTest
             () => RekordboxUpdateCounter.Advance(connection, 100, 1),
             "stale local update counter expectation was accepted");
 
+        using (var transaction = connection.BeginTransaction())
+        {
+            if (RekordboxUpdateCounter.Read(connection, transaction) != 102)
+                throw new InvalidOperationException("transactional local update counter read mismatch");
+            if (RekordboxUpdateCounter.Advance(connection, 102, 3, transaction) != 105)
+                throw new InvalidOperationException("transactional local update counter advance mismatch");
+            if (RekordboxUpdateCounter.Read(connection, transaction) != 105)
+                throw new InvalidOperationException("transactional local update counter was not visible inside transaction");
+            transaction.Rollback();
+        }
+        if (RekordboxUpdateCounter.Read(connection) != 102)
+            throw new InvalidOperationException("rolled-back local update counter change leaked outside transaction");
+
         using (var command = connection.CreateCommand())
         {
             command.CommandText = "INSERT INTO agentRegistry(registry_id, int_1) VALUES ('localUpdateCount', 103);";
