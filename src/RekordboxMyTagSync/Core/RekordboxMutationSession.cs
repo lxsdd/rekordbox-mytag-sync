@@ -47,3 +47,70 @@ internal sealed class RekordboxMutationSession : IDisposable
 
     public void Dispose() => _connection.Dispose();
 }
+
+
+internal sealed record RekordboxAssignmentMutation(
+    PreviewDetailKind Kind,
+    string ContentId,
+    string MyTagId,
+    string Group,
+    string Value);
+
+internal static class RekordboxMutationPlan
+{
+    internal static IReadOnlyList<RekordboxAssignmentMutation> Resolve(
+        PreviewResult preview,
+        RekordboxDatabaseSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(preview);
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (!preview.IsValid || preview.Counts.Conflicts != 0)
+            throw new InvalidOperationException("Only a valid conflict-free preview can become a mutation plan.");
+
+        var parents = snapshot.MyTagDefinitions
+            .Where(x => x.ParentId is null)
+            .GroupBy(x => x.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(x => x.Key, x => x.ToArray(), StringComparer.OrdinalIgnoreCase);
+        var children = snapshot.MyTagDefinitions
+            .Where(x => x.ParentId is not null)
+            .GroupBy(x => x.ParentId!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(x => x.Key, x => x.ToArray(), StringComparer.OrdinalIgnoreCase);
+        var contentIds = snapshot.Tracks.Select(x => x.ContentId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var result = new List<RekordboxAssignmentMutation>();
+        var links = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var detail in preview.Details.Where(x =>
+                     x.Kind is PreviewDetailKind.Add or PreviewDetailKind.Remove))
+        {
+            if (string.IsNullOrWhiteSpace(detail.ContentId) || detail.Tag is null)
+                throw new InvalidDataException("Mutation preview detail is missing ContentId or MyTag.");
+            if (!contentIds.Contains(detail.ContentId))
+                throw new InvalidDataException($"Mutation references missing ContentID '{detail.ContentId}'.");
+
+            var groupName = detail.Tag.Group.Trim();
+            var valueName = detail.Tag.Value.Trim();
+            if (!parents.TryGetValue(groupName, out var parentMatches) || parentMatches.Length != 1)
+                throw new InvalidDataException($"MyTag group '{groupName}' is missing or ambiguous; definition creation remains fail-closed.");
+            var parent = parentMatches[0];
+            if (!children.TryGetValue(parent.Id, out var childCandidates))
+                throw new InvalidDataException($"MyTag value '{groupName}/{valueName}' does not exist; definition creation remains fail-closed.");
+            var childMatches = childCandidates
+                .Where(x => string.Equals(x.Name.Trim(), valueName, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            if (childMatches.Length != 1)
+                throw new InvalidDataException($"MyTag value '{groupName}/{valueName}' is missing or ambiguous; definition creation remains fail-closed.");
+
+            var child = childMatches[0];
+            var link = detail.ContentId.Trim() + "\0" + child.Id.Trim();
+            if (!links.Add(link))
+                throw new InvalidDataException("Preview contains duplicate mutation for the same ContentID/MyTagID link.");
+            result.Add(new RekordboxAssignmentMutation(
+                detail.Kind, detail.ContentId.Trim(), child.Id.Trim(), groupName, valueName));
+        }
+
+        if (result.Count != preview.Counts.Additions + preview.Counts.Removals)
+            throw new InvalidDataException("Mutation-plan cardinality does not match preview counts.");
+        return result;
+    }
+}
