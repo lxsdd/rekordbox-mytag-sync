@@ -5,6 +5,7 @@
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <Using Include="System.IO" />
     <AssemblyName>RekordboxMyTagSync</AssemblyName>
     <RootNamespace>RekordboxMyTagSync</RootNamespace>
     <PublishSingleFile>true</PublishSingleFile>
