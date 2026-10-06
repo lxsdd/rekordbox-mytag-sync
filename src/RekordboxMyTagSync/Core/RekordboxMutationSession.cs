@@ -114,3 +114,52 @@ internal static class RekordboxMutationPlan
         return result;
     }
 }
+
+internal sealed record RekordboxMutationPreflightResult(
+    PreviewResult CurrentPreview,
+    IReadOnlyList<RekordboxAssignmentMutation> Mutations);
+
+internal static class RekordboxMutationPreflight
+{
+    internal static RekordboxMutationPreflightResult Recheck(
+        PreviewResult approvedPreview,
+        RekordboxDatabaseSnapshot freshSnapshot,
+        ProvenanceDocument freshProvenance,
+        IReadOnlyList<BridgeTrack> bridgeTracks,
+        IReadOnlyList<MappingRule> mappings,
+        IReadOnlyList<PathAlias>? pathAliases = null)
+    {
+        ArgumentNullException.ThrowIfNull(approvedPreview);
+        ArgumentNullException.ThrowIfNull(freshSnapshot);
+        ArgumentNullException.ThrowIfNull(freshProvenance);
+        ArgumentNullException.ThrowIfNull(bridgeTracks);
+        ArgumentNullException.ThrowIfNull(mappings);
+
+        if (!approvedPreview.IsValid || approvedPreview.Counts.Conflicts != 0)
+            throw new InvalidOperationException("Only a valid conflict-free approved preview may authorize database mutation.");
+        if (string.IsNullOrWhiteSpace(approvedPreview.FingerprintSha256))
+            throw new InvalidDataException("Approved preview fingerprint is empty.");
+
+        var managedAssignments = ProvenanceStore.ToManagedAssignments(freshProvenance, freshSnapshot);
+        var request = new PreviewRequest(
+            freshSnapshot.Identity.PreviewIdentity,
+            bridgeTracks,
+            mappings,
+            freshSnapshot.Tracks,
+            managedAssignments,
+            pathAliases);
+        var currentPreview = PreviewEngine.Create(request);
+
+        if (!currentPreview.IsValid || currentPreview.Counts.Conflicts != 0)
+            throw new InvalidOperationException("Fresh preview is invalid; database mutation is blocked.");
+        if (!string.Equals(
+                approvedPreview.FingerprintSha256,
+                currentPreview.FingerprintSha256,
+                StringComparison.Ordinal))
+            throw new InvalidOperationException(
+                "Approved preview is stale for the current database, source, mapping, path-alias or provenance state.");
+
+        var mutations = RekordboxMutationPlan.Resolve(currentPreview, freshSnapshot);
+        return new RekordboxMutationPreflightResult(currentPreview, mutations);
+    }
+}
