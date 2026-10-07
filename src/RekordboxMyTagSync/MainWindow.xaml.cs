@@ -10,6 +10,7 @@ public partial class MainWindow : Window
 {
     private readonly string _settingsPath = AppSettingsStore.DefaultPath;
     private readonly ObservableCollection<MappingRow> _mappings = new();
+    private readonly ObservableCollection<AliasRow> _aliases = new();
     private AppSettings _settings = new();
 
     public MainWindow()
@@ -17,6 +18,7 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         MappingGrid.ItemsSource = _mappings;
+        PathAliasGrid.ItemsSource = _aliases;
         Loaded += (_, _) => LoadSettings();
 
         SaveSettingsButton.Click += (_, _) => SaveSettings();
@@ -25,6 +27,8 @@ public partial class MainWindow : Window
         DiscoverTargetButton.Click += (_, _) => DiscoverTargets();
         AddMappingButton.Click += (_, _) => AddMapping();
         RemoveMappingButton.Click += (_, _) => RemoveSelectedMapping();
+        AddAliasButton.Click += (_, _) => AddAlias();
+        RemoveAliasButton.Click += (_, _) => RemoveSelectedAlias();
         RefreshDiagnosticsButton.Click += (_, _) => RefreshDiagnostics();
 
         SourceCandidatesGrid.SelectionChanged += (_, _) =>
@@ -55,6 +59,10 @@ public partial class MainWindow : Window
             _mappings.Clear();
             foreach (var rule in _settings.EffectiveMappings)
                 _mappings.Add(MappingRow.FromRule(rule));
+
+            _aliases.Clear();
+            foreach (var alias in _settings.EffectivePathAliases)
+                _aliases.Add(AliasRow.FromAlias(alias));
 
             AppendDiagnostic("Settings loaded.");
             DiscoverSources();
@@ -100,11 +108,14 @@ public partial class MainWindow : Window
         var mappings = _mappings
             .Select(x => x.ToRule())
             .ToArray();
+        var aliases = _aliases
+            .Select(x => x.ToAlias())
+            .ToArray();
 
         return AppSettingsStore.ValidateAndNormalize(new AppSettings(
             snapshotPath,
             databasePath,
-            _settings.EffectivePathAliases,
+            aliases,
             mappings,
             bridgeDirectory,
             known));
@@ -214,6 +225,19 @@ public partial class MainWindow : Window
             _mappings.Remove(row);
     }
 
+    private void AddAlias()
+    {
+        _aliases.Add(new AliasRow());
+        PathAliasGrid.SelectedItem = _aliases[^1];
+        PathAliasGrid.ScrollIntoView(_aliases[^1]);
+    }
+
+    private void RemoveSelectedAlias()
+    {
+        if (PathAliasGrid.SelectedItem is AliasRow row)
+            _aliases.Remove(row);
+    }
+
     private void RefreshDiagnostics()
     {
         var builder = new StringBuilder();
@@ -221,6 +245,7 @@ public partial class MainWindow : Window
         builder.AppendLine($"Bridge: {BridgeDirectoryTextBox.Text.Trim()}");
         builder.AppendLine($"Target: {TargetDatabaseTextBox.Text.Trim()}");
         builder.AppendLine($"Mappings: {_mappings.Count}");
+        builder.AppendLine($"Path aliases: {_aliases.Count}");
         builder.AppendLine($"rekordbox running: {RekordboxProcessGuard.IsRunning()}");
         builder.AppendLine("Preview/apply controls remain locked until the production preview controller is bound.");
         DiagnosticsTextBox.Text = builder.ToString();
@@ -238,6 +263,28 @@ public partial class MainWindow : Window
         string.IsNullOrWhiteSpace(value)
             ? null
             : Path.GetFullPath(value.Trim());
+
+    private sealed class AliasRow
+    {
+        public string SourceRoot { get; set; } = string.Empty;
+        public string TargetRoot { get; set; } = string.Empty;
+
+        internal PathAlias ToAlias()
+        {
+            if (string.IsNullOrWhiteSpace(SourceRoot) ||
+                string.IsNullOrWhiteSpace(TargetRoot))
+                throw new InvalidDataException("Path alias source and target roots must not be empty.");
+
+            return new PathAlias(SourceRoot.Trim(), TargetRoot.Trim());
+        }
+
+        internal static AliasRow FromAlias(PathAlias alias) =>
+            new()
+            {
+                SourceRoot = alias.SourceRoot,
+                TargetRoot = alias.TargetRoot
+            };
+    }
 
     private sealed class MappingRow
     {
