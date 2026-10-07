@@ -125,7 +125,12 @@ internal static class RekordboxMutationPlan
 internal sealed record RekordboxMutationPreflightResult(
     PreviewResult CurrentPreview,
     IReadOnlyList<RekordboxAssignmentMutation> Mutations,
-    IReadOnlyList<MyTagAssignment> MissingDefinitions);
+    IReadOnlyList<MyTagAssignment> MissingDefinitions)
+{
+    internal bool RequiresDefinitionCreation => MissingDefinitions.Count != 0;
+    internal bool HasAssignmentMutations => Mutations.Count != 0;
+    internal bool HasWork => RequiresDefinitionCreation || HasAssignmentMutations;
+}
 
 internal static class RekordboxMutationPreflight
 {
