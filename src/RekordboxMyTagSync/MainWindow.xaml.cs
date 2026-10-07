@@ -79,7 +79,15 @@ public partial class MainWindow : Window
         };
         BridgeDirectoryTextBox.TextChanged += (_, _) =>
         {
-            InvalidatePreview("Bridge source changed.");
+            _sourceSafe = false;
+            _bridgeSnapshot = null;
+            InvalidatePreview("Bridge source changed and must be requalified.");
+            UpdateWorkflowGate();
+        };
+        TargetDatabaseTextBox.TextChanged += (_, _) =>
+        {
+            _targetSafe = false;
+            InvalidateDatabaseAccess("Target library path changed and must be requalified.");
             UpdateWorkflowGate();
         };
         MappingGrid.CellEditEnding += (_, _) => InvalidatePreview("Mapping changed.");
