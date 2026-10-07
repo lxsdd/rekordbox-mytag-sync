@@ -147,7 +147,8 @@ internal static class RekordboxMutationPreflight
             mappings,
             freshSnapshot.Tracks,
             managedAssignments,
-            pathAliases);
+            pathAliases,
+            freshSnapshot.MyTagDefinitions);
         var currentPreview = PreviewEngine.Create(request);
 
         if (!currentPreview.IsValid || currentPreview.Counts.Conflicts != 0)
