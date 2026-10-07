@@ -31,6 +31,27 @@ static string WriteBridgeFixture(string directory, bool schemaV2, string? extraJ
     return path;
 }
 
+static string WriteBridgeV3Fixture(string directory)
+{
+    Directory.CreateDirectory(directory);
+    var path = Path.Combine(directory, "v3.tsv.gz");
+    const string v1Header = "path\tsubsong\tartist\tartists\ttitle\toriginal_title\tremixed_by\talbum\talbum_artist\ttrack_number\ttotal_tracks\tdisc_number\ttotal_discs\tdate\tgenre\tstyle\tbpm\tlabel\tcatalog_number\tduration_seconds\tisrc\tcodec\tbitrate\ttag_fingerprint";
+    var header = v1Header + "\textra_metadata_json\tmetadata_vectors_json";
+    var row = new[]
+    {
+        @"Z:\Music\Singles\V3.mp3", "0", "Artist", "", "Title", "", "", "Album", "Artist", "1", "1", "1", "1",
+        "2001-01-01", "Techno", "Peak", "132", "Label", "CAT003", "280", "GBABC7654321", "MP3", "320", "abcdef0123456789",
+        "{\"MOOD\":[\"Driving\"]}",
+        "[{\"name\":\"MOOD\",\"values\":[\"Driving\",\"Driving\"]}]"
+    };
+    using var file = File.Create(path);
+    using var gzip = new GZipStream(file, CompressionLevel.SmallestSize);
+    using var writer = new StreamWriter(gzip, new UTF8Encoding(false));
+    writer.WriteLine(header);
+    writer.WriteLine(string.Join('\t', row));
+    return path;
+}
+
 static void WriteRekordboxSettings(string appRoot, string databaseDirectory)
 {
     var dir = Path.Combine(appRoot, "rekordbox6");
@@ -84,6 +105,13 @@ try
     AssertSequence("bridge v2 true multivalue extra", v2[0].GetFieldValues("mood"), "Euphoric", "Dark");
     AssertSequence("bridge v2 custom multivalue extra", v2[0].GetFieldValues("CUSTOM_TAG"), "Foo", "Bar");
 
+    var v3 = BridgeSnapshot.Read(WriteBridgeV3Fixture(temp));
+    if (v3.Count != 1 || v3[0].Path != @"Z:\Music\Singles\V3.mp3")
+        throw new InvalidOperationException("bridge v3 read failed");
+    AssertSequence("bridge v3 core genre", v3[0].GetFieldValues("GENRE"), "Techno");
+    AssertSequence("bridge v3 extra metadata remains canonical source", v3[0].GetFieldValues("MOOD"), "Driving");
+    AssertSequence("bridge v3 metadata vectors are intentionally not projected", v3[0].GetFieldValues("metadata_vectors_json"));
+
     var duplicateCore = WriteBridgeFixture(temp, true, "{\"GENRE\":[\"Techno\"]}");
     var rejectedCoreDuplicate = false;
     try { _ = BridgeSnapshot.Read(duplicateCore); }
@@ -126,6 +154,7 @@ try
     RekordboxUpdateCounterSelfTest.Run();
     RekordboxMyTagDefinitionWriterSelfTest.Run();
     RekordboxMutationExecutorSelfTest.Run(temp);
+    AppSettingsStoreSelfTest.Run(temp);
     RekordboxDatabaseSelfTest.Run(temp);
     ProvenanceSelfTest.Run(temp);
     BackupRestoreSelfTest.Run(temp);

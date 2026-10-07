@@ -1,4 +1,6 @@
 using System.IO;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -29,6 +31,21 @@ public static class ProvenanceStore
 
     public static ProvenanceDocument Empty(RekordboxDatabaseIdentity identity) =>
         new(CurrentSchemaVersion, identity.DbId, Canonical(identity.CanonicalPath), Array.Empty<OwnedAssignment>());
+
+    public static string GetStatePath(string root, RekordboxDatabaseIdentity identity)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(root);
+        ArgumentNullException.ThrowIfNull(identity);
+        if (string.IsNullOrWhiteSpace(identity.DbId))
+            throw new InvalidDataException("Database DBID is empty.");
+
+        var canonicalRoot = Path.GetFullPath(root);
+        var material = identity.DbId.Trim() + "\n" + Canonical(identity.CanonicalPath);
+        var fileName = Convert.ToHexString(
+                SHA256.HashData(Encoding.UTF8.GetBytes(material)))
+            .ToLowerInvariant() + ".json";
+        return Path.Combine(canonicalRoot, fileName);
+    }
 
     public static ProvenanceDocument Load(string path, RekordboxDatabaseIdentity identity)
     {
