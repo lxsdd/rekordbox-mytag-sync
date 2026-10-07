@@ -178,6 +178,99 @@ internal sealed record RekordboxMutationPreflightResult(
     internal bool HasWork => RequiresDefinitionCreation || HasAssignmentMutations;
 }
 
+internal sealed record RekordboxCombinedMutationResult(
+    IReadOnlyList<RekordboxCreatedMyTagDefinition> CreatedDefinitions,
+    IReadOnlyList<RekordboxAssignmentMutation> AssignmentMutations,
+    int TotalChangeCount,
+    long FinalLocalUpdateCount);
+
+internal static class RekordboxCombinedMutationWriter
+{
+    internal static RekordboxCombinedMutationResult Apply(
+        SqliteConnection connection,
+        RekordboxDatabaseSnapshot snapshot,
+        RekordboxMutationPreflightResult preflight,
+        RekordboxMyTagDefinitionWriteProfile? definitionProfile,
+        RekordboxSongMyTagWriteProfile assignmentProfile,
+        long currentCounter,
+        long firstLocalUsn)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(preflight);
+        ArgumentNullException.ThrowIfNull(assignmentProfile);
+        if (!preflight.HasWork)
+            throw new InvalidOperationException("Combined mutation writer requires definition or assignment work.");
+        if (preflight.RequiresDefinitionCreation && definitionProfile is null)
+            throw new InvalidDataException("MyTag definition creation was requested without qualified write semantics.");
+
+        return RekordboxMutationTransaction.Execute(
+            connection,
+            transaction =>
+            {
+                var definitionResult = preflight.RequiresDefinitionCreation
+                    ? RekordboxMyTagDefinitionWriter.EnsureDefinitions(
+                        connection,
+                        transaction,
+                        preflight.MissingDefinitions,
+                        definitionProfile!,
+                        firstLocalUsn)
+                    : new RekordboxDefinitionWriteResult(
+                        Array.Empty<RekordboxCreatedMyTagDefinition>(),
+                        firstLocalUsn);
+
+                var postDefinitions = RekordboxMutationPlan.BuildPostDefinitionState(
+                    snapshot,
+                    definitionResult.Created);
+                var mutations = RekordboxMutationPlan.Resolve(
+                    preflight.CurrentPreview,
+                    snapshot,
+                    postDefinitions);
+
+                var changedAssignments = RekordboxSongMyTagWriter.Apply(
+                    connection,
+                    transaction,
+                    mutations,
+                    assignmentProfile,
+                    definitionResult.NextLocalUsn);
+                if (changedAssignments != mutations.Count)
+                    throw new InvalidDataException(
+                        "SongMyTag writer changed-count does not match the post-definition mutation plan.");
+
+                int totalChangeCount;
+                try
+                {
+                    totalChangeCount = checked(definitionResult.Created.Count + changedAssignments);
+                }
+                catch (OverflowException ex)
+                {
+                    throw new InvalidDataException("Combined MyTag mutation change-count overflow.", ex);
+                }
+                if (totalChangeCount < 1)
+                    throw new InvalidDataException("Combined MyTag mutation unexpectedly produced no database changes.");
+
+                var finalCounter = RekordboxUpdateCounter.Advance(
+                    connection,
+                    currentCounter,
+                    totalChangeCount,
+                    transaction);
+
+                return new RekordboxCombinedMutationResult(
+                    definitionResult.Created,
+                    mutations,
+                    totalChangeCount,
+                    finalCounter);
+            },
+            (_, result) =>
+            {
+                if (result.TotalChangeCount !=
+                    result.CreatedDefinitions.Count + result.AssignmentMutations.Count)
+                    throw new InvalidDataException(
+                        "Pre-commit combined mutation count does not match definition and assignment changes.");
+            });
+    }
+}
+
 internal static class RekordboxMutationPreflight
 {
     internal static RekordboxMutationPreflightResult Recheck(
