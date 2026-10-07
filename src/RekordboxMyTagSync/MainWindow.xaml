@@ -35,7 +35,10 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="2*"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     <TextBlock TextWrapping="Wrap"
                                Text="Select the foo_dj_library_bridge directory containing bridge-state.tsv and digital-items.tsv.gz."/>
@@ -74,6 +77,26 @@
                             <DataGridTextColumn Header="Error" Binding="{Binding Error}" Width="240"/>
                         </DataGrid.Columns>
                     </DataGrid>
+                    <TextBlock Grid.Row="3"
+                               Margin="0,12,0,6"
+                               FontWeight="SemiBold"
+                               Text="Windows / SUBST path aliases"/>
+                    <DataGrid x:Name="PathAliasGrid"
+                              Grid.Row="4"
+                              AutoGenerateColumns="False"
+                              CanUserAddRows="False">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Bridge/source root" Binding="{Binding SourceRoot}" Width="*"/>
+                            <DataGridTextColumn Header="rekordbox/target root" Binding="{Binding TargetRoot}" Width="*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <StackPanel Grid.Row="5" Orientation="Horizontal" Margin="0,8,0,0">
+                        <Button x:Name="AddAliasButton" Padding="14,6" Content="Add alias"/>
+                        <Button x:Name="RemoveAliasButton"
+                                Margin="8,0,0,0"
+                                Padding="14,6"
+                                Content="Remove selected"/>
+                    </StackPanel>
                 </Grid>
             </TabItem>
 
