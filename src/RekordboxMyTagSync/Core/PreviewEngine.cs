@@ -356,7 +356,7 @@ public static class PreviewEngine
             .GroupBy(x => x.ParentId!, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.ToArray(), StringComparer.OrdinalIgnoreCase);
 
-        var missing = new HashSet<MyTagAssignment>(MyTagAssignmentComparer.Instance);
+        var missing = new HashSet<MyTagAssignment>(new MyTagAssignmentComparer());
         foreach (var detail in details.Where(x => x.Kind == PreviewDetailKind.Add && x.Tag is not null))
         {
             var tag = detail.Tag!;
