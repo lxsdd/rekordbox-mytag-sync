@@ -43,13 +43,15 @@ public sealed record PreviewRequest(
     IReadOnlyList<MappingRule> Mappings,
     IReadOnlyList<RekordboxTrackSnapshot> RekordboxTracks,
     IReadOnlyList<ManagedAssignment> ManagedAssignments,
-    IReadOnlyList<PathAlias>? PathAliases = null);
+    IReadOnlyList<PathAlias>? PathAliases = null,
+    IReadOnlyList<RekordboxMyTagDefinition>? MyTagDefinitions = null);
 
 public sealed record PreviewResult(
     bool IsValid,
     string FingerprintSha256,
     PreviewCounts Counts,
-    IReadOnlyList<PreviewDetail> Details);
+    IReadOnlyList<PreviewDetail> Details,
+    IReadOnlyList<MyTagAssignment>? MissingDefinitions = null);
 
 public static class PreviewEngine
 {
@@ -201,6 +203,8 @@ public static class PreviewEngine
             }
         }
 
+        var missingDefinitions = QualifyDefinitionState(request.MyTagDefinitions, details);
+
         var ordered = details
             .OrderBy(x => x.Kind)
             .ThenBy(x => x.Path ?? string.Empty, StringComparer.OrdinalIgnoreCase)
@@ -217,8 +221,8 @@ public static class PreviewEngine
             ordered.Count(x => x.Kind == PreviewDetailKind.Conflict),
             ordered.Count(x => x.Kind == PreviewDetailKind.Unmatched));
 
-        var fingerprint = BuildFingerprint(request, aliases, normalizedBridge, normalizedTargets, ordered);
-        return new PreviewResult(counts.Conflicts == 0, fingerprint, counts, ordered);
+        var fingerprint = BuildFingerprint(request, aliases, normalizedBridge, normalizedTargets, ordered, missingDefinitions);
+        return new PreviewResult(counts.Conflicts == 0, fingerprint, counts, ordered, missingDefinitions);
     }
 
     private static Dictionary<string, HashSet<MyTagAssignment>> BuildManagedIndex(
@@ -323,12 +327,77 @@ public static class PreviewEngine
     private static PreviewDetail Conflict(string? contentId, string? path, MyTagAssignment? tag, string message) =>
         new(PreviewDetailKind.Conflict, contentId, path, tag, message);
 
+    private static IReadOnlyList<MyTagAssignment> QualifyDefinitionState(
+        IReadOnlyList<RekordboxMyTagDefinition>? definitions,
+        List<PreviewDetail> details)
+    {
+        if (definitions is null)
+            return Array.Empty<MyTagAssignment>();
+
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var definition in definitions)
+        {
+            if (string.IsNullOrWhiteSpace(definition.Id) ||
+                string.IsNullOrWhiteSpace(definition.Name) ||
+                !ids.Add(definition.Id.Trim()))
+            {
+                details.Add(Conflict(null, null, null,
+                    "MyTag definition set contains an empty/duplicate ID or empty name."));
+                return Array.Empty<MyTagAssignment>();
+            }
+        }
+
+        var roots = definitions
+            .Where(x => x.ParentId is null)
+            .GroupBy(x => x.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(x => x.Key, x => x.ToArray(), StringComparer.OrdinalIgnoreCase);
+        var children = definitions
+            .Where(x => x.ParentId is not null)
+            .GroupBy(x => x.ParentId!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(x => x.Key, x => x.ToArray(), StringComparer.OrdinalIgnoreCase);
+
+        var missing = new HashSet<MyTagAssignment>(MyTagAssignmentComparer.Instance);
+        foreach (var detail in details.Where(x => x.Kind == PreviewDetailKind.Add && x.Tag is not null))
+        {
+            var tag = detail.Tag!;
+            if (!roots.TryGetValue(tag.Group.Trim(), out var parentMatches))
+            {
+                missing.Add(new MyTagAssignment(tag.Group.Trim(), tag.Value.Trim()));
+                continue;
+            }
+            if (parentMatches.Length != 1)
+            {
+                details.Add(Conflict(detail.ContentId, detail.Path, tag,
+                    $"MyTag group '{tag.Group}' is ambiguous."));
+                continue;
+            }
+
+            var parent = parentMatches[0];
+            var valueMatches = children.TryGetValue(parent.Id, out var candidates)
+                ? candidates.Where(x =>
+                        string.Equals(x.Name.Trim(), tag.Value.Trim(), StringComparison.OrdinalIgnoreCase))
+                    .ToArray()
+                : Array.Empty<RekordboxMyTagDefinition>();
+            if (valueMatches.Length == 0)
+                missing.Add(new MyTagAssignment(tag.Group.Trim(), tag.Value.Trim()));
+            else if (valueMatches.Length != 1)
+                details.Add(Conflict(detail.ContentId, detail.Path, tag,
+                    $"MyTag value '{tag.Group}/{tag.Value}' is ambiguous."));
+        }
+
+        return missing
+            .OrderBy(x => x.Group, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.Value, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
     private static string BuildFingerprint(
         PreviewRequest request,
         IReadOnlyList<PathAlias> aliases,
         IReadOnlyList<NormalizedBridge> bridgeTracks,
         IReadOnlyList<NormalizedTarget> targets,
-        IReadOnlyList<PreviewDetail> details)
+        IReadOnlyList<PreviewDetail> details,
+        IReadOnlyList<MyTagAssignment> missingDefinitions)
     {
         var writer = new FingerprintWriter();
         writer.Add("db", request.DatabaseIdentity.Trim());
@@ -359,6 +428,22 @@ public static class PreviewEngine
             AddFields(writer, "core", bridge.Track.Core);
             AddFields(writer, "extra", bridge.Track.Extra);
         }
+
+        if (request.MyTagDefinitions is not null)
+        {
+            foreach (var definition in request.MyTagDefinitions
+                         .OrderBy(x => x.Id, StringComparer.OrdinalIgnoreCase))
+                writer.Add(
+                    "definition",
+                    definition.Id,
+                    definition.Name,
+                    definition.ParentId ?? string.Empty,
+                    definition.Sequence?.ToString() ?? string.Empty,
+                    definition.Attribute?.ToString() ?? string.Empty);
+        }
+
+        foreach (var missing in missingDefinitions)
+            writer.Add("missing-definition", missing.Group, missing.Value);
 
         foreach (var target in targets
                      .OrderBy(x => x.ContentId, StringComparer.OrdinalIgnoreCase)
