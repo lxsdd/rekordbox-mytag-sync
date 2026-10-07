@@ -60,18 +60,25 @@ internal static class RekordboxMutationPlan
 {
     internal static IReadOnlyList<RekordboxAssignmentMutation> Resolve(
         PreviewResult preview,
-        RekordboxDatabaseSnapshot snapshot)
+        RekordboxDatabaseSnapshot snapshot) =>
+        Resolve(preview, snapshot, snapshot.MyTagDefinitions);
+
+    internal static IReadOnlyList<RekordboxAssignmentMutation> Resolve(
+        PreviewResult preview,
+        RekordboxDatabaseSnapshot snapshot,
+        IReadOnlyList<RekordboxMyTagDefinition> definitions)
     {
         ArgumentNullException.ThrowIfNull(preview);
         ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(definitions);
         if (!preview.IsValid || preview.Counts.Conflicts != 0)
             throw new InvalidOperationException("Only a valid conflict-free preview can become a mutation plan.");
 
-        var parents = snapshot.MyTagDefinitions
+        var parents = definitions
             .Where(x => x.ParentId is null)
             .GroupBy(x => x.Name.Trim(), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.ToArray(), StringComparer.OrdinalIgnoreCase);
-        var children = snapshot.MyTagDefinitions
+        var children = definitions
             .Where(x => x.ParentId is not null)
             .GroupBy(x => x.ParentId!, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.ToArray(), StringComparer.OrdinalIgnoreCase);
