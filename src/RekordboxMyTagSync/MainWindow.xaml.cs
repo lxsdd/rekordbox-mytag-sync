@@ -21,6 +21,8 @@ public partial class MainWindow : Window
     private bool _backupAvailable;
     private bool _backupMatchesTarget;
     private RekordboxDatabaseSnapshot? _databaseSnapshot;
+    private BridgeSourceSnapshot? _bridgeSnapshot;
+    private PreviewResult? _approvedPreview;
 
     public MainWindow()
     {
@@ -40,6 +42,7 @@ public partial class MainWindow : Window
         AddAliasButton.Click += (_, _) => AddAlias();
         RemoveAliasButton.Click += (_, _) => RemoveSelectedAlias();
         RefreshDiagnosticsButton.Click += (_, _) => RefreshDiagnostics();
+        BuildPreviewButton.Click += (_, _) => BuildPreview();
 
         SourceCandidatesGrid.SelectionChanged += (_, _) =>
         {
@@ -70,6 +73,13 @@ public partial class MainWindow : Window
             InvalidateDatabaseAccess("Supported DBVersion list changed.");
             UpdateWorkflowGate();
         };
+        BridgeDirectoryTextBox.TextChanged += (_, _) =>
+        {
+            InvalidatePreview("Bridge source changed.");
+            UpdateWorkflowGate();
+        };
+        MappingGrid.CellEditEnding += (_, _) => InvalidatePreview("Mapping changed.");
+        PathAliasGrid.CellEditEnding += (_, _) => InvalidatePreview("Path alias changed.");
 
         UpdateWorkflowGate();
     }
@@ -82,6 +92,7 @@ public partial class MainWindow : Window
             _settings = AppSettingsStore.Load(_settingsPath);
             BridgeDirectoryTextBox.Text = _settings.EffectiveBridgeDirectory ?? string.Empty;
             TargetDatabaseTextBox.Text = _settings.RekordboxDatabasePath ?? string.Empty;
+            SupportedDbVersionsTextBox.Text = string.Join(", ", _settings.EffectiveSupportedDbVersions);
 
             _mappings.Clear();
             foreach (var rule in _settings.EffectiveMappings)
@@ -147,7 +158,8 @@ public partial class MainWindow : Window
             aliases,
             mappings,
             bridgeDirectory,
-            known));
+            known,
+            ParseSupportedDbVersions(SupportedDbVersionsTextBox.Text)));
     }
 
     private void DiscoverSources()
@@ -210,7 +222,9 @@ public partial class MainWindow : Window
                 throw new InvalidDataException(candidate.Error ?? "Bridge source is not safe.");
 
             var snapshot = BridgeSourceDiscovery.ReadStable(directory);
+            _bridgeSnapshot = snapshot;
             _sourceSafe = true;
+            InvalidatePreview("Bridge source was re-read.");
             AppendDiagnostic(
                 $"Bridge source verified: schema {snapshot.State.SchemaVersion}, generation {snapshot.State.Generation}, {snapshot.Tracks.Count} track(s).");
             UpdateWorkflowGate();
@@ -315,6 +329,7 @@ public partial class MainWindow : Window
         _previewFresh = false;
         _backupAvailable = false;
         _backupMatchesTarget = false;
+        _approvedPreview = null;
         BackupPackageTextBox.Text = string.Empty;
         DatabaseAccessStatusTextBlock.Text =
             "Database access is not qualified for the current target/key/version state.";
@@ -332,6 +347,7 @@ public partial class MainWindow : Window
         });
         MappingGrid.SelectedItem = _mappings[^1];
         MappingGrid.ScrollIntoView(_mappings[^1]);
+        InvalidatePreview("Mapping added.");
         UpdateWorkflowGate();
     }
 
@@ -340,6 +356,7 @@ public partial class MainWindow : Window
         if (MappingGrid.SelectedItem is MappingRow row)
         {
             _mappings.Remove(row);
+            InvalidatePreview("Mapping removed.");
             UpdateWorkflowGate();
         }
     }
@@ -349,6 +366,7 @@ public partial class MainWindow : Window
         _aliases.Add(new AliasRow());
         PathAliasGrid.SelectedItem = _aliases[^1];
         PathAliasGrid.ScrollIntoView(_aliases[^1]);
+        InvalidatePreview("Path alias added.");
         UpdateWorkflowGate();
     }
 
@@ -357,8 +375,87 @@ public partial class MainWindow : Window
         if (PathAliasGrid.SelectedItem is AliasRow row)
         {
             _aliases.Remove(row);
+            InvalidatePreview("Path alias removed.");
             UpdateWorkflowGate();
         }
+    }
+
+    private void BuildPreview()
+    {
+        try
+        {
+            if (!_sourceSafe)
+                throw new InvalidDataException("Selected bridge source is not qualified as safe.");
+            if (!_targetSafe || !_databaseAccessQualified || _databaseSnapshot is null)
+                throw new InvalidDataException("Target database access is not qualified.");
+
+            var settings = BuildSettingsFromUi();
+            var bridgeDirectory = settings.EffectiveBridgeDirectory
+                ?? throw new InvalidDataException("No bridge source directory is selected.");
+            var bridge = BridgeSourceDiscovery.ReadStable(bridgeDirectory);
+            var provenanceRoot = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "RekordboxMyTagSync",
+                "provenance");
+            var provenancePath = ProvenanceStore.GetStatePath(
+                provenanceRoot,
+                _databaseSnapshot.Identity);
+            var provenance = ProvenanceStore.Load(
+                provenancePath,
+                _databaseSnapshot.Identity);
+            var managed = ProvenanceStore.ToManagedAssignments(
+                provenance,
+                _databaseSnapshot);
+
+            var preview = PreviewEngine.Create(new PreviewRequest(
+                _databaseSnapshot.Identity.PreviewIdentity,
+                bridge.Tracks,
+                settings.EffectiveMappings,
+                _databaseSnapshot.Tracks,
+                managed,
+                settings.EffectivePathAliases,
+                _databaseSnapshot.MyTagDefinitions));
+
+            _bridgeSnapshot = bridge;
+            _approvedPreview = preview;
+            _previewExists = true;
+            _previewValid = preview.IsValid && preview.Counts.Conflicts == 0;
+            _previewFresh = true;
+
+            PreviewGrid.ItemsSource = preview.Details;
+            PreviewCountsTextBlock.Text =
+                $"Add {preview.Counts.Additions} · Remove {preview.Counts.Removals} · " +
+                $"Correct {preview.Counts.AlreadyCorrect} · Conflicts {preview.Counts.Conflicts} · " +
+                $"Unmatched {preview.Counts.Unmatched}";
+            AppendDiagnostic(
+                $"Fresh preview built: valid={preview.IsValid}, fingerprint={preview.FingerprintSha256}, " +
+                $"missing definitions={preview.MissingDefinitions?.Count ?? 0}.");
+        }
+        catch (Exception ex)
+        {
+            _approvedPreview = null;
+            _previewExists = false;
+            _previewValid = false;
+            _previewFresh = false;
+            PreviewGrid.ItemsSource = null;
+            PreviewCountsTextBlock.Text = "Add 0 · Remove 0 · Correct 0 · Conflicts 0 · Unmatched 0";
+            AppendDiagnostic($"Preview blocked: {ex.Message}");
+        }
+
+        UpdateWorkflowGate();
+    }
+
+    private void InvalidatePreview(string reason)
+    {
+        if (_previewExists || _approvedPreview is not null)
+            AppendDiagnostic(reason);
+
+        _approvedPreview = null;
+        _previewExists = false;
+        _previewValid = false;
+        _previewFresh = false;
+        PreviewGrid.ItemsSource = null;
+        PreviewCountsTextBlock.Text = "Add 0 · Remove 0 · Correct 0 · Conflicts 0 · Unmatched 0";
     }
 
     private void UpdateWorkflowGate()
