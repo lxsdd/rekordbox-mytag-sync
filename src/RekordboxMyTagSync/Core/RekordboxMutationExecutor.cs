@@ -75,7 +75,7 @@ internal static class RekordboxMutationExecutor
             bridgeTracks,
             mappings,
             pathAliases);
-        if (preflight.Mutations.Count == 0)
+        if (!preflight.HasWork)
             throw new InvalidOperationException(
                 "Approved mutation set changed after pre-write backup creation; mutation is blocked.");
         if (!SameDatabase(initialSnapshot.Identity, before.Identity))
