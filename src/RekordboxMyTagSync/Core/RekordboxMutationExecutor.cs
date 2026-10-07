@@ -85,17 +85,26 @@ internal static class RekordboxMutationExecutor
         long currentCounter;
         long firstLocalUsn;
         long finalCounter;
+        var changeCount = 0;
+        IReadOnlyList<RekordboxCreatedMyTagDefinition> createdDefinitions =
+            Array.Empty<RekordboxCreatedMyTagDefinition>();
+        IReadOnlyList<RekordboxAssignmentMutation> appliedMutations =
+            Array.Empty<RekordboxAssignmentMutation>();
         var committed = false;
 
         try
         {
             using var session = RekordboxMutationSession.Open(databasePath, key);
             var connection = session.Connection;
-            var requireTombstone = preflight.Mutations.Any(x => x.Kind == PreviewDetailKind.Remove);
-            var profile = RekordboxSongMyTagWriteSemantics.Qualify(
+            var requireTombstone = preflight.CurrentPreview.Details.Any(
+                x => x.Kind == PreviewDetailKind.Remove);
+            var assignmentProfile = RekordboxSongMyTagWriteSemantics.Qualify(
                 connection,
                 transaction: null,
                 requireTombstone: requireTombstone);
+            var definitionProfile = preflight.RequiresDefinitionCreation
+                ? RekordboxMyTagDefinitionWriter.Qualify(connection, transaction: null)
+                : null;
 
             currentCounter = RekordboxUpdateCounter.Read(connection);
             try
@@ -107,36 +116,20 @@ internal static class RekordboxMutationExecutor
                 throw new InvalidDataException("agentRegistry localUpdateCount cannot allocate a new rb_local_usn.", ex);
             }
 
-            var transactionResult = RekordboxMutationTransaction.Execute(
+            var transactionResult = RekordboxCombinedMutationWriter.Apply(
                 connection,
-                transaction =>
-                {
-                    var changed = RekordboxSongMyTagWriter.Apply(
-                        connection,
-                        transaction,
-                        preflight.Mutations,
-                        profile,
-                        firstLocalUsn);
-                    if (changed != preflight.Mutations.Count)
-                        throw new InvalidDataException(
-                            "SongMyTag writer changed-count does not match the approved mutation plan.");
-
-                    var next = RekordboxUpdateCounter.Advance(
-                        connection,
-                        currentCounter,
-                        changed,
-                        transaction);
-                    return (Changed: changed, FinalCounter: next);
-                },
-                (_, result) =>
-                {
-                    if (result.Changed != preflight.Mutations.Count)
-                        throw new InvalidDataException(
-                            "Pre-commit changed-count does not match the approved mutation plan.");
-                });
+                before,
+                preflight,
+                definitionProfile,
+                assignmentProfile,
+                currentCounter,
+                firstLocalUsn);
 
             committed = true;
-            finalCounter = transactionResult.FinalCounter;
+            changeCount = transactionResult.TotalChangeCount;
+            createdDefinitions = transactionResult.CreatedDefinitions;
+            appliedMutations = transactionResult.AssignmentMutations;
+            finalCounter = transactionResult.FinalLocalUpdateCount;
             RekordboxMutationVerification.VerifySqliteIntegrity(connection);
         }
         catch (Exception mutationError)
@@ -166,13 +159,14 @@ internal static class RekordboxMutationExecutor
                 before,
                 after,
                 provenance,
-                preflight.Mutations);
+                appliedMutations,
+                createdDefinitions);
             ProvenanceStore.SaveAtomic(provenancePath, nextProvenance, after.Identity);
 
             return new RekordboxMutationExecutionResult(
                 preflight.CurrentPreview,
                 after.Identity,
-                preflight.Mutations.Count,
+                changeCount,
                 firstLocalUsn,
                 finalCounter,
                 backup.PackagePath);
