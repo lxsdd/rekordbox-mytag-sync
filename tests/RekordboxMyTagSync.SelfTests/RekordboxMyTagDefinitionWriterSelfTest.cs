@@ -145,8 +145,8 @@ public static class RekordboxMyTagDefinitionWriterSelfTest
             connection,
             """
             INSERT INTO djmdMyTag(
-                ID,UUID,Seq,Name,Attribute,ParentID,rb_local_usn)
-            VALUES($id,$uuid,$seq,$name,$attribute,$parent,$localUsn);
+                ID,UUID,Seq,Name,Attribute,ParentID,usn,rb_local_usn)
+            VALUES($id,$uuid,$seq,$name,$attribute,$parent,0,$localUsn);
             """,
             ("$id", id),
             ("$uuid", Guid.NewGuid().ToString()),
