@@ -124,7 +124,8 @@ internal static class RekordboxMutationPlan
 
 internal sealed record RekordboxMutationPreflightResult(
     PreviewResult CurrentPreview,
-    IReadOnlyList<RekordboxAssignmentMutation> Mutations);
+    IReadOnlyList<RekordboxAssignmentMutation> Mutations,
+    IReadOnlyList<MyTagAssignment> MissingDefinitions);
 
 internal static class RekordboxMutationPreflight
 {
@@ -167,7 +168,13 @@ internal static class RekordboxMutationPreflight
             throw new InvalidOperationException(
                 "Approved preview is stale for the current database, source, mapping, path-alias or provenance state.");
 
-        var mutations = RekordboxMutationPlan.Resolve(currentPreview, freshSnapshot);
-        return new RekordboxMutationPreflightResult(currentPreview, mutations);
+        var missingDefinitions = (currentPreview.MissingDefinitions ?? Array.Empty<MyTagAssignment>()).ToArray();
+        var mutations = missingDefinitions.Length == 0
+            ? RekordboxMutationPlan.Resolve(currentPreview, freshSnapshot)
+            : Array.Empty<RekordboxAssignmentMutation>();
+        return new RekordboxMutationPreflightResult(
+            currentPreview,
+            mutations,
+            missingDefinitions);
     }
 }
