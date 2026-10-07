@@ -8,13 +8,25 @@ public sealed record AppSettings(
     string? BridgeSnapshotPath = null,
     string? RekordboxDatabasePath = null,
     IReadOnlyList<PathAlias>? PathAliases = null,
-    IReadOnlyList<MappingRule>? Mappings = null)
+    IReadOnlyList<MappingRule>? Mappings = null,
+    string? BridgeDirectory = null,
+    IReadOnlyList<string>? KnownBridgeDirectories = null)
 {
     public IReadOnlyList<PathAlias> EffectivePathAliases =>
         PathAliases ?? Array.Empty<PathAlias>();
 
     public IReadOnlyList<MappingRule> EffectiveMappings =>
         Mappings ?? Array.Empty<MappingRule>();
+
+    public IReadOnlyList<string> EffectiveKnownBridgeDirectories =>
+        KnownBridgeDirectories ?? Array.Empty<string>();
+
+    public string? EffectiveBridgeDirectory =>
+        !string.IsNullOrWhiteSpace(BridgeDirectory)
+            ? BridgeDirectory
+            : string.IsNullOrWhiteSpace(BridgeSnapshotPath)
+                ? null
+                : Path.GetDirectoryName(BridgeSnapshotPath);
 }
 
 public static class AppSettingsStore
@@ -120,6 +132,16 @@ public static class AppSettingsStore
 
         var bridgePath = NormalizeOptionalPath(settings.BridgeSnapshotPath);
         var databasePath = NormalizeOptionalPath(settings.RekordboxDatabasePath);
+        var bridgeDirectory = NormalizeOptionalPath(settings.BridgeDirectory);
+        var knownBridgeDirectories = (settings.KnownBridgeDirectories ?? Array.Empty<string>())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => Path.GetFullPath(x.Trim()))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (bridgeDirectory is not null &&
+            !knownBridgeDirectories.Contains(bridgeDirectory, StringComparer.OrdinalIgnoreCase))
+            knownBridgeDirectories.Add(bridgeDirectory);
 
         var aliases = (settings.PathAliases ?? Array.Empty<PathAlias>())
             .Select(x => x ?? throw new InvalidDataException("Settings contain a null path alias."))
@@ -135,7 +157,13 @@ public static class AppSettingsStore
             .Select(ValidateMapping)
             .ToArray();
 
-        return new AppSettings(bridgePath, databasePath, aliases, mappings);
+        return new AppSettings(
+            bridgePath,
+            databasePath,
+            aliases,
+            mappings,
+            bridgeDirectory,
+            knownBridgeDirectories);
     }
 
     private static MappingRule ValidateMapping(MappingRule rule)
