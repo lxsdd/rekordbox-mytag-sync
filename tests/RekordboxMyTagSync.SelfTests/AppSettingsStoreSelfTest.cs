@@ -4,6 +4,8 @@ public static class AppSettingsStoreSelfTest
 {
     public static void Run(string temp)
     {
+        QualifyUiWorkflowGate();
+
         var root = Path.Combine(temp, "AppSettings");
         Directory.CreateDirectory(root);
         var path = Path.Combine(root, "settings.json");
@@ -75,6 +77,94 @@ public static class AppSettingsStoreSelfTest
                     Pattern: "(")
             });
         AssertBlocked(() => AppSettingsStore.SaveAtomic(path, invalidMapping), "invalid");
+    }
+
+    private static void QualifyUiWorkflowGate()
+    {
+        var readyForPreview = UiWorkflowGate.Evaluate(new UiWorkflowInputs(
+            SettingsValid: true,
+            BridgeSourceSafe: true,
+            TargetLibrarySafe: true,
+            RekordboxClosed: true,
+            DatabaseAccessQualified: true,
+            PreviewExists: false,
+            PreviewValid: false,
+            PreviewFresh: false,
+            BackupAvailable: false,
+            BackupMatchesTarget: false));
+        if (!readyForPreview.CanBuildPreview ||
+            readyForPreview.CanApply ||
+            readyForPreview.CanRestore)
+            throw new InvalidOperationException("UI workflow gate did not expose preview-only readiness");
+
+        var fullyReady = UiWorkflowGate.Evaluate(new UiWorkflowInputs(
+            SettingsValid: true,
+            BridgeSourceSafe: true,
+            TargetLibrarySafe: true,
+            RekordboxClosed: true,
+            DatabaseAccessQualified: true,
+            PreviewExists: true,
+            PreviewValid: true,
+            PreviewFresh: true,
+            BackupAvailable: true,
+            BackupMatchesTarget: true));
+        if (!fullyReady.CanBuildPreview ||
+            !fullyReady.CanApply ||
+            !fullyReady.CanRestore ||
+            fullyReady.Blockers.Count != 0)
+            throw new InvalidOperationException("UI workflow gate rejected fully qualified state");
+
+        var stalePreview = UiWorkflowGate.Evaluate(new UiWorkflowInputs(
+            SettingsValid: true,
+            BridgeSourceSafe: true,
+            TargetLibrarySafe: true,
+            RekordboxClosed: true,
+            DatabaseAccessQualified: true,
+            PreviewExists: true,
+            PreviewValid: true,
+            PreviewFresh: false,
+            BackupAvailable: true,
+            BackupMatchesTarget: true));
+        if (!stalePreview.CanBuildPreview ||
+            stalePreview.CanApply ||
+            !stalePreview.CanRestore ||
+            !stalePreview.Blockers.Any(x => x.Contains("stale", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("UI workflow gate did not block stale preview apply");
+
+        var running = UiWorkflowGate.Evaluate(new UiWorkflowInputs(
+            SettingsValid: true,
+            BridgeSourceSafe: true,
+            TargetLibrarySafe: true,
+            RekordboxClosed: false,
+            DatabaseAccessQualified: true,
+            PreviewExists: true,
+            PreviewValid: true,
+            PreviewFresh: true,
+            BackupAvailable: true,
+            BackupMatchesTarget: true));
+        if (running.CanBuildPreview ||
+            running.CanApply ||
+            running.CanRestore ||
+            !running.Blockers.Any(x => x.Contains("running", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("UI workflow gate did not fail closed while rekordbox is running");
+
+        var incompatible = UiWorkflowGate.Evaluate(new UiWorkflowInputs(
+            SettingsValid: true,
+            BridgeSourceSafe: true,
+            TargetLibrarySafe: true,
+            RekordboxClosed: true,
+            DatabaseAccessQualified: false,
+            PreviewExists: true,
+            PreviewValid: true,
+            PreviewFresh: true,
+            BackupAvailable: true,
+            BackupMatchesTarget: false));
+        if (incompatible.CanBuildPreview ||
+            incompatible.CanApply ||
+            incompatible.CanRestore ||
+            !incompatible.Blockers.Any(x => x.Contains("compatibility", StringComparison.OrdinalIgnoreCase)) ||
+            !incompatible.Blockers.Any(x => x.Contains("does not match", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("UI workflow gate did not block incompatible database/backup state");
     }
 
     private static void AssertBlocked(Action action, string expected)
