@@ -12,6 +12,14 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<MappingRow> _mappings = new();
     private readonly ObservableCollection<AliasRow> _aliases = new();
     private AppSettings _settings = new();
+    private bool _sourceSafe;
+    private bool _targetSafe;
+    private bool _databaseAccessQualified;
+    private bool _previewExists;
+    private bool _previewValid;
+    private bool _previewFresh;
+    private bool _backupAvailable;
+    private bool _backupMatchesTarget;
 
     public MainWindow()
     {
@@ -34,17 +42,23 @@ public partial class MainWindow : Window
         SourceCandidatesGrid.SelectionChanged += (_, _) =>
         {
             if (SourceCandidatesGrid.SelectedItem is BridgeSourceCandidate source)
+            {
                 BridgeDirectoryTextBox.Text = source.DirectoryPath;
+                _sourceSafe = source.Safe;
+                UpdateWorkflowGate();
+            }
         };
         TargetCandidatesGrid.SelectionChanged += (_, _) =>
         {
             if (TargetCandidatesGrid.SelectedItem is RekordboxLibraryCandidate target)
+            {
                 TargetDatabaseTextBox.Text = target.DatabasePath;
+                _targetSafe = target.Safe;
+                UpdateWorkflowGate();
+            }
         };
 
-        BuildPreviewButton.IsEnabled = false;
-        ApplyButton.IsEnabled = false;
-        RestoreButton.IsEnabled = false;
+        UpdateWorkflowGate();
     }
 
     private void LoadSettings()
@@ -67,6 +81,7 @@ public partial class MainWindow : Window
             AppendDiagnostic("Settings loaded.");
             DiscoverSources();
             DiscoverTargets();
+            UpdateWorkflowGate();
         }
         catch (Exception ex)
         {
@@ -85,6 +100,7 @@ public partial class MainWindow : Window
             BridgeDirectoryTextBox.Text = _settings.EffectiveBridgeDirectory ?? string.Empty;
             TargetDatabaseTextBox.Text = _settings.RekordboxDatabasePath ?? string.Empty;
             AppendDiagnostic("Settings validated and saved atomically.");
+            UpdateWorkflowGate();
         }
         catch (Exception ex)
         {
@@ -144,16 +160,27 @@ public partial class MainWindow : Window
                 var preferred = candidates.FirstOrDefault(x => x.Selected && x.Safe)
                                 ?? candidates.FirstOrDefault(x => x.Safe);
                 if (preferred is not null)
+                {
                     BridgeDirectoryTextBox.Text = preferred.DirectoryPath;
+                    bridgeDirectory = preferred.DirectoryPath;
+                }
             }
+
+            _sourceSafe = bridgeDirectory is not null &&
+                candidates.Any(x =>
+                    x.Safe &&
+                    PathsEqual(x.DirectoryPath, bridgeDirectory));
 
             var safeCount = candidates.Count(x => x.Safe);
             AppendDiagnostic($"Bridge discovery: {candidates.Count} candidate(s), {safeCount} safe.");
+            UpdateWorkflowGate();
         }
         catch (Exception ex)
         {
+            _sourceSafe = false;
             SourceCandidatesGrid.ItemsSource = null;
             AppendDiagnostic($"Bridge discovery blocked: {ex.Message}");
+            UpdateWorkflowGate();
         }
     }
 
@@ -170,12 +197,16 @@ public partial class MainWindow : Window
                 throw new InvalidDataException(candidate.Error ?? "Bridge source is not safe.");
 
             var snapshot = BridgeSourceDiscovery.ReadStable(directory);
+            _sourceSafe = true;
             AppendDiagnostic(
                 $"Bridge source verified: schema {snapshot.State.SchemaVersion}, generation {snapshot.State.Generation}, {snapshot.Tracks.Count} track(s).");
+            UpdateWorkflowGate();
         }
         catch (Exception ex)
         {
+            _sourceSafe = false;
             AppendDiagnostic($"Bridge source inspection blocked: {ex.Message}");
+            UpdateWorkflowGate();
         }
     }
 
@@ -190,6 +221,10 @@ public partial class MainWindow : Window
             if (string.IsNullOrWhiteSpace(TargetDatabaseTextBox.Text) && safe.Length == 1)
                 TargetDatabaseTextBox.Text = safe[0].DatabasePath;
 
+            var selectedPath = OptionalPath(TargetDatabaseTextBox.Text);
+            _targetSafe = selectedPath is not null &&
+                safe.Any(x => PathsEqual(x.DatabasePath, selectedPath));
+
             AppendDiagnostic(
                 $"rekordbox discovery: {result.Installations.Count} installation(s), {result.Libraries.Count} library candidate(s), {safe.Length} safe.");
             foreach (var diagnostic in result.Diagnostics)
@@ -197,11 +232,14 @@ public partial class MainWindow : Window
 
             if (safe.Length > 1 && string.IsNullOrWhiteSpace(TargetDatabaseTextBox.Text))
                 AppendDiagnostic("Target selection remains fail-closed because multiple safe libraries were discovered.");
+            UpdateWorkflowGate();
         }
         catch (Exception ex)
         {
+            _targetSafe = false;
             TargetCandidatesGrid.ItemsSource = null;
             AppendDiagnostic($"rekordbox discovery blocked: {ex.Message}");
+            UpdateWorkflowGate();
         }
     }
 
@@ -217,12 +255,16 @@ public partial class MainWindow : Window
         });
         MappingGrid.SelectedItem = _mappings[^1];
         MappingGrid.ScrollIntoView(_mappings[^1]);
+        UpdateWorkflowGate();
     }
 
     private void RemoveSelectedMapping()
     {
         if (MappingGrid.SelectedItem is MappingRow row)
+        {
             _mappings.Remove(row);
+            UpdateWorkflowGate();
+        }
     }
 
     private void AddAlias()
@@ -230,12 +272,55 @@ public partial class MainWindow : Window
         _aliases.Add(new AliasRow());
         PathAliasGrid.SelectedItem = _aliases[^1];
         PathAliasGrid.ScrollIntoView(_aliases[^1]);
+        UpdateWorkflowGate();
     }
 
     private void RemoveSelectedAlias()
     {
         if (PathAliasGrid.SelectedItem is AliasRow row)
+        {
             _aliases.Remove(row);
+            UpdateWorkflowGate();
+        }
+    }
+
+    private void UpdateWorkflowGate()
+    {
+        var settingsValid = true;
+        try
+        {
+            _ = BuildSettingsFromUi();
+        }
+        catch
+        {
+            settingsValid = false;
+        }
+
+        var state = UiWorkflowGate.Evaluate(new UiWorkflowInputs(
+            SettingsValid: settingsValid,
+            BridgeSourceSafe: _sourceSafe,
+            TargetLibrarySafe: _targetSafe,
+            RekordboxClosed: !RekordboxProcessGuard.IsRunning(),
+            DatabaseAccessQualified: _databaseAccessQualified,
+            PreviewExists: _previewExists,
+            PreviewValid: _previewValid,
+            PreviewFresh: _previewFresh,
+            BackupAvailable: _backupAvailable,
+            BackupMatchesTarget: _backupMatchesTarget));
+
+        BuildPreviewButton.IsEnabled = state.CanBuildPreview;
+        ApplyButton.IsEnabled = state.CanApply;
+        RestoreButton.IsEnabled = state.CanRestore;
+
+        PreviewStatusTextBlock.Text = state.CanApply
+            ? "Fresh conflict-free preview approved."
+            : state.CanBuildPreview
+                ? "Ready to build a fresh preview."
+                : "Preview blocked by safety prerequisites.";
+
+        ApplyStatusTextBox.Text = state.Blockers.Count == 0
+            ? "All workflow safety gates are satisfied."
+            : string.Join(Environment.NewLine, state.Blockers.Select(x => "• " + x));
     }
 
     private void RefreshDiagnostics()
@@ -247,8 +332,11 @@ public partial class MainWindow : Window
         builder.AppendLine($"Mappings: {_mappings.Count}");
         builder.AppendLine($"Path aliases: {_aliases.Count}");
         builder.AppendLine($"rekordbox running: {RekordboxProcessGuard.IsRunning()}");
-        builder.AppendLine("Preview/apply controls remain locked until the production preview controller is bound.");
+        builder.AppendLine($"Database access qualified: {_databaseAccessQualified}");
+        builder.AppendLine($"Preview: exists={_previewExists}, valid={_previewValid}, fresh={_previewFresh}");
+        builder.AppendLine($"Backup: available={_backupAvailable}, matches target={_backupMatchesTarget}");
         DiagnosticsTextBox.Text = builder.ToString();
+        UpdateWorkflowGate();
     }
 
     private void AppendDiagnostic(string message)
@@ -258,6 +346,12 @@ public partial class MainWindow : Window
             (DiagnosticsTextBox.Text.Length == 0 ? string.Empty : Environment.NewLine) + line);
         DiagnosticsTextBox.ScrollToEnd();
     }
+
+    private static bool PathsEqual(string left, string right) =>
+        string.Equals(
+            Path.GetFullPath(left).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            Path.GetFullPath(right).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            StringComparison.OrdinalIgnoreCase);
 
     private static string? OptionalPath(string? value) =>
         string.IsNullOrWhiteSpace(value)
