@@ -1,0 +1,38 @@
+name: DEPENDENCY-LOCK
+
+on:
+  push:
+    branches:
+      - automation/full-candidate-20261007
+    paths:
+      - .github/workflows/dependency-lock.yml
+
+permissions:
+  contents: read
+
+jobs:
+  generate-lockfiles:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Generate NuGet lock files
+        shell: pwsh
+        run: |
+          dotnet restore src/RekordboxMyTagSync/RekordboxMyTagSync.csproj -r win-x64 --use-lock-file
+          if ($LASTEXITCODE -ne 0) { throw "Product lock generation failed." }
+          dotnet restore tests/RekordboxMyTagSync.SelfTests/RekordboxMyTagSync.SelfTests.csproj -r win-x64 --use-lock-file
+          if ($LASTEXITCODE -ne 0) { throw "Self-test lock generation failed." }
+          $locks = @(Get-ChildItem -Path . -Filter packages.lock.json -File -Recurse)
+          if ($locks.Count -ne 2) { throw "Expected exactly two packages.lock.json files, found $($locks.Count)." }
+          $locks | ForEach-Object { Write-Host $_.FullName }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dependency-lockfiles-${{ github.sha }}
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            src/RekordboxMyTagSync/packages.lock.json
+            tests/RekordboxMyTagSync.SelfTests/packages.lock.json
