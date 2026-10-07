@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Windows;
 using RekordboxMyTagSync.Core;
 
@@ -43,6 +45,7 @@ public partial class MainWindow : Window
         RemoveAliasButton.Click += (_, _) => RemoveSelectedAlias();
         RefreshDiagnosticsButton.Click += (_, _) => RefreshDiagnostics();
         BuildPreviewButton.Click += (_, _) => BuildPreview();
+        ApplyButton.Click += (_, _) => ApplyApprovedPreview();
 
         SourceCandidatesGrid.SelectionChanged += (_, _) =>
         {
@@ -443,6 +446,119 @@ public partial class MainWindow : Window
         }
 
         UpdateWorkflowGate();
+    }
+
+    private void ApplyApprovedPreview()
+    {
+        try
+        {
+            if (_approvedPreview is null ||
+                !_previewExists ||
+                !_previewValid ||
+                !_previewFresh)
+                throw new InvalidDataException("A fresh conflict-free preview is required before Apply.");
+            if (_databaseSnapshot is null || !_databaseAccessQualified)
+                throw new InvalidDataException("Target database access is not qualified.");
+
+            var settings = BuildSettingsFromUi();
+            var databasePath = settings.RekordboxDatabasePath
+                ?? throw new InvalidDataException("No target master.db is selected.");
+            var bridgeDirectory = settings.EffectiveBridgeDirectory
+                ?? throw new InvalidDataException("No bridge source directory is selected.");
+            var key = DatabaseKeyPasswordBox.Password;
+            if (string.IsNullOrWhiteSpace(key))
+                throw new InvalidDataException("SQLCipher key is empty.");
+
+            var versions = settings.EffectiveSupportedDbVersions;
+            if (versions.Count == 0)
+                throw new InvalidDataException("At least one exact supported DBVersion is required.");
+
+            var policy = new RekordboxDatabaseReadPolicy(
+                versions.ToHashSet(StringComparer.Ordinal),
+                RequireRekordboxClosed: true);
+            var bridge = BridgeSourceDiscovery.ReadStable(bridgeDirectory);
+            var stateRoot = AppStateRoot();
+            var provenancePath = ProvenanceStore.GetStatePath(
+                Path.Combine(stateRoot, "provenance"),
+                _databaseSnapshot.Identity);
+            var backupRoot = Path.Combine(stateRoot, "backups");
+            var mappingHash = ComputeMappingHashSha256(settings.EffectiveMappings);
+            var toolVersion =
+                typeof(MainWindow).Assembly.GetName().Version?.ToString()
+                ?? "0.0.0";
+
+            var result = RekordboxMutationExecutor.Apply(
+                databasePath,
+                key,
+                policy,
+                _approvedPreview,
+                bridge.Tracks,
+                settings.EffectiveMappings,
+                provenancePath,
+                backupRoot,
+                mappingHash,
+                toolVersion,
+                settings.EffectivePathAliases);
+
+            _databaseSnapshot = RekordboxSqlCipherDatabase.ReadSnapshot(
+                databasePath,
+                key,
+                policy);
+            _bridgeSnapshot = bridge;
+
+            if (!string.IsNullOrWhiteSpace(result.BackupPackagePath))
+            {
+                var inspection = RekordboxRollingBackup.Inspect(
+                    result.BackupPackagePath,
+                    _databaseSnapshot.Identity);
+                _backupAvailable = true;
+                _backupMatchesTarget = true;
+                BackupPackageTextBox.Text = inspection.PackagePath;
+            }
+            else
+            {
+                _backupAvailable = false;
+                _backupMatchesTarget = false;
+                BackupPackageTextBox.Text = string.Empty;
+            }
+
+            ApplyStatusTextBox.Text =
+                result.ChangeCount == 0
+                    ? "No database changes were required."
+                    : $"Applied {result.ChangeCount} database change(s). " +
+                      $"localUpdateCount={result.FinalLocalUpdateCount}.";
+            AppendDiagnostic(
+                $"Apply completed: changes={result.ChangeCount}, " +
+                $"first rb_local_usn={result.FirstLocalUsn?.ToString() ?? "n/a"}, " +
+                $"backup={(result.BackupPackagePath is null ? "none" : "validated")}.");
+
+            InvalidatePreview("Applied preview consumed; a new preview is required before another Apply.");
+        }
+        catch (Exception ex)
+        {
+            InvalidatePreview("Apply failed; preview approval was invalidated.");
+            ApplyStatusTextBox.Text = $"Apply blocked/failed: {ex.Message}";
+            AppendDiagnostic($"Apply blocked/failed: {ex.Message}");
+        }
+
+        UpdateWorkflowGate();
+    }
+
+    private static string AppStateRoot()
+    {
+        var root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (string.IsNullOrWhiteSpace(root))
+            throw new InvalidOperationException("Local application data directory is unavailable.");
+        return Path.Combine(root, "RekordboxMyTagSync");
+    }
+
+    private static string ComputeMappingHashSha256(IReadOnlyList<MappingRule> mappings)
+    {
+        ArgumentNullException.ThrowIfNull(mappings);
+        var payload = JsonSerializer.Serialize(mappings);
+        return Convert.ToHexString(
+                SHA256.HashData(Encoding.UTF8.GetBytes(payload)))
+            .ToLowerInvariant();
     }
 
     private void InvalidatePreview(string reason)
