@@ -46,7 +46,7 @@ internal static class RekordboxMutationExecutor
             mappings,
             pathAliases);
 
-        if (initialPreflight.Mutations.Count == 0)
+        if (!initialPreflight.HasWork)
         {
             return new RekordboxMutationExecutionResult(
                 initialPreflight.CurrentPreview,
