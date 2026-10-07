@@ -9,6 +9,7 @@ public static class RekordboxMutationExecutorSelfTest
     {
         QualifySuccessfulMutation(temp);
         QualifyDefinitionCreationEndToEnd(temp);
+        QualifyDefinitionCreationRestoreAfterPostCommitFailure(temp);
         QualifyRestoreAfterPostCommitFailure(temp);
     }
 
@@ -233,6 +234,76 @@ public static class RekordboxMutationExecutorSelfTest
             repeat.FinalLocalUpdateCount is not null ||
             repeat.BackupPackagePath is not null)
             throw new InvalidOperationException("idempotent definition/assignment reapply was not a no-op");
+    }
+
+    private static void QualifyDefinitionCreationRestoreAfterPostCommitFailure(string temp)
+    {
+        var root = Path.Combine(temp, "ExecutorDefinitionRestore");
+        var databasePath = Path.Combine(root, "master.db");
+        var trackPath = Path.Combine(temp, "DefinitionRestoreMusic", "One.mp3");
+        CreateDefinitionCapableEncryptedFixture(databasePath, trackPath);
+
+        var policy = Policy();
+        var before = RekordboxSqlCipherDatabase.ReadSnapshot(
+            databasePath,
+            EncryptedMutationFixture.Key,
+            policy);
+        var bridgeTracks = new[] { Bridge(trackPath, "Peak") };
+        var mappings = new[] { new MappingRule("GENRE", "Energy") };
+        var approved = PreviewEngine.Create(new PreviewRequest(
+            before.Identity.PreviewIdentity,
+            bridgeTracks,
+            mappings,
+            before.Tracks,
+            Array.Empty<ManagedAssignment>(),
+            MyTagDefinitions: before.MyTagDefinitions));
+
+        var blockedParent = Path.Combine(root, "provenance-parent-is-a-file");
+        File.WriteAllText(blockedParent, "fixture", new UTF8Encoding(false));
+        var impossibleProvenancePath = Path.Combine(blockedParent, "provenance.json");
+
+        var failed = false;
+        try
+        {
+            _ = RekordboxMutationExecutor.Apply(
+                databasePath,
+                EncryptedMutationFixture.Key,
+                policy,
+                approved,
+                bridgeTracks,
+                mappings,
+                impossibleProvenancePath,
+                Path.Combine(root, "backup"),
+                Sha256("executor-definition-restore-mapping"),
+                "0.1.0-dev");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or AggregateException)
+        {
+            failed = true;
+        }
+
+        if (!failed)
+            throw new InvalidOperationException("definition post-commit provenance failure did not fail the executor");
+
+        var restored = RekordboxSqlCipherDatabase.ReadSnapshot(
+            databasePath,
+            EncryptedMutationFixture.Key,
+            policy);
+        if (restored.MyTagDefinitions.Any(x =>
+                string.Equals(x.Name, "Energy", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(x.Name, "Peak", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("automatic restore left created MyTag definitions behind");
+        var restoredTrack = restored.Tracks.Single(x => x.ContentId == "C1");
+        AssertHas(restoredTrack, "Genre", "House");
+        AssertMissing(restoredTrack, "Energy", "Peak");
+
+        using var connection = EncryptedMutationFixture.Open(databasePath);
+        if (ScalarLong(connection,
+                "SELECT int_1 FROM agentRegistry WHERE registry_id='localUpdateCount';") != 100)
+            throw new InvalidOperationException("definition restore did not recover pre-write localUpdateCount");
+        if (ScalarLong(connection, "SELECT COUNT(*) FROM djmdMyTag;") != 5 ||
+            ScalarLong(connection, "SELECT COUNT(*) FROM djmdSongMyTag;") != 1)
+            throw new InvalidOperationException("definition restore did not recover exact pre-write row counts");
     }
 
     private static void QualifyRestoreAfterPostCommitFailure(string temp)
