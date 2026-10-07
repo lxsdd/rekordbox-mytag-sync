@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     private bool _previewFresh;
     private bool _backupAvailable;
     private bool _backupMatchesTarget;
+    private RekordboxDatabaseSnapshot? _databaseSnapshot;
 
     public MainWindow()
     {
@@ -33,6 +34,7 @@ public partial class MainWindow : Window
         DiscoverSourceButton.Click += (_, _) => DiscoverSources();
         InspectSourceButton.Click += (_, _) => InspectSelectedSource();
         DiscoverTargetButton.Click += (_, _) => DiscoverTargets();
+        ValidateDatabaseAccessButton.Click += (_, _) => ValidateDatabaseAccess();
         AddMappingButton.Click += (_, _) => AddMapping();
         RemoveMappingButton.Click += (_, _) => RemoveSelectedMapping();
         AddAliasButton.Click += (_, _) => AddAlias();
@@ -54,8 +56,19 @@ public partial class MainWindow : Window
             {
                 TargetDatabaseTextBox.Text = target.DatabasePath;
                 _targetSafe = target.Safe;
+                InvalidateDatabaseAccess("Target library changed.");
                 UpdateWorkflowGate();
             }
+        };
+        DatabaseKeyPasswordBox.PasswordChanged += (_, _) =>
+        {
+            InvalidateDatabaseAccess("Database key changed.");
+            UpdateWorkflowGate();
+        };
+        SupportedDbVersionsTextBox.TextChanged += (_, _) =>
+        {
+            InvalidateDatabaseAccess("Supported DBVersion list changed.");
+            UpdateWorkflowGate();
         };
 
         UpdateWorkflowGate();
@@ -243,6 +256,70 @@ public partial class MainWindow : Window
         }
     }
 
+    private void ValidateDatabaseAccess()
+    {
+        try
+        {
+            if (!_targetSafe)
+                throw new InvalidDataException("Selected target library is not qualified as safe.");
+
+            var databasePath = OptionalPath(TargetDatabaseTextBox.Text)
+                ?? throw new InvalidDataException("No target master.db is selected.");
+            var key = DatabaseKeyPasswordBox.Password;
+            if (string.IsNullOrWhiteSpace(key))
+                throw new InvalidDataException("SQLCipher key is empty.");
+
+            var versions = ParseSupportedDbVersions(SupportedDbVersionsTextBox.Text);
+            if (versions.Count == 0)
+                throw new InvalidDataException("At least one exact supported DBVersion is required.");
+
+            var snapshot = RekordboxSqlCipherDatabase.ReadSnapshot(
+                databasePath,
+                key,
+                new RekordboxDatabaseReadPolicy(
+                    versions.ToHashSet(StringComparer.Ordinal),
+                    RequireRekordboxClosed: true));
+
+            _databaseSnapshot = snapshot;
+            _databaseAccessQualified = true;
+            _previewExists = false;
+            _previewValid = false;
+            _previewFresh = false;
+
+            DatabaseAccessStatusTextBlock.Text =
+                $"Qualified: DBVersion {snapshot.Identity.DbVersion}, DBID {snapshot.Identity.DbId}, " +
+                $"{snapshot.Tracks.Count} tracks, {snapshot.MyTagDefinitions.Count} MyTag definitions.";
+            AppendDiagnostic(
+                $"Database access qualified for exact DBVersion '{snapshot.Identity.DbVersion}' " +
+                $"using SQLite3MC {snapshot.Identity.SqliteCipherVersion}. Key material was not persisted or logged.");
+        }
+        catch (Exception ex)
+        {
+            InvalidateDatabaseAccess("Database access validation failed.");
+            DatabaseAccessStatusTextBlock.Text = $"Blocked: {ex.Message}";
+            AppendDiagnostic($"Database access validation blocked: {ex.Message}");
+        }
+
+        UpdateWorkflowGate();
+    }
+
+    private void InvalidateDatabaseAccess(string reason)
+    {
+        if (_databaseAccessQualified || _databaseSnapshot is not null)
+            AppendDiagnostic(reason);
+
+        _databaseAccessQualified = false;
+        _databaseSnapshot = null;
+        _previewExists = false;
+        _previewValid = false;
+        _previewFresh = false;
+        _backupAvailable = false;
+        _backupMatchesTarget = false;
+        BackupPackageTextBox.Text = string.Empty;
+        DatabaseAccessStatusTextBlock.Text =
+            "Database access is not qualified for the current target/key/version state.";
+    }
+
     private void AddMapping()
     {
         _mappings.Add(new MappingRow
@@ -346,6 +423,13 @@ public partial class MainWindow : Window
             (DiagnosticsTextBox.Text.Length == 0 ? string.Empty : Environment.NewLine) + line);
         DiagnosticsTextBox.ScrollToEnd();
     }
+
+    private static IReadOnlyList<string> ParseSupportedDbVersions(string? text) =>
+        (text ?? string.Empty)
+            .Split(new[] { ',', ';', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(x => x.Length != 0)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
 
     private static bool PathsEqual(string left, string right) =>
         string.Equals(
