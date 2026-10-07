@@ -69,8 +69,8 @@ public static class RekordboxMyTagDefinitionWriterSelfTest
     private static void RejectMissingDefault()
     {
         var schema = QualifiedSchema.Replace(
-            "usn INTEGER DEFAULT 0,",
-            "usn INTEGER,",
+            "usn INTEGER NOT NULL DEFAULT 0,",
+            "usn INTEGER NOT NULL,",
             StringComparison.Ordinal);
         using var connection = NewConnection(schema);
         SeedQualified(connection);
