@@ -108,8 +108,7 @@ public static class RekordboxMyTagDefinitionWriterSelfTest
         using var connection = NewConnection(QualifiedSchema);
         SeedQualified(connection);
         Execute(connection,
-            "INSERT INTO djmdMyTag(ID,UUID,Seq,Name,Attribute,ParentID,rb_local_usn) VALUES('5',$uuid,2,'Calm',20,'2',5);",
-            ("$uuid", Guid.NewGuid().ToString()));
+            "UPDATE djmdMyTag SET Seq=2 WHERE ID='4';");
         AssertBlocked(
             () => RekordboxMyTagDefinitionWriter.Qualify(connection),
             "starting sequences");
