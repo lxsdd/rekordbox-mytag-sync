@@ -44,7 +44,8 @@ public static class RekordboxMutationExecutorSelfTest
             bridgeTracks,
             mappings,
             before.Tracks,
-            ProvenanceStore.ToManagedAssignments(provenance, before)));
+            ProvenanceStore.ToManagedAssignments(provenance, before),
+            MyTagDefinitions: before.MyTagDefinitions));
 
         AssertPreview(
             approved,
@@ -131,7 +132,8 @@ public static class RekordboxMutationExecutorSelfTest
             bridgeTracks,
             mappings,
             before.Tracks,
-            Array.Empty<ManagedAssignment>()));
+            Array.Empty<ManagedAssignment>(),
+            MyTagDefinitions: before.MyTagDefinitions));
         AssertPreview(
             approved,
             additions: 1,
