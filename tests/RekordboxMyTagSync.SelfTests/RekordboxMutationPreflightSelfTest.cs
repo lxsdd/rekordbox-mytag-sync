@@ -53,7 +53,8 @@ public static class RekordboxMutationPreflightSelfTest
             new[] { bridge },
             mappings,
             snapshot.Tracks,
-            managed));
+            managed,
+            MyTagDefinitions: snapshot.MyTagDefinitions));
         if (!approved.IsValid || approved.Counts.Additions != 1 || approved.Counts.Removals != 1)
             throw new InvalidOperationException("preflight baseline preview is not the expected Add/Remove plan");
 
