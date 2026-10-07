@@ -58,20 +58,73 @@ internal sealed record RekordboxAssignmentMutation(
 
 internal static class RekordboxMutationPlan
 {
+    internal static IReadOnlyList<RekordboxMyTagDefinition> BuildPostDefinitionState(
+        RekordboxDatabaseSnapshot snapshot,
+        IReadOnlyList<RekordboxCreatedMyTagDefinition> created)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(created);
+
+        var result = snapshot.MyTagDefinitions.ToList();
+        var ids = result.Select(x => x.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in created)
+        {
+            if (string.IsNullOrWhiteSpace(item.Id) ||
+                string.IsNullOrWhiteSpace(item.Name))
+                throw new InvalidDataException("Created MyTag definition contains an empty ID or name.");
+
+            var id = item.Id.Trim();
+            var name = item.Name.Trim();
+            var parentId = string.IsNullOrWhiteSpace(item.ParentId)
+                ? null
+                : item.ParentId.Trim();
+
+            if (!ids.Add(id))
+                throw new InvalidDataException($"Created MyTag definition ID '{id}' already exists.");
+
+            result.Add(new RekordboxMyTagDefinition(
+                id,
+                name,
+                parentId,
+                item.Sequence,
+                item.Attribute));
+        }
+
+        var allIds = result.Select(x => x.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in result.Where(x => x.ParentId is not null))
+        {
+            if (!allIds.Contains(item.ParentId!))
+                throw new InvalidDataException(
+                    $"MyTag definition '{item.Id}' references missing parent '{item.ParentId}'.");
+        }
+
+        return result;
+    }
+
     internal static IReadOnlyList<RekordboxAssignmentMutation> Resolve(
         PreviewResult preview,
-        RekordboxDatabaseSnapshot snapshot)
+        RekordboxDatabaseSnapshot snapshot) =>
+        Resolve(preview, snapshot, snapshot.MyTagDefinitions);
+
+    internal static IReadOnlyList<RekordboxAssignmentMutation> Resolve(
+        PreviewResult preview,
+        RekordboxDatabaseSnapshot snapshot,
+        IReadOnlyList<RekordboxMyTagDefinition> definitions)
     {
         ArgumentNullException.ThrowIfNull(preview);
         ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(definitions);
         if (!preview.IsValid || preview.Counts.Conflicts != 0)
             throw new InvalidOperationException("Only a valid conflict-free preview can become a mutation plan.");
 
-        var parents = snapshot.MyTagDefinitions
+        var parents = definitions
             .Where(x => x.ParentId is null)
             .GroupBy(x => x.Name.Trim(), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.ToArray(), StringComparer.OrdinalIgnoreCase);
-        var children = snapshot.MyTagDefinitions
+        var children = definitions
             .Where(x => x.ParentId is not null)
             .GroupBy(x => x.ParentId!, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.ToArray(), StringComparer.OrdinalIgnoreCase);
@@ -117,7 +170,106 @@ internal static class RekordboxMutationPlan
 
 internal sealed record RekordboxMutationPreflightResult(
     PreviewResult CurrentPreview,
-    IReadOnlyList<RekordboxAssignmentMutation> Mutations);
+    IReadOnlyList<RekordboxAssignmentMutation> Mutations,
+    IReadOnlyList<MyTagAssignment> MissingDefinitions)
+{
+    internal bool RequiresDefinitionCreation => MissingDefinitions.Count != 0;
+    internal bool HasAssignmentMutations => Mutations.Count != 0;
+    internal bool HasWork => RequiresDefinitionCreation || HasAssignmentMutations;
+}
+
+internal sealed record RekordboxCombinedMutationResult(
+    IReadOnlyList<RekordboxCreatedMyTagDefinition> CreatedDefinitions,
+    IReadOnlyList<RekordboxAssignmentMutation> AssignmentMutations,
+    int TotalChangeCount,
+    long FinalLocalUpdateCount);
+
+internal static class RekordboxCombinedMutationWriter
+{
+    internal static RekordboxCombinedMutationResult Apply(
+        SqliteConnection connection,
+        RekordboxDatabaseSnapshot snapshot,
+        RekordboxMutationPreflightResult preflight,
+        RekordboxMyTagDefinitionWriteProfile? definitionProfile,
+        RekordboxSongMyTagWriteProfile assignmentProfile,
+        long currentCounter,
+        long firstLocalUsn)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(preflight);
+        ArgumentNullException.ThrowIfNull(assignmentProfile);
+        if (!preflight.HasWork)
+            throw new InvalidOperationException("Combined mutation writer requires definition or assignment work.");
+        if (preflight.RequiresDefinitionCreation && definitionProfile is null)
+            throw new InvalidDataException("MyTag definition creation was requested without qualified write semantics.");
+
+        return RekordboxMutationTransaction.Execute(
+            connection,
+            transaction =>
+            {
+                var definitionResult = preflight.RequiresDefinitionCreation
+                    ? RekordboxMyTagDefinitionWriter.EnsureDefinitions(
+                        connection,
+                        transaction,
+                        preflight.MissingDefinitions,
+                        definitionProfile!,
+                        firstLocalUsn)
+                    : new RekordboxDefinitionWriteResult(
+                        Array.Empty<RekordboxCreatedMyTagDefinition>(),
+                        firstLocalUsn);
+
+                var postDefinitions = RekordboxMutationPlan.BuildPostDefinitionState(
+                    snapshot,
+                    definitionResult.Created);
+                var mutations = RekordboxMutationPlan.Resolve(
+                    preflight.CurrentPreview,
+                    snapshot,
+                    postDefinitions);
+
+                var changedAssignments = RekordboxSongMyTagWriter.Apply(
+                    connection,
+                    transaction,
+                    mutations,
+                    assignmentProfile,
+                    definitionResult.NextLocalUsn);
+                if (changedAssignments != mutations.Count)
+                    throw new InvalidDataException(
+                        "SongMyTag writer changed-count does not match the post-definition mutation plan.");
+
+                int totalChangeCount;
+                try
+                {
+                    totalChangeCount = checked(definitionResult.Created.Count + changedAssignments);
+                }
+                catch (OverflowException ex)
+                {
+                    throw new InvalidDataException("Combined MyTag mutation change-count overflow.", ex);
+                }
+                if (totalChangeCount < 1)
+                    throw new InvalidDataException("Combined MyTag mutation unexpectedly produced no database changes.");
+
+                var finalCounter = RekordboxUpdateCounter.Advance(
+                    connection,
+                    currentCounter,
+                    totalChangeCount,
+                    transaction);
+
+                return new RekordboxCombinedMutationResult(
+                    definitionResult.Created,
+                    mutations,
+                    totalChangeCount,
+                    finalCounter);
+            },
+            (_, result) =>
+            {
+                if (result.TotalChangeCount !=
+                    result.CreatedDefinitions.Count + result.AssignmentMutations.Count)
+                    throw new InvalidDataException(
+                        "Pre-commit combined mutation count does not match definition and assignment changes.");
+            });
+    }
+}
 
 internal static class RekordboxMutationPreflight
 {
@@ -147,7 +299,8 @@ internal static class RekordboxMutationPreflight
             mappings,
             freshSnapshot.Tracks,
             managedAssignments,
-            pathAliases);
+            pathAliases,
+            freshSnapshot.MyTagDefinitions);
         var currentPreview = PreviewEngine.Create(request);
 
         if (!currentPreview.IsValid || currentPreview.Counts.Conflicts != 0)
@@ -159,7 +312,13 @@ internal static class RekordboxMutationPreflight
             throw new InvalidOperationException(
                 "Approved preview is stale for the current database, source, mapping, path-alias or provenance state.");
 
-        var mutations = RekordboxMutationPlan.Resolve(currentPreview, freshSnapshot);
-        return new RekordboxMutationPreflightResult(currentPreview, mutations);
+        var missingDefinitions = (currentPreview.MissingDefinitions ?? Array.Empty<MyTagAssignment>()).ToArray();
+        var mutations = missingDefinitions.Length == 0
+            ? RekordboxMutationPlan.Resolve(currentPreview, freshSnapshot)
+            : Array.Empty<RekordboxAssignmentMutation>();
+        return new RekordboxMutationPreflightResult(
+            currentPreview,
+            mutations,
+            missingDefinitions);
     }
 }

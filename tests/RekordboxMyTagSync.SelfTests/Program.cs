@@ -124,6 +124,7 @@ try
     RekordboxSongMyTagWriteSemanticsSelfTest.Run();
     RekordboxSongMyTagWriterSelfTest.Run();
     RekordboxUpdateCounterSelfTest.Run();
+    RekordboxMyTagDefinitionWriterSelfTest.Run();
     RekordboxMutationExecutorSelfTest.Run(temp);
     RekordboxDatabaseSelfTest.Run(temp);
     ProvenanceSelfTest.Run(temp);
@@ -143,4 +144,4 @@ finally
     try { Directory.Delete(temp, true); } catch { }
 }
 
-Console.WriteLine("Mapping + bridge + rekordbox discovery + preview + mutation preflight + transaction rollback + runtime SongMyTag semantics/writer + postimage/provenance/integrity + update counter + encrypted transactional executor/restore + encrypted database + provenance + rolling backup/restore self-tests PASS");
+Console.WriteLine("Mapping + bridge + rekordbox discovery + preview + mutation preflight + transaction rollback + runtime SongMyTag semantics/writer + postimage/provenance/integrity + update counter + fail-closed MyTag definition creation + encrypted transactional executor/restore + encrypted database + provenance + rolling backup/restore self-tests PASS");

@@ -53,7 +53,8 @@ public static class RekordboxMutationPreflightSelfTest
             new[] { bridge },
             mappings,
             snapshot.Tracks,
-            managed));
+            managed,
+            MyTagDefinitions: snapshot.MyTagDefinitions));
         if (!approved.IsValid || approved.Counts.Additions != 1 || approved.Counts.Removals != 1)
             throw new InvalidOperationException("preflight baseline preview is not the expected Add/Remove plan");
 
@@ -77,6 +78,52 @@ public static class RekordboxMutationPreflightSelfTest
             throw new InvalidOperationException("preflight did not resolve the expected tool-owned Remove mutation");
         if (preflight.Mutations.Any(x => string.Equals(x.MyTagId, "V3", StringComparison.OrdinalIgnoreCase)))
             throw new InvalidOperationException("manual/unmanaged assignment entered preflight mutation plan");
+
+        var postDefinitions = RekordboxMutationPlan.BuildPostDefinitionState(
+            snapshot,
+            new[]
+            {
+                new RekordboxCreatedMyTagDefinition("G2", "Energy", null, 1, 0, 101),
+                new RekordboxCreatedMyTagDefinition("V4", "Peak", "G2", 0, 0, 102)
+            });
+        if (postDefinitions.Count != snapshot.MyTagDefinitions.Count + 2 ||
+            !postDefinitions.Any(x =>
+                x.Id == "G2" &&
+                x.Name == "Energy" &&
+                x.ParentId is null) ||
+            !postDefinitions.Any(x =>
+                x.Id == "V4" &&
+                x.Name == "Peak" &&
+                x.ParentId == "G2"))
+            throw new InvalidOperationException("post-definition state did not preserve and append expected definitions");
+
+        var duplicateIdBlocked = false;
+        try
+        {
+            _ = RekordboxMutationPlan.BuildPostDefinitionState(
+                snapshot,
+                new[] { new RekordboxCreatedMyTagDefinition("G1", "Duplicate", null, 3, 0, 103) });
+        }
+        catch (InvalidDataException)
+        {
+            duplicateIdBlocked = true;
+        }
+        if (!duplicateIdBlocked)
+            throw new InvalidOperationException("post-definition state accepted a duplicate definition ID");
+
+        var missingParentBlocked = false;
+        try
+        {
+            _ = RekordboxMutationPlan.BuildPostDefinitionState(
+                snapshot,
+                new[] { new RekordboxCreatedMyTagDefinition("V5", "Orphan", "MISSING", 0, 0, 104) });
+        }
+        catch (InvalidDataException)
+        {
+            missingParentBlocked = true;
+        }
+        if (!missingParentBlocked)
+            throw new InvalidOperationException("post-definition state accepted a child with a missing parent");
 
         var driftedSnapshot = snapshot with
         {

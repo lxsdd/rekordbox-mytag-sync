@@ -9,7 +9,8 @@ internal static class RekordboxMutationVerification
         RekordboxDatabaseSnapshot before,
         RekordboxDatabaseSnapshot after,
         ProvenanceDocument currentProvenance,
-        IReadOnlyList<RekordboxAssignmentMutation> mutations)
+        IReadOnlyList<RekordboxAssignmentMutation> mutations,
+        IReadOnlyList<RekordboxCreatedMyTagDefinition>? createdDefinitions = null)
     {
         ArgumentNullException.ThrowIfNull(before);
         ArgumentNullException.ThrowIfNull(after);
@@ -17,7 +18,10 @@ internal static class RekordboxMutationVerification
         ArgumentNullException.ThrowIfNull(mutations);
 
         VerifyStableIdentity(before.Identity, after.Identity);
-        VerifyDefinitionsUnchanged(before.MyTagDefinitions, after.MyTagDefinitions);
+        VerifyDefinitions(
+            before.MyTagDefinitions,
+            after.MyTagDefinitions,
+            createdDefinitions ?? Array.Empty<RekordboxCreatedMyTagDefinition>());
 
         var beforeTracks = IndexTracks(before.Tracks, "preimage");
         var afterTracks = IndexTracks(after.Tracks, "postimage");
@@ -134,21 +138,58 @@ internal static class RekordboxMutationVerification
             throw new InvalidDataException("rekordbox database identity changed during mutation.");
     }
 
-    private static void VerifyDefinitionsUnchanged(
+    private static void VerifyDefinitions(
         IReadOnlyList<RekordboxMyTagDefinition> before,
-        IReadOnlyList<RekordboxMyTagDefinition> after)
+        IReadOnlyList<RekordboxMyTagDefinition> after,
+        IReadOnlyList<RekordboxCreatedMyTagDefinition> created)
     {
-        static string Key(RekordboxMyTagDefinition x) => string.Join("\0",
-            x.Id,
-            x.Name,
-            x.ParentId ?? string.Empty,
-            x.Sequence?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty,
-            x.Attribute?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty);
+        static string Key(
+            string id,
+            string name,
+            string? parentId,
+            int? sequence,
+            int? attribute) => string.Join("\0",
+                id,
+                name,
+                parentId ?? string.Empty,
+                sequence?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty,
+                attribute?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty);
 
-        var left = before.Select(Key).OrderBy(x => x, StringComparer.Ordinal).ToArray();
-        var right = after.Select(Key).OrderBy(x => x, StringComparer.Ordinal).ToArray();
-        if (!left.SequenceEqual(right, StringComparer.Ordinal))
-            throw new InvalidDataException("MyTag definitions changed during assignment-only mutation.");
+        var expected = before
+            .Select(x => Key(x.Id, x.Name, x.ParentId, x.Sequence, x.Attribute))
+            .ToList();
+        var ids = before
+            .Select(x => x.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in created)
+        {
+            if (string.IsNullOrWhiteSpace(item.Id) ||
+                string.IsNullOrWhiteSpace(item.Name) ||
+                !ids.Add(item.Id.Trim()))
+                throw new InvalidDataException(
+                    "Expected created MyTag definitions contain an empty or duplicate identity.");
+            expected.Add(Key(
+                item.Id.Trim(),
+                item.Name.Trim(),
+                item.ParentId?.Trim(),
+                item.Sequence,
+                item.Attribute));
+        }
+
+        var actual = after
+            .Select(x => Key(x.Id, x.Name, x.ParentId, x.Sequence, x.Attribute))
+            .OrderBy(x => x, StringComparer.Ordinal)
+            .ToArray();
+        var orderedExpected = expected
+            .OrderBy(x => x, StringComparer.Ordinal)
+            .ToArray();
+
+        if (!orderedExpected.SequenceEqual(actual, StringComparer.Ordinal))
+            throw new InvalidDataException(
+                created.Count == 0
+                    ? "MyTag definitions changed during assignment-only mutation."
+                    : "MyTag definition postimage does not match the expected created definitions.");
     }
 
     private static Dictionary<string, RekordboxTrackSnapshot> IndexTracks(
