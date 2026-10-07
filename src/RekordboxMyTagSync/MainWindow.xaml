@@ -106,6 +106,7 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     <TextBlock TextWrapping="Wrap"
                                Text="Discover rekordbox 6/7 libraries and select a safe master.db. Ambiguous discovery remains fail-closed."/>
@@ -136,6 +137,44 @@
                             <DataGridTextColumn Header="Error" Binding="{Binding Error}" Width="260"/>
                         </DataGrid.Columns>
                     </DataGrid>
+                    <GroupBox Grid.Row="3" Margin="0,12,0,0" Header="Database access qualification">
+                        <Grid Margin="10">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock VerticalAlignment="Center" Text="SQLCipher key:"/>
+                            <PasswordBox x:Name="DatabaseKeyPasswordBox"
+                                         Grid.Column="1"
+                                         Margin="10,0,10,0"
+                                         MinHeight="28"/>
+                            <Button x:Name="ValidateDatabaseAccessButton"
+                                    Grid.Column="2"
+                                    Grid.RowSpan="2"
+                                    Padding="14,6"
+                                    Content="Validate access"/>
+                            <TextBlock Grid.Row="1"
+                                       VerticalAlignment="Center"
+                                       Text="Supported DBVersion(s):"/>
+                            <TextBox x:Name="SupportedDbVersionsTextBox"
+                                     Grid.Row="1"
+                                     Grid.Column="1"
+                                     Margin="10,6,10,0"
+                                     ToolTip="Comma-separated exact DBVersion values. Stored only as compatibility settings; the SQLCipher key is never persisted."/>
+                            <TextBlock x:Name="DatabaseAccessStatusTextBlock"
+                                       Grid.Row="2"
+                                       Grid.ColumnSpan="3"
+                                       Margin="0,8,0,0"
+                                       TextWrapping="Wrap"
+                                       Text="Database access is not yet qualified. The key is session-only and is never saved."/>
+                        </Grid>
+                    </GroupBox>
                 </Grid>
             </TabItem>
 
