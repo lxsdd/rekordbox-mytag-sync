@@ -58,6 +58,52 @@ internal sealed record RekordboxAssignmentMutation(
 
 internal static class RekordboxMutationPlan
 {
+    internal static IReadOnlyList<RekordboxMyTagDefinition> BuildPostDefinitionState(
+        RekordboxDatabaseSnapshot snapshot,
+        IReadOnlyList<RekordboxCreatedMyTagDefinition> created)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(created);
+
+        var result = snapshot.MyTagDefinitions.ToList();
+        var ids = result.Select(x => x.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in created)
+        {
+            if (string.IsNullOrWhiteSpace(item.Id) ||
+                string.IsNullOrWhiteSpace(item.Name))
+                throw new InvalidDataException("Created MyTag definition contains an empty ID or name.");
+
+            var id = item.Id.Trim();
+            var name = item.Name.Trim();
+            var parentId = string.IsNullOrWhiteSpace(item.ParentId)
+                ? null
+                : item.ParentId.Trim();
+
+            if (!ids.Add(id))
+                throw new InvalidDataException($"Created MyTag definition ID '{id}' already exists.");
+
+            result.Add(new RekordboxMyTagDefinition(
+                id,
+                name,
+                parentId,
+                item.Sequence,
+                item.Attribute));
+        }
+
+        var allIds = result.Select(x => x.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in result.Where(x => x.ParentId is not null))
+        {
+            if (!allIds.Contains(item.ParentId!))
+                throw new InvalidDataException(
+                    $"MyTag definition '{item.Id}' references missing parent '{item.ParentId}'.");
+        }
+
+        return result;
+    }
+
     internal static IReadOnlyList<RekordboxAssignmentMutation> Resolve(
         PreviewResult preview,
         RekordboxDatabaseSnapshot snapshot) =>
