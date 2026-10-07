@@ -34,10 +34,13 @@ public static class BridgeSnapshot
         using var gzip = new GZipStream(file, CompressionMode.Decompress);
         using var reader = new StreamReader(gzip);
         var header = (reader.ReadLine() ?? throw new InvalidDataException("Missing bridge header")).Split('\t');
-        if (header.Length is not (24 or 25) || !header.Take(24).SequenceEqual(V1Header, StringComparer.Ordinal))
+        if (header.Length is not (24 or 25 or 26) ||
+            !header.Take(24).SequenceEqual(V1Header, StringComparer.Ordinal))
             throw new InvalidDataException("Unsupported bridge schema.");
-        if (header.Length == 25 && header[24] != "extra_metadata_json")
+        if (header.Length >= 25 && header[24] != "extra_metadata_json")
             throw new InvalidDataException("Unsupported bridge schema extension.");
+        if (header.Length == 26 && header[25] != "metadata_vectors_json")
+            throw new InvalidDataException("Unsupported bridge schema-v3 extension.");
 
         var tracks = new List<BridgeTrack>();
         var identities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -56,7 +59,7 @@ public static class BridgeSnapshot
 
             IReadOnlyDictionary<string, IReadOnlyList<string>> extra =
                 new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
-            if (header.Length == 25)
+            if (header.Length >= 25)
             {
                 if (string.IsNullOrWhiteSpace(cols[24]))
                     throw new InvalidDataException("Schema-v2 bridge row is missing canonical extra metadata JSON.");
