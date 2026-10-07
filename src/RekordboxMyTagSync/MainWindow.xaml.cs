@@ -46,6 +46,7 @@ public partial class MainWindow : Window
         RefreshDiagnosticsButton.Click += (_, _) => RefreshDiagnostics();
         BuildPreviewButton.Click += (_, _) => BuildPreview();
         ApplyButton.Click += (_, _) => ApplyApprovedPreview();
+        RestoreButton.Click += (_, _) => RestoreRollingBackup();
 
         SourceCandidatesGrid.SelectionChanged += (_, _) =>
         {
@@ -299,6 +300,7 @@ public partial class MainWindow : Window
 
             _databaseSnapshot = snapshot;
             _databaseAccessQualified = true;
+            QualifyRestorePoint(snapshot.Identity);
             _previewExists = false;
             _previewValid = false;
             _previewFresh = false;
@@ -482,6 +484,10 @@ public partial class MainWindow : Window
                 Path.Combine(stateRoot, "provenance"),
                 _databaseSnapshot.Identity);
             var backupRoot = Path.Combine(stateRoot, "backups");
+            var preApplyIdentity = _databaseSnapshot.Identity;
+            var preApplyProvenance = ProvenanceStore.Load(
+                provenancePath,
+                preApplyIdentity);
             var mappingHash = ComputeMappingHashSha256(settings.EffectiveMappings);
             var toolVersion =
                 typeof(MainWindow).Assembly.GetName().Version?.ToString()
@@ -511,9 +517,24 @@ public partial class MainWindow : Window
                 var inspection = RekordboxRollingBackup.Inspect(
                     result.BackupPackagePath,
                     _databaseSnapshot.Identity);
-                _backupAvailable = true;
-                _backupMatchesTarget = true;
-                BackupPackageTextBox.Text = inspection.PackagePath;
+                try
+                {
+                    ProvenanceStore.SaveAtomic(
+                        RestoreProvenancePath(inspection),
+                        preApplyProvenance,
+                        preApplyIdentity);
+                    _backupAvailable = true;
+                    _backupMatchesTarget = true;
+                    BackupPackageTextBox.Text = inspection.PackagePath;
+                }
+                catch (Exception restoreStateError)
+                {
+                    _backupAvailable = false;
+                    _backupMatchesTarget = false;
+                    BackupPackageTextBox.Text = inspection.PackagePath;
+                    AppendDiagnostic(
+                        $"Apply succeeded, but coordinated Restore was disabled because the pre-Apply provenance snapshot could not be persisted: {restoreStateError.Message}");
+                }
             }
             else
             {
@@ -542,6 +563,135 @@ public partial class MainWindow : Window
         }
 
         UpdateWorkflowGate();
+    }
+
+    private void RestoreRollingBackup()
+    {
+        try
+        {
+            if (_databaseSnapshot is null || !_databaseAccessQualified)
+                throw new InvalidDataException("Target database access is not qualified.");
+            if (!_backupAvailable || !_backupMatchesTarget)
+                throw new InvalidDataException("No coordinated rolling restore point matches the selected target.");
+
+            var settings = BuildSettingsFromUi();
+            var databasePath = settings.RekordboxDatabasePath
+                ?? throw new InvalidDataException("No target master.db is selected.");
+            var key = DatabaseKeyPasswordBox.Password;
+            if (string.IsNullOrWhiteSpace(key))
+                throw new InvalidDataException("SQLCipher key is empty.");
+            if (settings.EffectiveSupportedDbVersions.Count == 0)
+                throw new InvalidDataException("At least one exact supported DBVersion is required.");
+
+            var packagePath = BackupPackageTextBox.Text.Trim();
+            if (packagePath.Length == 0)
+                throw new InvalidDataException("Rolling backup package path is empty.");
+
+            var currentIdentity = _databaseSnapshot.Identity;
+            var inspection = RekordboxRollingBackup.Inspect(
+                packagePath,
+                currentIdentity);
+            var restoreProvenancePath = RestoreProvenancePath(inspection);
+            if (!File.Exists(restoreProvenancePath))
+                throw new InvalidDataException(
+                    "Matching pre-Apply provenance snapshot is missing; Restore remains fail-closed.");
+
+            var preApplyProvenance = ProvenanceStore.Load(
+                restoreProvenancePath,
+                currentIdentity);
+
+            RekordboxRollingBackup.Restore(
+                inspection.PackagePath,
+                currentIdentity);
+
+            var policy = new RekordboxDatabaseReadPolicy(
+                settings.EffectiveSupportedDbVersions.ToHashSet(StringComparer.Ordinal),
+                RequireRekordboxClosed: true);
+            var restoredSnapshot = RekordboxSqlCipherDatabase.ReadSnapshot(
+                databasePath,
+                key,
+                policy);
+            var provenancePath = ProvenanceStore.GetStatePath(
+                Path.Combine(AppStateRoot(), "provenance"),
+                restoredSnapshot.Identity);
+            ProvenanceStore.SaveAtomic(
+                provenancePath,
+                preApplyProvenance,
+                restoredSnapshot.Identity);
+
+            var restoredProvenance = ProvenanceStore.Load(
+                provenancePath,
+                restoredSnapshot.Identity);
+            _ = ProvenanceStore.ToManagedAssignments(
+                restoredProvenance,
+                restoredSnapshot);
+
+            _databaseSnapshot = restoredSnapshot;
+            _databaseAccessQualified = true;
+            InvalidatePreview("Rolling backup restored; a new preview is required.");
+            QualifyRestorePoint(restoredSnapshot.Identity);
+
+            ApplyStatusTextBox.Text =
+                "Rolling backup and matching pre-Apply provenance were restored and revalidated.";
+            AppendDiagnostic(
+                $"Restore completed and revalidated for DBID '{restoredSnapshot.Identity.DbId}'.");
+        }
+        catch (Exception ex)
+        {
+            InvalidateDatabaseAccess("Restore failed; database access must be requalified.");
+            ApplyStatusTextBox.Text = $"Restore blocked/failed: {ex.Message}";
+            AppendDiagnostic($"Restore blocked/failed: {ex.Message}");
+        }
+
+        UpdateWorkflowGate();
+    }
+
+    private void QualifyRestorePoint(RekordboxDatabaseIdentity identity)
+    {
+        _backupAvailable = false;
+        _backupMatchesTarget = false;
+        BackupPackageTextBox.Text = string.Empty;
+
+        try
+        {
+            var packagePath = RekordboxRollingBackup.GetPackagePath(
+                Path.Combine(AppStateRoot(), "backups"),
+                identity);
+            if (!File.Exists(packagePath))
+                return;
+
+            var inspection = RekordboxRollingBackup.Inspect(
+                packagePath,
+                identity);
+            var provenancePath = RestoreProvenancePath(inspection);
+            if (!File.Exists(provenancePath))
+            {
+                BackupPackageTextBox.Text = inspection.PackagePath;
+                return;
+            }
+
+            _ = ProvenanceStore.Load(provenancePath, identity);
+            _backupAvailable = true;
+            _backupMatchesTarget = true;
+            BackupPackageTextBox.Text = inspection.PackagePath;
+        }
+        catch (Exception ex)
+        {
+            _backupAvailable = false;
+            _backupMatchesTarget = false;
+            BackupPackageTextBox.Text = string.Empty;
+            AppendDiagnostic($"Existing rolling restore point rejected: {ex.Message}");
+        }
+    }
+
+    private static string RestoreProvenancePath(
+        RekordboxBackupInspection inspection)
+    {
+        ArgumentNullException.ThrowIfNull(inspection);
+        var hash = inspection.Metadata.DatabaseSha256;
+        if (string.IsNullOrWhiteSpace(hash))
+            throw new InvalidDataException("Backup database SHA-256 is missing.");
+        return inspection.PackagePath + "." + hash.ToLowerInvariant() + ".provenance.json";
     }
 
     private static string AppStateRoot()
