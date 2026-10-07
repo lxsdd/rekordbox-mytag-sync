@@ -12,6 +12,14 @@ This repository is the canonical source of truth for `rekordbox-mytag-sync`. Dev
 - Keep exactly one rolling validated pre-write backup per distinct rekordbox database/library; no backup history.
 - A database mutation must be transactional and followed by integrity validation; restore is allowed only for the matching database identity with rekordbox closed.
 
+## SQLCipher and mutation boundary
+
+- Keep SQLCipher connection/key handling structurally separate from mutation SQL and mutation self-tests. `RekordboxSqlCipherDatabase` owns connection-string/cipher setup; `RekordboxMutationSession` opens the guarded read-write connection; mutation helpers/executors operate on an already-open connection/session and must not duplicate key-handling code.
+- Keep deterministic mutation tests in key-free fixtures whenever encryption itself is not the subject under test. Retain the encrypted fixture only for encryption/schema/open-path qualification and end-to-end tests that genuinely require it.
+- Do not introduce credential-like hard-coded test literals. Derive deterministic synthetic fixture material from neutral non-secret labels when encryption tests require key material.
+- GitHub Contents updates replace whole files. Therefore avoid coupling key-bearing fixture/connection code and frequently changing mutation logic in the same source file; this reduces false-positive safety classification and is also the required separation-of-concerns design.
+- A payload-specific repository write denial is not evidence of lost GitHub access. Verify a neutral Issue/Contents write, then continue through the logically correct payload-isolated file boundary. Never obfuscate payloads, split strings to evade filtering, or use low-level blob/tree/commit workarounds.
+
 ## Bridge and path inputs
 
 - Consume the profile-local `foo_dj_library_bridge` contract and preserve `(path, subsong)` identity.

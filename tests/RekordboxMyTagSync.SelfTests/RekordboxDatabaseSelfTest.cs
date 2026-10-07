@@ -5,7 +5,8 @@ using RekordboxMyTagSync.Core;
 
 public static class RekordboxDatabaseSelfTest
 {
-    private const string Key = "fixture-secret-key-2026";
+    private static readonly string Key = Convert.ToHexString(
+        SHA256.HashData(Encoding.UTF8.GetBytes("rekordbox-mytag-sync-fixture-material")));
     private const string DbVersion = "fixture-v1";
 
     public static void Run(string temp)
@@ -117,6 +118,9 @@ public static class RekordboxDatabaseSelfTest
         Insert(connection,
             "INSERT INTO djmdContent(ID, FolderPath, rb_local_deleted) VALUES ($id, $path, 0);",
             ("$id", "C2"), ("$path", trackTwo));
+        Insert(connection,
+            "INSERT INTO agentRegistry(registry_id, int_1) VALUES ($registry, $value);",
+            ("$registry", "localUpdateCount"), ("$value", 100L));
 
         if (!compatibleSchema) return;
         InsertMyTag(connection, "G1", "Genre", null, 1);
@@ -204,6 +208,8 @@ public static class RekordboxDatabaseSelfTest
             DBID TEXT PRIMARY KEY, DBVersion TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
         CREATE TABLE djmdContent(
             ID TEXT PRIMARY KEY, FolderPath TEXT, rb_local_deleted INTEGER DEFAULT 0);
+        CREATE TABLE agentRegistry(
+            registry_id TEXT PRIMARY KEY, int_1 INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE djmdMyTag(
             ID TEXT PRIMARY KEY, UUID TEXT, Seq INTEGER, Name TEXT, Attribute INTEGER, ParentID TEXT,
             rb_data_status INTEGER DEFAULT 0, rb_local_data_status INTEGER DEFAULT 0,
@@ -221,6 +227,8 @@ public static class RekordboxDatabaseSelfTest
             DBID TEXT PRIMARY KEY, DBVersion TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
         CREATE TABLE djmdContent(
             ID TEXT PRIMARY KEY, FolderPath TEXT, rb_local_deleted INTEGER DEFAULT 0);
+        CREATE TABLE agentRegistry(
+            registry_id TEXT PRIMARY KEY, int_1 INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE djmdMyTag(
             ID TEXT PRIMARY KEY, UUID TEXT, Seq INTEGER, Name TEXT, Attribute INTEGER, ParentID TEXT,
             rb_data_status INTEGER DEFAULT 0, rb_local_data_status INTEGER DEFAULT 0,
