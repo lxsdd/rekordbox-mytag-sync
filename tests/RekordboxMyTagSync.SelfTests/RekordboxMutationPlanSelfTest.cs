@@ -18,13 +18,17 @@ public static class RekordboxMutationPlanSelfTest
 
         var valid = new PreviewResult(
             true,
+            "fixture-fingerprint",
             new PreviewCounts(1, 0, 0, 0, 0),
             new[]
             {
-                new PreviewDetail(PreviewDetailKind.Add, @"C:\Music\one.mp3", "C1",
-                    new MyTagAssignment("Genre", "House"), null)
-            },
-            "fixture-fingerprint");
+                new PreviewDetail(
+                    PreviewDetailKind.Add,
+                    "C1",
+                    @"C:\Music\one.mp3",
+                    new MyTagAssignment("Genre", "House"),
+                    "fixture add")
+            });
         var plan = RekordboxMutationPlan.Resolve(valid, snapshot);
         if (plan.Count != 1 || plan[0].ContentId != "C1" || plan[0].MyTagId != "T1")
             throw new InvalidOperationException("valid mutation plan did not resolve the existing MyTag definition");
@@ -33,8 +37,12 @@ public static class RekordboxMutationPlanSelfTest
         {
             Details = new[]
             {
-                new PreviewDetail(PreviewDetailKind.Add, @"C:\Music\one.mp3", "C1",
-                    new MyTagAssignment("Genre", "Techno"), null)
+                new PreviewDetail(
+                    PreviewDetailKind.Add,
+                    "C1",
+                    @"C:\Music\one.mp3",
+                    new MyTagAssignment("Genre", "Techno"),
+                    "fixture missing definition")
             }
         };
         AssertBlocked(() => RekordboxMutationPlan.Resolve(missing, snapshot), "definition creation");
