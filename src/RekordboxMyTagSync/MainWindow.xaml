@@ -1,1 +1,245 @@
-<Window x:Class="RekordboxMyTagSync.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="Rekordbox MyTag Sync" Height="720" Width="1100"><Grid Margin="20"><StackPanel><TextBlock FontSize="26" FontWeight="SemiBold" Text="Rekordbox MyTag Sync"/><TextBlock Margin="0,8,0,16" Text="Safe foobar2000 metadata to rekordbox My Tag synchronization."/><GroupBox Header="Qualification state"><StackPanel Margin="12"><TextBlock TextWrapping="Wrap" Text="Database writes remain disabled until discovery, preview, backup and compatibility gates are qualified."/><Button Margin="0,16,0,0" Content="Apply" IsEnabled="False" Width="120" HorizontalAlignment="Left"/></StackPanel></GroupBox></StackPanel></Grid></Window>
+<Window x:Class="RekordboxMyTagSync.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Rekordbox MyTag Sync"
+        Height="820"
+        Width="1280"
+        MinHeight="700"
+        MinWidth="1050">
+    <DockPanel Margin="18">
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,14">
+            <TextBlock FontSize="26" FontWeight="SemiBold" Text="Rekordbox MyTag Sync"/>
+            <TextBlock Margin="0,6,0,0"
+                       Text="Safe foobar2000 metadata to rekordbox My Tag synchronization."/>
+        </StackPanel>
+
+        <Grid DockPanel.Dock="Bottom" Margin="0,12,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="SettingsPathTextBlock"
+                       VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis"
+                       Text="Settings: not loaded"/>
+            <Button x:Name="SaveSettingsButton"
+                    Grid.Column="1"
+                    Margin="12,0,0,0"
+                    Padding="18,7"
+                    Content="Save settings"/>
+        </Grid>
+
+        <TabControl>
+            <TabItem Header="Source">
+                <Grid Margin="14">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock TextWrapping="Wrap"
+                               Text="Select the foo_dj_library_bridge directory containing bridge-state.tsv and digital-items.tsv.gz."/>
+                    <Grid Grid.Row="1" Margin="0,12,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="BridgeDirectoryTextBox"
+                                 VerticalContentAlignment="Center"
+                                 MinHeight="30"/>
+                        <Button x:Name="DiscoverSourceButton"
+                                Grid.Column="1"
+                                Margin="8,0,0,0"
+                                Padding="14,6"
+                                Content="Discover"/>
+                        <Button x:Name="InspectSourceButton"
+                                Grid.Column="2"
+                                Margin="8,0,0,0"
+                                Padding="14,6"
+                                Content="Inspect"/>
+                    </Grid>
+                    <DataGrid x:Name="SourceCandidatesGrid"
+                              Grid.Row="2"
+                              IsReadOnly="True"
+                              AutoGenerateColumns="False"
+                              CanUserAddRows="False">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Directory" Binding="{Binding DirectoryPath}" Width="*"/>
+                            <DataGridCheckBoxColumn Header="Safe" Binding="{Binding Safe}" Width="70"/>
+                            <DataGridCheckBoxColumn Header="Selected" Binding="{Binding Selected}" Width="80"/>
+                            <DataGridTextColumn Header="Items" Binding="{Binding State.ItemCount}" Width="80"/>
+                            <DataGridTextColumn Header="Schema" Binding="{Binding State.SchemaVersion}" Width="80"/>
+                            <DataGridTextColumn Header="Source" Binding="{Binding State.SourceName}" Width="140"/>
+                            <DataGridTextColumn Header="Error" Binding="{Binding Error}" Width="240"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Target Library">
+                <Grid Margin="14">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock TextWrapping="Wrap"
+                               Text="Discover rekordbox 6/7 libraries and select a safe master.db. Ambiguous discovery remains fail-closed."/>
+                    <Grid Grid.Row="1" Margin="0,12,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="TargetDatabaseTextBox"
+                                 VerticalContentAlignment="Center"
+                                 MinHeight="30"/>
+                        <Button x:Name="DiscoverTargetButton"
+                                Grid.Column="1"
+                                Margin="8,0,0,0"
+                                Padding="14,6"
+                                Content="Discover"/>
+                    </Grid>
+                    <DataGrid x:Name="TargetCandidatesGrid"
+                              Grid.Row="2"
+                              IsReadOnly="True"
+                              AutoGenerateColumns="False"
+                              CanUserAddRows="False">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Database" Binding="{Binding DatabasePath}" Width="*"/>
+                            <DataGridCheckBoxColumn Header="Safe" Binding="{Binding Safe}" Width="70"/>
+                            <DataGridTextColumn Header="Used by" Binding="{Binding UsedBy.Count}" Width="80"/>
+                            <DataGridTextColumn Header="Evidence" Binding="{Binding Evidence.Count}" Width="80"/>
+                            <DataGridTextColumn Header="Error" Binding="{Binding Error}" Width="260"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Mapping">
+                <Grid Margin="14">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <DataGrid x:Name="MappingGrid"
+                              AutoGenerateColumns="False"
+                              CanUserAddRows="False">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Source tag" Binding="{Binding SourceField}" Width="130"/>
+                            <DataGridTextColumn Header="MyTag group" Binding="{Binding TargetMyTag}" Width="130"/>
+                            <DataGridTextColumn Header="Transform" Binding="{Binding Transform}" Width="115"/>
+                            <DataGridCheckBoxColumn Header="Per value" Binding="{Binding PerValue}" Width="80"/>
+                            <DataGridCheckBoxColumn Header="Ignore empty" Binding="{Binding IgnoreEmpty}" Width="90"/>
+                            <DataGridTextColumn Header="Prefix" Binding="{Binding Prefix}" Width="120"/>
+                            <DataGridTextColumn Header="Pattern" Binding="{Binding Pattern}" Width="*"/>
+                            <DataGridTextColumn Header="Replacement" Binding="{Binding Replacement}" Width="140"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,10,0,0">
+                        <Button x:Name="AddMappingButton" Padding="14,6" Content="Add mapping"/>
+                        <Button x:Name="RemoveMappingButton" Margin="8,0,0,0" Padding="14,6" Content="Remove selected"/>
+                    </StackPanel>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Preview / Changes">
+                <Grid Margin="14">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <StackPanel Orientation="Horizontal">
+                        <Button x:Name="BuildPreviewButton" Padding="16,7" Content="Build fresh preview"/>
+                        <TextBlock x:Name="PreviewStatusTextBlock"
+                                   Margin="14,0,0,0"
+                                   VerticalAlignment="Center"
+                                   Text="No approved preview."/>
+                    </StackPanel>
+                    <TextBlock x:Name="PreviewCountsTextBlock"
+                               Grid.Row="1"
+                               Margin="0,10,0,10"
+                               Text="Add 0 · Remove 0 · Correct 0 · Conflicts 0 · Unmatched 0"/>
+                    <DataGrid x:Name="PreviewGrid"
+                              Grid.Row="2"
+                              IsReadOnly="True"
+                              AutoGenerateColumns="False"
+                              CanUserAddRows="False">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="100"/>
+                            <DataGridTextColumn Header="Content ID" Binding="{Binding ContentId}" Width="130"/>
+                            <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="*"/>
+                            <DataGridTextColumn Header="Tag" Binding="{Binding Tag}" Width="180"/>
+                            <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="280"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Apply / Restore">
+                <Grid Margin="14">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock TextWrapping="Wrap"
+                               Text="Apply is enabled only for a fresh, conflict-free preview and uses the existing transactional executor. Restore uses only a validated rolling backup for the selected database."/>
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,14,0,0">
+                        <Button x:Name="ApplyButton"
+                                Padding="18,8"
+                                IsEnabled="False"
+                                Content="Apply approved preview"/>
+                        <Button x:Name="RestoreButton"
+                                Margin="10,0,0,0"
+                                Padding="18,8"
+                                IsEnabled="False"
+                                Content="Restore rolling backup"/>
+                    </StackPanel>
+                    <Grid Grid.Row="2" Margin="0,14,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" Text="Backup package:"/>
+                        <TextBox x:Name="BackupPackageTextBox"
+                                 Grid.Column="1"
+                                 Margin="10,0,0,0"
+                                 IsReadOnly="True"/>
+                    </Grid>
+                    <TextBox x:Name="ApplyStatusTextBox"
+                             Grid.Row="3"
+                             Margin="0,14,0,0"
+                             IsReadOnly="True"
+                             TextWrapping="Wrap"
+                             VerticalScrollBarVisibility="Auto"
+                             AcceptsReturn="True"/>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Diagnostics / Logs">
+                <Grid Margin="14">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Button x:Name="RefreshDiagnosticsButton"
+                            HorizontalAlignment="Left"
+                            Padding="16,7"
+                            Content="Refresh diagnostics"/>
+                    <TextBox x:Name="DiagnosticsTextBox"
+                             Grid.Row="1"
+                             Margin="0,12,0,0"
+                             FontFamily="Consolas"
+                             IsReadOnly="True"
+                             AcceptsReturn="True"
+                             TextWrapping="NoWrap"
+                             HorizontalScrollBarVisibility="Auto"
+                             VerticalScrollBarVisibility="Auto"/>
+                </Grid>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>
