@@ -142,8 +142,10 @@ public static class RekordboxMutationExecutorSelfTest
             alreadyCorrect: 0,
             conflicts: 0,
             unmatched: 0);
-        if (approved.MissingDefinitions?.Count != 2)
-            throw new InvalidOperationException("definition-creation preview did not identify group and value");
+        if (approved.MissingDefinitions?.Count != 1 ||
+            approved.MissingDefinitions[0].Group != "Energy" ||
+            approved.MissingDefinitions[0].Value != "Peak")
+            throw new InvalidOperationException("definition-creation preview did not identify the missing group/value pair");
 
         var result = RekordboxMutationExecutor.Apply(
             databasePath,
