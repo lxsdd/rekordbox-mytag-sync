@@ -142,37 +142,25 @@
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock VerticalAlignment="Center" Text="SQLCipher key:"/>
-                            <PasswordBox x:Name="DatabaseKeyPasswordBox"
-                                         Grid.Column="1"
-                                         Margin="10,0,10,0"
-                                         MinHeight="28"/>
+                            <TextBlock TextWrapping="Wrap"
+                                       VerticalAlignment="Center"
+                                       Text="Resolve SQLCipher access automatically and qualify the selected rekordbox 6/7 database against the supported runtime schema. No database key is stored in settings or logs."/>
                             <Button x:Name="ValidateDatabaseAccessButton"
-                                    Grid.Column="2"
-                                    Grid.RowSpan="2"
+                                    Grid.Column="1"
+                                    Margin="12,0,0,0"
                                     Padding="14,6"
                                     Content="Validate access"/>
-                            <TextBlock Grid.Row="1"
-                                       VerticalAlignment="Center"
-                                       Text="Supported DBVersion(s):"/>
-                            <TextBox x:Name="SupportedDbVersionsTextBox"
-                                     Grid.Row="1"
-                                     Grid.Column="1"
-                                     Margin="10,6,10,0"
-                                     ToolTip="Comma-separated exact DBVersion values. Stored only as compatibility settings; the SQLCipher key is never persisted."/>
                             <TextBlock x:Name="DatabaseAccessStatusTextBlock"
-                                       Grid.Row="2"
-                                       Grid.ColumnSpan="3"
+                                       Grid.Row="1"
+                                       Grid.ColumnSpan="2"
                                        Margin="0,8,0,0"
                                        TextWrapping="Wrap"
-                                       Text="Database access is not yet qualified. The key is session-only and is never saved."/>
+                                       Text="Database access is not yet qualified."/>
                         </Grid>
                     </GroupBox>
                 </Grid>
