@@ -77,19 +77,12 @@ internal static class RekordboxDatabaseAccessResolver
                 continue;
             }
 
-            var matches = source.Pattern.Matches(payload);
-            if (matches.Count == 0)
+            var candidates = ParsePinnedSource(source.Name, payload);
+            if (candidates.Count == 0)
             {
                 remoteFailures.Add($"{source.Name}: no candidate");
                 continue;
             }
-
-            var candidates = matches
-                .Select(x => x.Groups["key"].Value)
-                .Where(x => !string.IsNullOrWhiteSpace(x))
-                .Distinct(StringComparer.Ordinal)
-                .Select(x => new RekordboxDatabaseKeyCandidate(source.Name, x.Trim()))
-                .ToArray();
 
             var qualified = QualifyCandidates(library, candidates);
             if (qualified is not null)
@@ -104,6 +97,30 @@ internal static class RekordboxDatabaseAccessResolver
         throw new InvalidDataException(
             "Could not resolve and verify rekordbox database access automatically. " +
             "No database key was persisted or logged." + suffix);
+    }
+
+    internal static IReadOnlyList<RekordboxDatabaseKeyCandidate> ParsePinnedSource(
+        string sourceName,
+        string payload)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceName);
+        ArgumentNullException.ThrowIfNull(payload);
+
+        var source = RemoteSources.SingleOrDefault(x =>
+            string.Equals(x.Name, sourceName, StringComparison.Ordinal));
+        if (source is null)
+            throw new ArgumentException(
+                $"Unknown pinned database-key source '{sourceName}'.",
+                nameof(sourceName));
+
+        return source.Pattern.Matches(payload)
+            .Select(x => x.Groups["key"].Value)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.Ordinal)
+            .Select(x => new RekordboxDatabaseKeyCandidate(
+                source.Name,
+                x.Trim()))
+            .ToArray();
     }
 
     internal static RekordboxResolvedDatabaseAccess? QualifyCandidates(
