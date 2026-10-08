@@ -1,0 +1,34 @@
+[
+  {
+    "name": "GitHub classic token",
+    "regex": "ghp_[A-Za-z0-9_]{20,}"
+  },
+  {
+    "name": "GitHub fine-grained token",
+    "regex": "github_pat_[A-Za-z0-9_]{20,}"
+  },
+  {
+    "name": "OpenAI-style secret",
+    "regex": "sk-[A-Za-z0-9_-]{20,}"
+  },
+  {
+    "name": "AWS access key",
+    "regex": "AKIA[0-9A-Z]{16}"
+  },
+  {
+    "name": "Google API key",
+    "regex": "AIza[0-9A-Za-z_-]{20,}"
+  },
+  {
+    "name": "Slack token",
+    "regex": "xox[baprs]-[0-9A-Za-z-]{10,}"
+  },
+  {
+    "name": "Private key block",
+    "regex": "-----BEGIN [A-Z ]*PRIVATE KEY-----"
+  },
+  {
+    "name": "Local Windows user path",
+    "regex": "C:\\\\Users\\\\[^\\\\\\s]+"
+  }
+]
