@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
+using Microsoft.Win32;
 using RekordboxMyTagSync.Core;
 
 namespace RekordboxMyTagSync;
@@ -40,6 +41,7 @@ public partial class MainWindow : Window
         DiscoverSourceButton.Click += (_, _) => DiscoverSources();
         InspectSourceButton.Click += (_, _) => InspectSelectedSource();
         DiscoverTargetButton.Click += (_, _) => DiscoverTargets();
+        BrowseTargetButton.Click += (_, _) => BrowseTarget();
         ValidateDatabaseAccessButton.Click += async (_, _) => await ValidateDatabaseAccessAsync();
         AddMappingButton.Click += (_, _) => AddMapping();
         RemoveMappingButton.Click += (_, _) => RemoveSelectedMapping();
@@ -272,6 +274,44 @@ public partial class MainWindow : Window
         }
     }
 
+    private void BrowseTarget()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "Select rekordbox master.db",
+            Filter = "rekordbox master.db|master.db|SQLite database (*.db)|*.db|All files (*.*)|*.*",
+            FileName = "master.db",
+            CheckFileExists = true,
+            Multiselect = false
+        };
+        if (dialog.ShowDialog(this) != true)
+            return;
+
+        try
+        {
+            var candidate = RekordboxDiscovery.InspectManual(dialog.FileName);
+            TargetDatabaseTextBox.Text = candidate.DatabasePath;
+            TargetCandidatesGrid.ItemsSource = new[] { candidate };
+            _targetSafe = candidate.Safe;
+            InvalidateDatabaseAccess("Manual target selection requires fresh database access qualification.");
+
+            if (!candidate.Safe)
+                AppendDiagnostic(
+                    $"Manual target rejected: {candidate.Error ?? "unknown qualification error"}");
+            else
+                AppendDiagnostic(
+                    $"Manual target selected: {candidate.DatabasePath}. Runtime access qualification is still required.");
+        }
+        catch (Exception ex)
+        {
+            _targetSafe = false;
+            InvalidateDatabaseAccess("Manual target selection failed.");
+            AppendDiagnostic($"Manual target selection blocked: {ex.Message}");
+        }
+
+        UpdateWorkflowGate();
+    }
+
     private async Task ValidateDatabaseAccessAsync()
     {
         ValidateDatabaseAccessButton.IsEnabled = false;
@@ -288,13 +328,18 @@ public partial class MainWindow : Window
                     x.Safe &&
                     PathsEqual(x.DatabasePath, databasePath))
                 .ToArray();
-            if (matches.Length != 1)
+            if (matches.Length > 1)
                 throw new InvalidDataException(
-                    matches.Length == 0
-                        ? "Selected target is not a uniquely discovered safe rekordbox library."
-                        : "Selected target is ambiguous across discovered rekordbox libraries.");
+                    "Selected target is ambiguous across discovered rekordbox libraries.");
 
-            var access = await RekordboxDatabaseAccessResolver.ResolveAsync(matches[0]);
+            var target = matches.Length == 1
+                ? matches[0]
+                : RekordboxDiscovery.InspectManual(databasePath);
+            if (!target.Safe)
+                throw new InvalidDataException(
+                    target.Error ?? "Selected target is not qualified as a safe rekordbox 6/7 library.");
+
+            var access = await RekordboxDatabaseAccessResolver.ResolveAsync(target);
             _databaseAccess = access;
             _databaseSnapshot = access.Snapshot;
             _targetSafe = true;
