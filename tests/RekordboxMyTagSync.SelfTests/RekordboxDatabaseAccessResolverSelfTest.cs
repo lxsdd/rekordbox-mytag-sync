@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http;
+using System.Text;
 using RekordboxMyTagSync.Core;
 
 public static class RekordboxDatabaseAccessResolverSelfTest
@@ -29,6 +30,7 @@ public static class RekordboxDatabaseAccessResolverSelfTest
 
         QualifyCandidateVerification(library);
         QualifyPinnedSourceParsers();
+        QualifyProtectedCacheResolution(root, library);
         QualifyLocalCacheResolution(root, library);
 
         var missingInstallationEvidence = library with
@@ -110,6 +112,48 @@ public static class RekordboxDatabaseAccessResolverSelfTest
                 "go-rekordbox compatibility-source parser did not return the expected candidate");
     }
 
+    private static void QualifyProtectedCacheResolution(
+        string root,
+        RekordboxLibraryCandidate library)
+    {
+        var local = Path.Combine(root, "ProtectedLocal");
+        RekordboxDatabaseKeyCache.Save(
+            library.DatabasePath,
+            EncryptedMutationFixture.Key,
+            local);
+
+        var loaded = RekordboxDatabaseKeyCache.TryLoad(
+            library.DatabasePath,
+            local);
+        if (loaded != EncryptedMutationFixture.Key)
+            throw new InvalidOperationException(
+                "Windows DPAPI database access cache did not roundtrip the verified synthetic key");
+
+        var cachePath = RekordboxDatabaseKeyCache.GetCachePath(
+            library.DatabasePath,
+            local);
+        var raw = File.ReadAllBytes(cachePath);
+        if (Encoding.UTF8.GetString(raw).Contains(
+                EncryptedMutationFixture.Key,
+                StringComparison.Ordinal))
+            throw new InvalidOperationException(
+                "Windows DPAPI database access cache persisted the synthetic key in clear text");
+
+        using var client = new HttpClient(new NoNetworkHandler());
+        var resolved = RekordboxDatabaseAccessResolver.ResolveAsync(
+                library,
+                roamingAppDataRoot: Path.Combine(root, "NoPyrekordboxCache"),
+                localAppDataRoot: local,
+                httpClient: client)
+            .GetAwaiter()
+            .GetResult();
+
+        if (resolved.KeySource != "protected app cache" ||
+            resolved.Key != EncryptedMutationFixture.Key)
+            throw new InvalidOperationException(
+                "automatic database access did not prefer the protected verified app cache");
+    }
+
     private static void QualifyLocalCacheResolution(
         string root,
         RekordboxLibraryCandidate library)
@@ -125,8 +169,9 @@ public static class RekordboxDatabaseAccessResolverSelfTest
         using var client = new HttpClient(new NoNetworkHandler());
         var resolved = RekordboxDatabaseAccessResolver.ResolveAsync(
                 library,
-                roaming,
-                client)
+                roamingAppDataRoot: roaming,
+                localAppDataRoot: Path.Combine(root, "LocalForPyrekordbox"),
+                httpClient: client)
             .GetAwaiter()
             .GetResult();
 
