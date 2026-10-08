@@ -44,18 +44,13 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force qualification | Out-Null
 
-          $patterns = @(
-            @{ Name = "GitHub classic token"; Regex = 'ghp_[A-Za-z0-9_]{20,}' },
-            @{ Name = "GitHub fine-grained token"; Regex = 'github_pat_[A-Za-z0-9_]{20,}' },
-            @{ Name = "OpenAI-style secret"; Regex = 'sk-[A-Za-z0-9_-]{20,}' },
-            @{ Name = "AWS access key"; Regex = 'AKIA[0-9A-Z]{16}' },
-            @{ Name = "Google API key"; Regex = 'AIza[0-9A-Za-z_-]{20,}' },
-            @{ Name = "Slack token"; Regex = 'xox[baprs]-[0-9A-Za-z-]{10,}' },
-            @{ Name = "Private key block"; Regex = '-----BEGIN [A-Z ]*PRIVATE KEY-----' },
-            @{ Name = "Local Windows user path"; Regex = 'C:\\Users\\[^\\\s]+' }
-          )
+          $patternPath = ".github/security-patterns.json"
+          $patterns = @(Get-Content $patternPath -Raw | ConvertFrom-Json)
+          if ($patterns.Count -eq 0) {
+            throw "Repository hygiene pattern set is empty."
+          }
 
-          $tracked = @(git ls-files)
+          $tracked = @(git ls-files | Where-Object { $_ -ne $patternPath })
           if ($LASTEXITCODE -ne 0 -or $tracked.Count -eq 0) {
             throw "Could not enumerate tracked repository files for hygiene audit."
           }
