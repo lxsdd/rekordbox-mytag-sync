@@ -45,16 +45,26 @@ internal static class RekordboxDatabaseAccessResolver
     internal static async Task<RekordboxResolvedDatabaseAccess> ResolveAsync(
         RekordboxLibraryCandidate library,
         string? roamingAppDataRoot = null,
+        string? localAppDataRoot = null,
         HttpClient? httpClient = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(library);
         ValidateLibraryEvidence(library);
 
-        var localCandidates = ReadLocalCandidates(roamingAppDataRoot);
+        var localCandidates = ReadLocalCandidates(
+            library.DatabasePath,
+            roamingAppDataRoot,
+            localAppDataRoot);
         var local = QualifyCandidates(library, localCandidates);
         if (local is not null)
+        {
+            TryPersistVerifiedKey(
+                library.DatabasePath,
+                local.Key,
+                localAppDataRoot);
             return local;
+        }
 
         using var ownedClient = httpClient is null
             ? new HttpClient { Timeout = TimeSpan.FromSeconds(8) }
@@ -86,7 +96,13 @@ internal static class RekordboxDatabaseAccessResolver
 
             var qualified = QualifyCandidates(library, candidates);
             if (qualified is not null)
+            {
+                TryPersistVerifiedKey(
+                    library.DatabasePath,
+                    qualified.Key,
+                    localAppDataRoot);
                 return qualified;
+            }
 
             remoteFailures.Add($"{source.Name}: candidate rejected");
         }
@@ -219,21 +235,34 @@ internal static class RekordboxDatabaseAccessResolver
     }
 
     private static IReadOnlyList<RekordboxDatabaseKeyCandidate> ReadLocalCandidates(
-        string? roamingAppDataRoot)
+        string databasePath,
+        string? roamingAppDataRoot,
+        string? localAppDataRoot)
     {
+        var result = new List<RekordboxDatabaseKeyCandidate>();
+
+        var protectedKey = RekordboxDatabaseKeyCache.TryLoad(
+            databasePath,
+            localAppDataRoot);
+        if (!string.IsNullOrWhiteSpace(protectedKey))
+        {
+            result.Add(new RekordboxDatabaseKeyCandidate(
+                "protected app cache",
+                protectedKey));
+        }
+
         var root = string.IsNullOrWhiteSpace(roamingAppDataRoot)
             ? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)
             : roamingAppDataRoot;
         if (string.IsNullOrWhiteSpace(root))
-            return Array.Empty<RekordboxDatabaseKeyCandidate>();
+            return result;
 
         var cachePath = Path.Combine(root, "pyrekordbox", "rb.cache");
         if (!File.Exists(cachePath))
-            return Array.Empty<RekordboxDatabaseKeyCandidate>();
+            return result;
 
         try
         {
-            var result = new List<RekordboxDatabaseKeyCandidate>();
             foreach (var line in File.ReadLines(cachePath))
             {
                 var trimmed = line.Trim();
@@ -251,7 +280,31 @@ internal static class RekordboxDatabaseAccessResolver
         catch (Exception ex) when (
             ex is IOException or UnauthorizedAccessException)
         {
-            return Array.Empty<RekordboxDatabaseKeyCandidate>();
+            return result;
+        }
+    }
+
+    private static void TryPersistVerifiedKey(
+        string databasePath,
+        string key,
+        string? localAppDataRoot)
+    {
+        try
+        {
+            RekordboxDatabaseKeyCache.Save(
+                databasePath,
+                key,
+                localAppDataRoot);
+        }
+        catch (Exception ex) when (
+            ex is IOException or
+            UnauthorizedAccessException or
+            System.ComponentModel.Win32Exception or
+            System.Security.Cryptography.CryptographicException or
+            PlatformNotSupportedException)
+        {
+            // Access remains valid for this application session. A cache failure
+            // must never downgrade or expose verified key material.
         }
     }
 
