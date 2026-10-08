@@ -49,9 +49,8 @@ public static class AppSettingsStoreSelfTest
             loaded.EffectiveMappings[0].Transform != TransformKind.YearFromDate ||
             loaded.EffectiveMappings[1].Transform != TransformKind.RegexReplace ||
             loaded.EffectiveMappings[1].Prefix != "Style: " ||
-            loaded.EffectiveSupportedDbVersions.Count != 2 ||
-            loaded.EffectiveSupportedDbVersions[0] != "6.0.0" ||
-            loaded.EffectiveSupportedDbVersions[1] != "7.0.0")
+            loaded.EffectiveSupportedDbVersions.Count != 0 ||
+            loaded.SupportedDbVersions is not null)
             throw new InvalidOperationException("settings roundtrip mismatch");
 
         var updatedTarget = Path.Combine(root, "rekordbox-2", "master.db");
