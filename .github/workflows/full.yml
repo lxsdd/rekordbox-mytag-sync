@@ -26,9 +26,9 @@ jobs:
       - name: Restore exact project inputs
         shell: pwsh
         run: |
-          dotnet restore $env:PRODUCT_PROJECT -r win-x64
+          dotnet restore $env:PRODUCT_PROJECT -r win-x64 --locked-mode
           if ($LASTEXITCODE -ne 0) { throw "Product restore failed." }
-          dotnet restore $env:TEST_PROJECT -r win-x64
+          dotnet restore $env:TEST_PROJECT -r win-x64 --locked-mode
           if ($LASTEXITCODE -ne 0) { throw "Self-test restore failed." }
 
       - name: Build and run deterministic self-tests
