@@ -99,6 +99,40 @@ internal static class RekordboxDatabaseAccessResolver
             "No database key was persisted or logged." + suffix);
     }
 
+    internal static async Task<IReadOnlyList<string>> ProbePinnedSourcesAsync(
+        HttpClient? httpClient = null,
+        CancellationToken cancellationToken = default)
+    {
+        using var ownedClient = httpClient is null
+            ? new HttpClient { Timeout = TimeSpan.FromSeconds(8) }
+            : null;
+        var client = httpClient ?? ownedClient!;
+
+        var available = new List<string>();
+        foreach (var source in RemoteSources)
+        {
+            try
+            {
+                var payload = await client.GetStringAsync(source.Uri, cancellationToken)
+                    .ConfigureAwait(false);
+                if (ParsePinnedSource(source.Name, payload).Count != 0)
+                    available.Add(source.Name);
+            }
+            catch (Exception ex) when (
+                ex is HttpRequestException or TaskCanceledException or IOException)
+            {
+                // A second pinned source may still keep automatic first-run
+                // resolution operational. No remote payload is logged.
+            }
+        }
+
+        if (available.Count == 0)
+            throw new InvalidDataException(
+                "No pinned automatic database-access compatibility source is currently reachable and parseable.");
+
+        return available;
+    }
+
     internal static IReadOnlyList<RekordboxDatabaseKeyCandidate> ParsePinnedSource(
         string sourceName,
         string payload)
