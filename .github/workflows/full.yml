@@ -264,23 +264,7 @@ jobs:
 
           $candidateHash = (Get-FileHash $candidate -Algorithm SHA256).Hash.ToLowerInvariant()
           $shaLine = (Get-Content $shaFile -Raw).Trim()
-          if ($shaLine -notmatch '^([0-9a-fA-F]{64})\s+(.+)
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: RekordboxMyTagSync-FULL-${{ github.sha }}
-          if-no-files-found: error
-          retention-days: 30
-          compression-level: 0
-          path: |
-            artifacts/${{ steps.package.outputs.candidate_name }}
-            artifacts/${{ steps.package.outputs.candidate_name }}.sha256
-            artifacts/FULL-QUALIFICATION.json
-            qualification/dependencies.json
-            qualification/vulnerability-audit.json
-            qualification/license-audit.tsv
-            qualification/publish-sha256.txt
-) {
+          if ($shaLine -notmatch '^([0-9a-fA-F]{64})\s+(.+)$') {
             throw "Candidate SHA-256 sidecar has invalid format."
           }
           if ($Matches[1].ToLowerInvariant() -ne $candidateHash) {
