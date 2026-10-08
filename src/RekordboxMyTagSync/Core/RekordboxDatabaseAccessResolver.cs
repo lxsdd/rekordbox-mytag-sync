@@ -30,7 +30,7 @@ internal static class RekordboxDatabaseAccessResolver
                 "https://raw.githubusercontent.com/mganss/CueGen/" +
                 "19878e6eb3f586dee0eb3eb4f2ce3ef18309de9d/CueGen/Generator.cs"),
             new Regex(
-                @"Config\.UseSqlCipher\s*\?\s*\"(?<key>[^\"]+)\"\s*:\s*null",
+                @"Config\.UseSqlCipher\s*\?\s*""(?<key>[^""]+)""\s*:\s*null",
                 RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)),
         new(
             "pinned go-rekordbox compatibility source",
@@ -38,7 +38,7 @@ internal static class RekordboxDatabaseAccessResolver
                 "https://raw.githubusercontent.com/dvcrn/go-rekordbox/" +
                 "8be6191ba198ed7abd4ad6406d177ed7b4f749b5/cmd/getencryptionkey/main.go"),
             new Regex(
-                @"fmt\.Print\(\"(?<key>[^\"]+)\"\)",
+                @"fmt\.Print\(""(?<key>[^""]+)""\)",
                 RegexOptions.CultureInvariant))
     ];
 
