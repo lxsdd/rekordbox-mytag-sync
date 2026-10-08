@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -497,9 +498,7 @@ public partial class MainWindow : Window
                 provenancePath,
                 preApplyIdentity);
             var mappingHash = ComputeMappingHashSha256(settings.EffectiveMappings);
-            var toolVersion =
-                typeof(MainWindow).Assembly.GetName().Version?.ToString()
-                ?? "0.0.0";
+            var toolVersion = ProductVersion();
 
             var result = RekordboxMutationExecutor.Apply(
                 databasePath,
@@ -700,6 +699,19 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(hash))
             throw new InvalidDataException("Backup database SHA-256 is missing.");
         return inspection.PackagePath + "." + hash.ToLowerInvariant() + ".provenance.json";
+    }
+
+    private static string ProductVersion()
+    {
+        var assembly = typeof(MainWindow).Assembly;
+        var informational = assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion;
+        if (!string.IsNullOrWhiteSpace(informational))
+            return informational.Trim();
+
+        return assembly.GetName().Version?.ToString()
+               ?? throw new InvalidOperationException("Product version metadata is unavailable.");
     }
 
     private static string AppStateRoot()
