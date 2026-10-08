@@ -18,6 +18,8 @@ jobs:
       TEST_PROJECT: tests/RekordboxMyTagSync.SelfTests/RekordboxMyTagSync.SelfTests.csproj
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -55,6 +57,30 @@ jobs:
             throw "Could not enumerate tracked repository files for hygiene audit."
           }
 
+          function Test-Content([string]$Label, [string]$Path, [string]$Content) {
+            if ($Path -eq $patternPath) { return }
+
+            # Historical versions of this workflow briefly contained the pattern
+            # definitions inline. Remove only those scanner-definition lines so
+            # they cannot self-trigger while the rest of the workflow stays scanned.
+            if ($Path -eq ".github/workflows/full.yml") {
+              $Content = (($Content -split "\r?\n") |
+                Where-Object {
+                  $_ -notmatch 'Regex\s*=' -and
+                  $_ -notmatch '"regex"\s*:'
+                }) -join [Environment]::NewLine
+            }
+
+            foreach ($pattern in $patterns) {
+              if ($Content -match [string]$pattern.Regex) {
+                $script:findings += [PSCustomObject]@{
+                  Location = $Label
+                  Pattern = [string]$pattern.Name
+                }
+              }
+            }
+          }
+
           $findings = @()
           foreach ($file in $tracked) {
             if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
@@ -63,25 +89,50 @@ jobs:
             } catch {
               continue
             }
+            Test-Content "current:$file" $file $content
+          }
 
-            foreach ($pattern in $patterns) {
-              if ($content -match $pattern.Regex) {
-                $findings += [PSCustomObject]@{
-                  File = $file
-                  Pattern = $pattern.Name
-                }
-              }
+          $historyObjects = @{}
+          foreach ($line in @(git rev-list --objects --all)) {
+            if ([string]::IsNullOrWhiteSpace($line)) { continue }
+            $parts = $line -split ' ', 2
+            if ($parts.Count -ne 2) { continue }
+            $sha = $parts[0]
+            $historyPath = $parts[1]
+            if ($historyPath -eq $patternPath -or $historyObjects.ContainsKey($sha)) {
+              continue
             }
+            $historyObjects[$sha] = $historyPath
+          }
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not enumerate repository history for hygiene audit."
+          }
+
+          foreach ($pair in $historyObjects.GetEnumerator()) {
+            try {
+              $objectType = (& git cat-file -t $pair.Key) -join ""
+              if ($LASTEXITCODE -ne 0 -or $objectType -ne "blob") { continue }
+              $content = (& git cat-file -p $pair.Key) -join [Environment]::NewLine
+              if ($LASTEXITCODE -ne 0) { continue }
+            } catch {
+              continue
+            }
+            Test-Content ("history:" + $pair.Value + "@" + $pair.Key.Substring(0, 12)) $pair.Value $content
           }
 
           if ($findings.Count -gt 0) {
-            $findings | Sort-Object File, Pattern -Unique | Format-Table | Out-String | Write-Host
+            $findings |
+              Sort-Object Location, Pattern -Unique |
+              Format-Table |
+              Out-String |
+              Write-Host
             throw "Repository hygiene audit found credential-like or private local-path material."
           }
 
           @(
             "status=PASS"
             "tracked_files=$($tracked.Count)"
+            "historical_blobs=$($historyObjects.Count)"
             "checked_patterns=$($patterns.Count)"
           ) | Set-Content qualification/repository-hygiene-audit.txt -Encoding ASCII
 
