@@ -128,7 +128,7 @@ jobs:
             exit 1
           }
 
-          for gate in deterministicPublish deterministicPackage uiSmoke dependencyAudit dependencyLockAudit licenseAudit vulnerabilityAudit; do
+          for gate in deterministicPublish deterministicPackage uiSmoke repositoryHygieneAudit databaseAccessSourceAudit dependencyAudit dependencyLockAudit licenseAudit vulnerabilityAudit; do
             [[ "$(jq -r --arg gate "$gate" '.[$gate]' "$qualification")" == "PASS" ]] || {
               echo "Qualification gate '$gate' is not PASS." >&2
               exit 1
