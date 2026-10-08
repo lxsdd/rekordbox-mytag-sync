@@ -163,6 +163,8 @@ jobs:
           Copy-Item "qualification/vulnerability-audit.json" $stage
           Copy-Item "qualification/license-audit.tsv" $stage
           Copy-Item "qualification/publish-sha256.txt" $stage
+          Copy-Item "src/RekordboxMyTagSync/packages.lock.json" (Join-Path $stage "product-packages.lock.json")
+          Copy-Item "tests/RekordboxMyTagSync.SelfTests/packages.lock.json" (Join-Path $stage "selftest-packages.lock.json")
           Set-Content -Path (Join-Path $stage "SOURCE_SHA.txt") -Value "${{ github.sha }}" -Encoding ASCII
 
           $publishedFiles = Get-ChildItem $stage -File -Recurse |
@@ -232,6 +234,7 @@ jobs:
             deterministicPackage = "PASS"
             uiSmoke = "PASS"
             dependencyAudit = "PASS"
+            dependencyLockAudit = "PASS"
             licenseAudit = "PASS"
             vulnerabilityAudit = "PASS"
           }
@@ -259,7 +262,9 @@ jobs:
               "dependencies.json",
               "vulnerability-audit.json",
               "license-audit.tsv",
-              "publish-sha256.txt")) {
+              "publish-sha256.txt",
+              "product-packages.lock.json",
+              "selftest-packages.lock.json")) {
               if ($names -notcontains $required) { throw "Candidate is missing '$required'." }
             }
           } finally {
