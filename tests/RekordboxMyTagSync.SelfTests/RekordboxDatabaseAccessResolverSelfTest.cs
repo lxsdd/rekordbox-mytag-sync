@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Http;
 using RekordboxMyTagSync.Core;
 
 public static class RekordboxDatabaseAccessResolverSelfTest
@@ -25,27 +27,9 @@ public static class RekordboxDatabaseAccessResolverSelfTest
             Safe: true,
             Error: null);
 
-        var resolved = RekordboxDatabaseAccessResolver.QualifyCandidates(
-            library,
-            new[]
-            {
-                new RekordboxDatabaseKeyCandidate(
-                    "wrong synthetic candidate",
-                    "not-the-fixture-key"),
-                new RekordboxDatabaseKeyCandidate(
-                    "verified synthetic candidate",
-                    EncryptedMutationFixture.Key)
-            });
-
-        if (resolved is null)
-            throw new InvalidOperationException(
-                "automatic database access did not accept the verified synthetic candidate");
-        if (resolved.KeySource != "verified synthetic candidate" ||
-            resolved.Key != EncryptedMutationFixture.Key ||
-            resolved.Snapshot.Identity.DbVersion != EncryptedMutationFixture.DbVersion ||
-            !resolved.Policy.AllowSchemaQualifiedDbVersion)
-            throw new InvalidOperationException(
-                "automatic database access returned unexpected qualification state");
+        QualifyCandidateVerification(library);
+        QualifyPinnedSourceParsers();
+        QualifyLocalCacheResolution(root, library);
 
         var missingInstallationEvidence = library with
         {
@@ -79,6 +63,79 @@ public static class RekordboxDatabaseAccessResolverSelfTest
             "not qualified as safe");
     }
 
+    private static void QualifyCandidateVerification(
+        RekordboxLibraryCandidate library)
+    {
+        var resolved = RekordboxDatabaseAccessResolver.QualifyCandidates(
+            library,
+            new[]
+            {
+                new RekordboxDatabaseKeyCandidate(
+                    "wrong synthetic candidate",
+                    "not-the-fixture-key"),
+                new RekordboxDatabaseKeyCandidate(
+                    "verified synthetic candidate",
+                    EncryptedMutationFixture.Key)
+            });
+
+        if (resolved is null)
+            throw new InvalidOperationException(
+                "automatic database access did not accept the verified synthetic candidate");
+        if (resolved.KeySource != "verified synthetic candidate" ||
+            resolved.Key != EncryptedMutationFixture.Key ||
+            resolved.Snapshot.Identity.DbVersion != EncryptedMutationFixture.DbVersion ||
+            !resolved.Policy.AllowSchemaQualifiedDbVersion)
+            throw new InvalidOperationException(
+                "automatic database access returned unexpected qualification state");
+    }
+
+    private static void QualifyPinnedSourceParsers()
+    {
+        const string syntheticKey = "synthetic-parser-candidate";
+
+        var cueGen = RekordboxDatabaseAccessResolver.ParsePinnedSource(
+            "pinned CueGen compatibility source",
+            $"key: Config.UseSqlCipher ? \"{syntheticKey}\" : null,");
+        if (cueGen.Count != 1 ||
+            cueGen[0].Value != syntheticKey)
+            throw new InvalidOperationException(
+                "CueGen compatibility-source parser did not return the expected candidate");
+
+        var goRekordbox = RekordboxDatabaseAccessResolver.ParsePinnedSource(
+            "pinned go-rekordbox compatibility source",
+            $"fmt.Print(\"{syntheticKey}\")");
+        if (goRekordbox.Count != 1 ||
+            goRekordbox[0].Value != syntheticKey)
+            throw new InvalidOperationException(
+                "go-rekordbox compatibility-source parser did not return the expected candidate");
+    }
+
+    private static void QualifyLocalCacheResolution(
+        string root,
+        RekordboxLibraryCandidate library)
+    {
+        var roaming = Path.Combine(root, "Roaming");
+        var cacheDirectory = Path.Combine(roaming, "pyrekordbox");
+        Directory.CreateDirectory(cacheDirectory);
+        File.WriteAllText(
+            Path.Combine(cacheDirectory, "rb.cache"),
+            "version: 2" + Environment.NewLine +
+            "dp: " + EncryptedMutationFixture.Key);
+
+        using var client = new HttpClient(new NoNetworkHandler());
+        var resolved = RekordboxDatabaseAccessResolver.ResolveAsync(
+                library,
+                roaming,
+                client)
+            .GetAwaiter()
+            .GetResult();
+
+        if (resolved.KeySource != "local pyrekordbox cache" ||
+            resolved.Key != EncryptedMutationFixture.Key)
+            throw new InvalidOperationException(
+                "automatic database access did not prefer the verified local cache");
+    }
+
     private static void AssertBlocked(Action action, string expected)
     {
         try
@@ -93,5 +150,15 @@ public static class RekordboxDatabaseAccessResolverSelfTest
 
         throw new InvalidOperationException(
             $"automatic database access did not fail closed for '{expected}'");
+    }
+
+    private sealed class NoNetworkHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) =>
+            Task.FromException<HttpResponseMessage>(
+                new HttpRequestException(
+                    "network access is forbidden in this deterministic self-test"));
     }
 }
