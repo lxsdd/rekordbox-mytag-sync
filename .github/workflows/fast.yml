@@ -31,3 +31,14 @@ jobs:
         run: dotnet build $env:PRODUCT_PROJECT -c Release --no-restore
       - name: Run deterministic mapping self-tests
         run: dotnet run --project $env:TEST_PROJECT -c Release --no-restore
+      - name: Smoke-test WPF startup
+        shell: pwsh
+        run: |
+          $exe = Join-Path $env:GITHUB_WORKSPACE "src/RekordboxMyTagSync/bin/Release/net10.0-windows/win-x64/RekordboxMyTagSync.exe"
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+            throw "WPF product executable is missing after build."
+          }
+          $process = Start-Process -FilePath $exe -ArgumentList "--ui-smoke" -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "WPF UI smoke test failed with exit code $($process.ExitCode)."
+          }
