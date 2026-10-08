@@ -1,0 +1,177 @@
+name: PROMOTE-RELEASE
+
+on:
+  workflow_dispatch:
+    inputs:
+      full_run_id:
+        description: "Successful FULL workflow run ID on main"
+        required: true
+        type: string
+      source_sha:
+        description: "Exact FULL-qualified source SHA"
+        required: true
+        type: string
+      artifact_sha256:
+        description: "Exact FULL-qualified candidate SHA-256"
+        required: true
+        type: string
+      tag:
+        description: "Release tag to create"
+        required: true
+        type: string
+      acceptance_confirmation:
+        description: "After documented real runtime acceptance, enter ACCEPTED:<source_sha>"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  promote-qualified-artifact:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FULL_RUN_ID: ${{ inputs.full_run_id }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      EXPECTED_ARTIFACT_SHA256: ${{ inputs.artifact_sha256 }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      ACCEPTANCE_CONFIRMATION: ${{ inputs.acceptance_confirmation }}
+    steps:
+      - name: Verify runtime acceptance gate and FULL run identity
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "$ACCEPTANCE_CONFIRMATION" != "ACCEPTED:$SOURCE_SHA" ]]; then
+            echo "Runtime acceptance confirmation does not match the exact candidate source SHA." >&2
+            exit 1
+          fi
+          if [[ ! "$SOURCE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "source_sha must be a full 40-character Git commit SHA." >&2
+            exit 1
+          fi
+          if [[ ! "$EXPECTED_ARTIFACT_SHA256" =~ ^[0-9a-fA-F]{64}$ ]]; then
+            echo "artifact_sha256 must be a full SHA-256 value." >&2
+            exit 1
+          fi
+
+          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$FULL_RUN_ID")"
+          [[ "$(jq -r '.name' <<<"$run_json")" == "FULL" ]] || {
+            echo "Selected workflow run is not the FULL workflow." >&2
+            exit 1
+          }
+          [[ "$(jq -r '.event' <<<"$run_json")" == "workflow_dispatch" ]] || {
+            echo "Selected FULL run was not manually dispatched." >&2
+            exit 1
+          }
+          [[ "$(jq -r '.conclusion' <<<"$run_json")" == "success" ]] || {
+            echo "Selected FULL run is not successful." >&2
+            exit 1
+          }
+          [[ "$(jq -r '.head_branch' <<<"$run_json")" == "main" ]] || {
+            echo "Release promotion requires a FULL run from main." >&2
+            exit 1
+          }
+          [[ "$(jq -r '.head_sha' <<<"$run_json")" == "$SOURCE_SHA" ]] || {
+            echo "Selected FULL run does not belong to source_sha." >&2
+            exit 1
+          }
+
+          gh api "repos/$GITHUB_REPOSITORY/commits/$SOURCE_SHA" >/dev/null
+
+      - name: Download exact FULL artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact_name="RekordboxMyTagSync-FULL-$SOURCE_SHA"
+
+          artifacts_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$FULL_RUN_ID/artifacts")"
+          matches="$(jq --arg name "$artifact_name" '[.artifacts[] | select(.name == $name and .expired == false)] | length' <<<"$artifacts_json")"
+          [[ "$matches" == "1" ]] || {
+            echo "Expected exactly one non-expired FULL artifact named '$artifact_name'; found $matches." >&2
+            exit 1
+          }
+
+          rm -rf promotion
+          mkdir promotion
+          gh run download "$FULL_RUN_ID"             --repo "$GITHUB_REPOSITORY"             --name "$artifact_name"             --dir promotion
+
+      - name: Verify immutable candidate and qualification metadata
+        id: verify
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          qualification="$(find promotion -type f -name FULL-QUALIFICATION.json -print -quit)"
+          [[ -n "$qualification" ]] || {
+            echo "FULL-QUALIFICATION.json is missing from the downloaded artifact." >&2
+            exit 1
+          }
+
+          qualified_source="$(jq -r '.sourceSha' "$qualification")"
+          candidate_name="$(jq -r '.artifactFile' "$qualification")"
+          qualified_hash="$(jq -r '.artifactSha256' "$qualification" | tr '[:upper:]' '[:lower:]')"
+          product_version="$(jq -r '.productVersion' "$qualification")"
+
+          [[ "$qualified_source" == "$SOURCE_SHA" ]] || {
+            echo "Qualification source SHA does not match source_sha." >&2
+            exit 1
+          }
+          [[ "$qualified_hash" == "${EXPECTED_ARTIFACT_SHA256,,}" ]] || {
+            echo "Qualification artifact hash does not match artifact_sha256 input." >&2
+            exit 1
+          }
+          [[ "$product_version" == 0.1.0-dev* ]] || {
+            echo "Qualification product version is not the accepted 0.1.0-dev candidate identity." >&2
+            exit 1
+          }
+
+          for gate in deterministicPublish deterministicPackage uiSmoke repositoryHygieneAudit databaseAccessSourceAudit dependencyAudit dependencyLockAudit licenseAudit vulnerabilityAudit; do
+            [[ "$(jq -r --arg gate "$gate" '.[$gate]' "$qualification")" == "PASS" ]] || {
+              echo "Qualification gate '$gate' is not PASS." >&2
+              exit 1
+            }
+          done
+
+          candidate="$(find promotion -type f -name "$candidate_name" -print -quit)"
+          sidecar="$(find promotion -type f -name "$candidate_name.sha256" -print -quit)"
+          [[ -n "$candidate" && -n "$sidecar" ]] || {
+            echo "Candidate ZIP or SHA-256 sidecar is missing." >&2
+            exit 1
+          }
+
+          actual_hash="$(sha256sum "$candidate" | awk '{print $1}')"
+          [[ "$actual_hash" == "$qualified_hash" ]] || {
+            echo "Downloaded candidate hash does not match FULL qualification metadata." >&2
+            exit 1
+          }
+
+          read -r sidecar_hash sidecar_name < "$sidecar"
+          [[ "${sidecar_hash,,}" == "$actual_hash" ]] || {
+            echo "Downloaded candidate SHA-256 sidecar does not match the ZIP." >&2
+            exit 1
+          }
+          [[ "$sidecar_name" == "$candidate_name" ]] || {
+            echo "Downloaded candidate SHA-256 sidecar names a different artifact." >&2
+            exit 1
+          }
+
+          echo "candidate=$candidate" >> "$GITHUB_OUTPUT"
+          echo "sidecar=$sidecar" >> "$GITHUB_OUTPUT"
+          echo "qualification=$qualification" >> "$GITHUB_OUTPUT"
+          echo "candidate_name=$candidate_name" >> "$GITHUB_OUTPUT"
+          echo "product_version=$product_version" >> "$GITHUB_OUTPUT"
+
+      - name: Create release from exact qualified artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release tag '$RELEASE_TAG' already exists; promotion is fail-closed." >&2
+            exit 1
+          fi
+
+          gh release create "$RELEASE_TAG"             "${{ steps.verify.outputs.candidate }}"             "${{ steps.verify.outputs.sidecar }}"             "${{ steps.verify.outputs.qualification }}"             --repo "$GITHUB_REPOSITORY"             --target "$SOURCE_SHA"             --title "$RELEASE_TAG"             --notes "Promoted without rebuild from FULL run $FULL_RUN_ID. Source SHA: $SOURCE_SHA. Candidate SHA-256: ${EXPECTED_ARTIFACT_SHA256,,}. Runtime acceptance confirmation was supplied for this exact source SHA."

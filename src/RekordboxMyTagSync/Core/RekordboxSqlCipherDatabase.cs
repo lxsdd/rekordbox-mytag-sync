@@ -29,7 +29,16 @@ public sealed record RekordboxDatabaseSnapshot(
 
 public sealed record RekordboxDatabaseReadPolicy(
     IReadOnlySet<string> SupportedDbVersions,
-    bool RequireRekordboxClosed = true);
+    bool RequireRekordboxClosed = true,
+    bool AllowSchemaQualifiedDbVersion = false)
+{
+    public static RekordboxDatabaseReadPolicy SchemaQualifiedRuntime(
+        bool requireRekordboxClosed = true) =>
+        new(
+            new HashSet<string>(StringComparer.Ordinal),
+            requireRekordboxClosed,
+            AllowSchemaQualifiedDbVersion: true);
+}
 
 public static class RekordboxSqlCipherDatabase
 {
@@ -64,8 +73,11 @@ public static class RekordboxSqlCipherDatabase
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         ArgumentNullException.ThrowIfNull(policy);
         ArgumentNullException.ThrowIfNull(policy.SupportedDbVersions);
-        if (policy.SupportedDbVersions.Count == 0)
-            throw new ArgumentException("At least one supported rekordbox DBVersion must be configured.", nameof(policy));
+        if (policy.SupportedDbVersions.Count == 0 &&
+            !policy.AllowSchemaQualifiedDbVersion)
+            throw new ArgumentException(
+                "At least one supported rekordbox DBVersion must be configured unless schema-qualified runtime mode is enabled.",
+                nameof(policy));
 
         if (policy.RequireRekordboxClosed && RekordboxProcessGuard.IsRunning())
             throw new InvalidOperationException("rekordbox is running. Database access is blocked until rekordbox is closed.");
@@ -88,7 +100,8 @@ public static class RekordboxSqlCipherDatabase
         var cipherVersion = ReadScalarString(connection, "SELECT sqlite3mc_version();", "SQLite3MC version");
         ValidateSchema(connection);
         var (dbId, dbVersion) = ReadIdentity(connection);
-        if (!policy.SupportedDbVersions.Contains(dbVersion))
+        if (!policy.AllowSchemaQualifiedDbVersion &&
+            !policy.SupportedDbVersions.Contains(dbVersion))
             throw new InvalidDataException($"Unsupported rekordbox DBVersion '{dbVersion}'.");
 
         var definitions = ReadMyTagDefinitions(connection);

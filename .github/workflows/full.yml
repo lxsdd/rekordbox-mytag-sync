@@ -1,0 +1,532 @@
+name: FULL
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: full-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  qualify-portable-candidate:
+    runs-on: windows-latest
+    env:
+      PRODUCT_PROJECT: src/RekordboxMyTagSync/RekordboxMyTagSync.csproj
+      TEST_PROJECT: tests/RekordboxMyTagSync.SelfTests/RekordboxMyTagSync.SelfTests.csproj
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore exact project inputs
+        shell: pwsh
+        run: |
+          dotnet restore $env:PRODUCT_PROJECT -r win-x64 --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw "Product restore failed." }
+          dotnet restore $env:TEST_PROJECT -r win-x64 --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw "Self-test restore failed." }
+
+      - name: Build and run deterministic self-tests
+        shell: pwsh
+        run: |
+          dotnet build $env:PRODUCT_PROJECT -c Release --no-restore
+          if ($LASTEXITCODE -ne 0) { throw "Product build failed." }
+          dotnet run --project $env:TEST_PROJECT -c Release --no-restore
+          if ($LASTEXITCODE -ne 0) { throw "Deterministic self-tests failed." }
+
+      - name: Verify automatic database-access compatibility sources
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force qualification | Out-Null
+          $output = (& dotnet run --project $env:TEST_PROJECT -c Release --no-restore -- --verify-remote-access-sources) -join [Environment]::NewLine
+          if ($LASTEXITCODE -ne 0) {
+            throw "Pinned automatic database-access source qualification failed."
+          }
+          $output | Set-Content qualification/database-access-source-audit.txt -Encoding UTF8
+          Write-Host $output
+
+      - name: Audit repository credential and privacy hygiene
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force qualification | Out-Null
+
+          $patternPath = ".github/security-patterns.json"
+          $patterns = @(Get-Content $patternPath -Raw | ConvertFrom-Json)
+          if ($patterns.Count -eq 0) {
+            throw "Repository hygiene pattern set is empty."
+          }
+
+          $tracked = @(git ls-files | Where-Object { $_ -ne $patternPath })
+          if ($LASTEXITCODE -ne 0 -or $tracked.Count -eq 0) {
+            throw "Could not enumerate tracked repository files for hygiene audit."
+          }
+
+          function Test-Content([string]$Label, [string]$Path, [string]$Content) {
+            if ($Path -eq $patternPath) { return }
+
+            # Historical versions of this workflow briefly contained the pattern
+            # definitions inline. Remove only those scanner-definition lines so
+            # they cannot self-trigger while the rest of the workflow stays scanned.
+            if ($Path -eq ".github/workflows/full.yml") {
+              $Content = (($Content -split "\r?\n") |
+                Where-Object {
+                  $_ -notmatch 'Regex\s*=' -and
+                  $_ -notmatch '"regex"\s*:'
+                }) -join [Environment]::NewLine
+            }
+
+            foreach ($pattern in $patterns) {
+              if ($Content -match [string]$pattern.Regex) {
+                $script:findings += [PSCustomObject]@{
+                  Location = $Label
+                  Pattern = [string]$pattern.Name
+                }
+              }
+            }
+          }
+
+          $findings = @()
+          foreach ($file in $tracked) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
+            try {
+              $content = Get-Content -LiteralPath $file -Raw -ErrorAction Stop
+            } catch {
+              continue
+            }
+            Test-Content "current:$file" $file $content
+          }
+
+          $historyObjects = @{}
+          foreach ($line in @(git rev-list --objects --all)) {
+            if ([string]::IsNullOrWhiteSpace($line)) { continue }
+            $parts = $line -split ' ', 2
+            if ($parts.Count -ne 2) { continue }
+            $sha = $parts[0]
+            $historyPath = $parts[1]
+            if ($historyPath -eq $patternPath -or $historyObjects.ContainsKey($sha)) {
+              continue
+            }
+            $historyObjects[$sha] = $historyPath
+          }
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not enumerate repository history for hygiene audit."
+          }
+
+          foreach ($pair in $historyObjects.GetEnumerator()) {
+            try {
+              $objectType = (& git cat-file -t $pair.Key) -join ""
+              if ($LASTEXITCODE -ne 0 -or $objectType -ne "blob") { continue }
+              $content = (& git cat-file -p $pair.Key) -join [Environment]::NewLine
+              if ($LASTEXITCODE -ne 0) { continue }
+            } catch {
+              continue
+            }
+            Test-Content ("history:" + $pair.Value + "@" + $pair.Key.Substring(0, 12)) $pair.Value $content
+          }
+
+          if ($findings.Count -gt 0) {
+            $findings |
+              Sort-Object Location, Pattern -Unique |
+              Format-Table |
+              Out-String |
+              Write-Host
+            throw "Repository hygiene audit found credential-like or private local-path material."
+          }
+
+          @(
+            "status=PASS"
+            "tracked_files=$($tracked.Count)"
+            "historical_blobs=$($historyObjects.Count)"
+            "checked_patterns=$($patterns.Count)"
+          ) | Set-Content qualification/repository-hygiene-audit.txt -Encoding ASCII
+
+      - name: Capture dependency graph and audit vulnerabilities
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force qualification | Out-Null
+
+          $dependencyJson = (& dotnet list $env:PRODUCT_PROJECT package --include-transitive --format json) -join [Environment]::NewLine
+          if ($LASTEXITCODE -ne 0) { throw "Dependency graph query failed." }
+          Set-Content -Path qualification/dependencies.json -Value $dependencyJson -Encoding UTF8
+
+          $vulnerabilityJson = (& dotnet list $env:PRODUCT_PROJECT package --vulnerable --include-transitive --format json) -join [Environment]::NewLine
+          if ($LASTEXITCODE -ne 0) { throw "NuGet vulnerability audit failed." }
+          Set-Content -Path qualification/vulnerability-audit.json -Value $vulnerabilityJson -Encoding UTF8
+
+          $audit = $vulnerabilityJson | ConvertFrom-Json
+          $vulnerable = @()
+          foreach ($project in @($audit.projects)) {
+            foreach ($framework in @($project.frameworks)) {
+              $packages = @($framework.topLevelPackages) + @($framework.transitivePackages)
+              foreach ($package in $packages) {
+                if ($null -ne $package.vulnerabilities -and @($package.vulnerabilities).Count -gt 0) {
+                  $vulnerable += [PSCustomObject]@{
+                    Id = $package.id
+                    Version = $package.resolvedVersion
+                    Vulnerabilities = @($package.vulnerabilities).Count
+                  }
+                }
+              }
+            }
+          }
+          if ($vulnerable.Count -gt 0) {
+            $vulnerable | Format-Table | Out-String | Write-Host
+            throw "FULL is blocked by vulnerable resolved NuGet packages."
+          }
+
+      - name: Audit resolved package licenses
+        shell: pwsh
+        run: |
+          $dependencyJson = Get-Content qualification/dependencies.json -Raw | ConvertFrom-Json
+          $packages = @()
+          foreach ($project in @($dependencyJson.projects)) {
+            foreach ($framework in @($project.frameworks)) {
+              foreach ($package in @($framework.topLevelPackages) + @($framework.transitivePackages)) {
+                $version = if ($package.resolvedVersion) { [string]$package.resolvedVersion } else { [string]$package.version }
+                if ($package.id -and $version) {
+                  $packages += [PSCustomObject]@{ Id = [string]$package.id; Version = $version }
+                }
+              }
+            }
+          }
+
+          $packages = $packages | Sort-Object Id, Version -Unique
+          $tab = [char]9
+          $rows = @("id" + $tab + "version" + $tab + "license_type" + $tab + "license")
+          foreach ($package in $packages) {
+            $folder = Join-Path $env:USERPROFILE (".nuget\packages\" + $package.Id.ToLowerInvariant() + "\" + $package.Version.ToLowerInvariant())
+            $nuspec = Get-ChildItem -Path $folder -Filter *.nuspec -File -ErrorAction Stop | Select-Object -First 1
+            [xml]$xml = Get-Content $nuspec.FullName -Raw
+            $licenseNode = $xml.package.metadata.license
+            $licenseUrl = [string]$xml.package.metadata.licenseUrl
+            $license = if ($null -ne $licenseNode -and -not [string]::IsNullOrWhiteSpace([string]$licenseNode.InnerText)) {
+              [string]$licenseNode.InnerText
+            } elseif (-not [string]::IsNullOrWhiteSpace($licenseUrl)) {
+              $licenseUrl
+            } else {
+              throw "Resolved package '$($package.Id) $($package.Version)' has no auditable license metadata."
+            }
+            $licenseType = if ($null -ne $licenseNode -and $licenseNode.type) { [string]$licenseNode.type } else { "url" }
+            $rows += $package.Id + $tab + $package.Version + $tab + $licenseType + $tab + $license
+          }
+          $rows | Set-Content qualification/license-audit.tsv -Encoding UTF8
+
+      - name: Publish twice and prove deterministic output
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+
+          function Publish-Candidate([string]$OutputPath) {
+            dotnet publish $env:PRODUCT_PROJECT -c Release -r win-x64 --self-contained true --no-restore -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:ContinuousIntegrationBuild=true -p:Deterministic=true -p:DeterministicSourcePaths=true -p:DebugType=None -p:DebugSymbols=false -p:PublishReadyToRun=false -p:SourceRevisionId=${{ github.sha }} -o $OutputPath
+            if ($LASTEXITCODE -ne 0) { throw "Publish failed for $OutputPath." }
+          }
+
+          Publish-Candidate "artifacts/publish-a"
+          Publish-Candidate "artifacts/publish-b"
+
+          function Get-HashMap([string]$Root) {
+            $map = @{}
+            Get-ChildItem $Root -File -Recurse | ForEach-Object {
+              $relative = [IO.Path]::GetRelativePath((Resolve-Path $Root), $_.FullName).Replace('\','/')
+              $map[$relative] = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            }
+            return $map
+          }
+
+          $a = Get-HashMap "artifacts/publish-a"
+          $b = Get-HashMap "artifacts/publish-b"
+          if ($a.Count -ne $b.Count) { throw "Repeated publish produced a different file count." }
+          foreach ($name in $a.Keys) {
+            if (-not $b.ContainsKey($name) -or $a[$name] -ne $b[$name]) {
+              throw "Repeated publish is not deterministic for '$name'."
+            }
+          }
+
+          $a.GetEnumerator() |
+            Sort-Object Name |
+            ForEach-Object { "$($_.Value)  $($_.Name)" } |
+            Set-Content qualification/publish-sha256.txt -Encoding ASCII
+
+      - name: Smoke-test published WPF application
+        shell: pwsh
+        run: |
+          & (Resolve-Path "artifacts/publish-a/RekordboxMyTagSync.exe") --ui-smoke
+          if ($LASTEXITCODE -ne 0) { throw "Published WPF UI smoke test failed with exit code $LASTEXITCODE." }
+
+      - name: Build deterministic portable package and freeze hashes
+        id: package
+        shell: pwsh
+        run: |
+          $productExe = Resolve-Path "artifacts/publish-a/RekordboxMyTagSync.exe"
+          $productVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($productExe).ProductVersion
+          if ([string]::IsNullOrWhiteSpace($productVersion) -or
+              -not $productVersion.StartsWith("0.1.0-dev", [StringComparison]::Ordinal)) {
+            throw "FULL candidate product version '$productVersion' does not satisfy the required 0.1.0-dev pre-release identity."
+          }
+
+          $stage = Join-Path $PWD "artifacts/stage"
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          Copy-Item "artifacts/publish-a/*" $stage -Recurse
+          Copy-Item "qualification/dependencies.json" $stage
+          Copy-Item "qualification/vulnerability-audit.json" $stage
+          Copy-Item "qualification/database-access-source-audit.txt" $stage
+          Copy-Item "qualification/repository-hygiene-audit.txt" $stage
+          Copy-Item "qualification/license-audit.tsv" $stage
+          Copy-Item "qualification/publish-sha256.txt" $stage
+          Copy-Item "src/RekordboxMyTagSync/packages.lock.json" (Join-Path $stage "product-packages.lock.json")
+          Copy-Item "tests/RekordboxMyTagSync.SelfTests/packages.lock.json" (Join-Path $stage "selftest-packages.lock.json")
+          Set-Content -Path (Join-Path $stage "SOURCE_SHA.txt") -Value "${{ github.sha }}" -Encoding ASCII
+
+          $publishedFiles = Get-ChildItem $stage -File -Recurse |
+            Sort-Object FullName |
+            ForEach-Object {
+              [ordered]@{
+                path = [IO.Path]::GetRelativePath($stage, $_.FullName).Replace('\','/')
+                sha256 = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+                bytes = $_.Length
+              }
+            }
+
+          $manifest = [ordered]@{
+            schemaVersion = 1
+            sourceSha = "${{ github.sha }}"
+            productVersion = $productVersion
+            runtime = "win-x64"
+            selfContained = $true
+            singleFile = $true
+            files = @($publishedFiles)
+          }
+          $manifest | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $stage "candidate-manifest.json") -Encoding UTF8
+
+          Add-Type -AssemblyName System.IO.Compression
+          function New-DeterministicZip([string]$Source, [string]$Destination) {
+            if (Test-Path $Destination) { Remove-Item $Destination -Force }
+            $stream = [IO.File]::Open($Destination, [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+            try {
+              $archive = [IO.Compression.ZipArchive]::new($stream, [IO.Compression.ZipArchiveMode]::Create, $true)
+              try {
+                Get-ChildItem $Source -File -Recurse |
+                  Sort-Object { [IO.Path]::GetRelativePath($Source, $_.FullName) } |
+                  ForEach-Object {
+                    $relative = [IO.Path]::GetRelativePath($Source, $_.FullName).Replace('\','/')
+                    $entry = $archive.CreateEntry($relative, [IO.Compression.CompressionLevel]::NoCompression)
+                    $entry.LastWriteTime = [DateTimeOffset]::new(2000, 1, 1, 0, 0, 0, [TimeSpan]::Zero)
+                    $input = [IO.File]::OpenRead($_.FullName)
+                    try {
+                      $output = $entry.Open()
+                      try { $input.CopyTo($output) } finally { $output.Dispose() }
+                    } finally { $input.Dispose() }
+                  }
+              } finally { $archive.Dispose() }
+            } finally { $stream.Dispose() }
+          }
+
+          $zipA = Join-Path $PWD "artifacts/candidate-a.zip"
+          $zipB = Join-Path $PWD "artifacts/candidate-b.zip"
+          New-DeterministicZip $stage $zipA
+          New-DeterministicZip $stage $zipB
+
+          $hashA = (Get-FileHash $zipA -Algorithm SHA256).Hash.ToLowerInvariant()
+          $hashB = (Get-FileHash $zipB -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hashA -ne $hashB) { throw "Portable package creation is not deterministic." }
+
+          $candidateName = "RekordboxMyTagSync-win-x64-${{ github.sha }}.zip"
+          $candidatePath = Join-Path $PWD ("artifacts/" + $candidateName)
+          Move-Item $zipA $candidatePath -Force
+          Remove-Item $zipB -Force
+
+          "$hashA  $candidateName" | Set-Content "artifacts/$candidateName.sha256" -Encoding ASCII
+          $qualification = [ordered]@{
+            schemaVersion = 1
+            sourceSha = "${{ github.sha }}"
+            productVersion = $productVersion
+            artifactFile = $candidateName
+            artifactSha256 = $hashA
+            deterministicPublish = "PASS"
+            deterministicPackage = "PASS"
+            uiSmoke = "PASS"
+            repositoryHygieneAudit = "PASS"
+            databaseAccessSourceAudit = "PASS"
+            dependencyAudit = "PASS"
+            dependencyLockAudit = "PASS"
+            licenseAudit = "PASS"
+            vulnerabilityAudit = "PASS"
+          }
+          $qualification | ConvertTo-Json -Depth 4 | Set-Content "artifacts/FULL-QUALIFICATION.json" -Encoding UTF8
+
+          "candidate_name=$candidateName" >> $env:GITHUB_OUTPUT
+          "artifact_sha256=$hashA" >> $env:GITHUB_OUTPUT
+
+      - name: Completion audit
+        shell: pwsh
+        run: |
+          $candidate = "artifacts/${{ steps.package.outputs.candidate_name }}"
+          $shaFile = "$candidate.sha256"
+          $qualificationPath = "artifacts/FULL-QUALIFICATION.json"
+          if (-not (Test-Path $candidate)) { throw "Candidate ZIP is missing." }
+          if (-not (Test-Path $shaFile)) { throw "Candidate SHA-256 file is missing." }
+          if (-not (Test-Path $qualificationPath)) { throw "FULL qualification metadata is missing." }
+
+          $candidateHash = (Get-FileHash $candidate -Algorithm SHA256).Hash.ToLowerInvariant()
+          $shaLine = (Get-Content $shaFile -Raw).Trim()
+          if ($shaLine -notmatch '^([0-9a-fA-F]{64})\s+(.+)$') {
+            throw "Candidate SHA-256 sidecar has invalid format."
+          }
+          if ($Matches[1].ToLowerInvariant() -ne $candidateHash) {
+            throw "Candidate SHA-256 sidecar does not match the candidate ZIP."
+          }
+          if ($Matches[2] -ne [IO.Path]::GetFileName($candidate)) {
+            throw "Candidate SHA-256 sidecar names a different artifact."
+          }
+
+          $qualification = Get-Content $qualificationPath -Raw | ConvertFrom-Json
+          if ([string]$qualification.sourceSha -ne "${{ github.sha }}") {
+            throw "FULL qualification source SHA does not match the workflow SHA."
+          }
+          if ([string]$qualification.artifactFile -ne [IO.Path]::GetFileName($candidate)) {
+            throw "FULL qualification artifact file does not match the candidate."
+          }
+          if ([string]$qualification.artifactSha256 -ne $candidateHash) {
+            throw "FULL qualification artifact SHA-256 does not match the candidate."
+          }
+          foreach ($gate in @(
+            "deterministicPublish",
+            "deterministicPackage",
+            "uiSmoke",
+            "repositoryHygieneAudit",
+            "databaseAccessSourceAudit",
+            "dependencyAudit",
+            "dependencyLockAudit",
+            "licenseAudit",
+            "vulnerabilityAudit")) {
+            if ([string]$qualification.$gate -ne "PASS") {
+              throw "FULL qualification gate '$gate' is not PASS."
+            }
+          }
+          if ([string]::IsNullOrWhiteSpace([string]$qualification.productVersion) -or
+              -not ([string]$qualification.productVersion).StartsWith("0.1.0-dev", [StringComparison]::Ordinal)) {
+            throw "FULL qualification product version is not the required 0.1.0-dev identity."
+          }
+
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [IO.Compression.ZipFile]::OpenRead((Resolve-Path $candidate))
+          try {
+            $entries = @{}
+            foreach ($entry in $archive.Entries) {
+              if ($entries.ContainsKey($entry.FullName)) {
+                throw "Candidate contains duplicate entry '$($entry.FullName)'."
+              }
+              $entries[$entry.FullName] = $entry
+            }
+
+            foreach ($required in @(
+              "RekordboxMyTagSync.exe",
+              "SOURCE_SHA.txt",
+              "candidate-manifest.json",
+              "dependencies.json",
+              "vulnerability-audit.json",
+              "database-access-source-audit.txt",
+              "repository-hygiene-audit.txt",
+              "license-audit.tsv",
+              "publish-sha256.txt",
+              "product-packages.lock.json",
+              "selftest-packages.lock.json")) {
+              if (-not $entries.ContainsKey($required)) { throw "Candidate is missing '$required'." }
+            }
+
+            function Read-ZipText([IO.Compression.ZipArchiveEntry]$Entry) {
+              $stream = $Entry.Open()
+              try {
+                $reader = [IO.StreamReader]::new($stream, [Text.UTF8Encoding]::new($false), $true)
+                try { return $reader.ReadToEnd() } finally { $reader.Dispose() }
+              } finally { $stream.Dispose() }
+            }
+
+            $sourceSha = (Read-ZipText $entries["SOURCE_SHA.txt"]).Trim()
+            if ($sourceSha -ne "${{ github.sha }}") {
+              throw "Candidate SOURCE_SHA.txt does not match the workflow SHA."
+            }
+
+            $manifest = (Read-ZipText $entries["candidate-manifest.json"]) | ConvertFrom-Json
+            if ([string]$manifest.sourceSha -ne "${{ github.sha }}") {
+              throw "Candidate manifest source SHA does not match the workflow SHA."
+            }
+            if ([string]$manifest.productVersion -ne [string]$qualification.productVersion) {
+              throw "Candidate manifest product version does not match FULL qualification metadata."
+            }
+            if ([string]$manifest.runtime -ne "win-x64" -or
+                -not [bool]$manifest.selfContained -or
+                -not [bool]$manifest.singleFile) {
+              throw "Candidate manifest runtime/package mode is invalid."
+            }
+
+            $manifestNames = @{}
+            foreach ($file in @($manifest.files)) {
+              $name = [string]$file.path
+              if ([string]::IsNullOrWhiteSpace($name) -or $manifestNames.ContainsKey($name)) {
+                throw "Candidate manifest has an empty or duplicate file path '$name'."
+              }
+              $manifestNames[$name] = $true
+              if (-not $entries.ContainsKey($name)) {
+                throw "Candidate manifest references missing entry '$name'."
+              }
+              $entry = $entries[$name]
+              if ([long]$file.bytes -ne $entry.Length) {
+                throw "Candidate manifest length mismatch for '$name'."
+              }
+
+              $stream = $entry.Open()
+              try {
+                $sha = [Security.Cryptography.SHA256]::Create()
+                try {
+                  $actual = [Convert]::ToHexString($sha.ComputeHash($stream)).ToLowerInvariant()
+                } finally {
+                  $sha.Dispose()
+                }
+              } finally {
+                $stream.Dispose()
+              }
+              if ([string]$file.sha256 -ne $actual) {
+                throw "Candidate manifest SHA-256 mismatch for '$name'."
+              }
+            }
+            $expectedEntries = @($manifestNames.Keys) + @("candidate-manifest.json")
+            if ($entries.Count -ne $expectedEntries.Count) {
+              throw "Candidate archive contains unmanifested entries or omits an expected entry."
+            }
+            foreach ($name in $entries.Keys) {
+              if ($name -ne "candidate-manifest.json" -and -not $manifestNames.ContainsKey($name)) {
+                throw "Candidate contains an unmanifested entry '$name'."
+              }
+            }
+          } finally {
+            $archive.Dispose()
+          }
+
+          Write-Host "FULL candidate source SHA: ${{ github.sha }}"
+          Write-Host "FULL candidate artifact SHA-256: $candidateHash"
+          Write-Host "FULL candidate product version: $($qualification.productVersion)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RekordboxMyTagSync-FULL-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+          path: |
+            artifacts/${{ steps.package.outputs.candidate_name }}
+            artifacts/${{ steps.package.outputs.candidate_name }}.sha256
+            artifacts/FULL-QUALIFICATION.json
+            qualification/dependencies.json
+            qualification/vulnerability-audit.json
+            qualification/database-access-source-audit.txt
+            qualification/repository-hygiene-audit.txt
+            qualification/license-audit.tsv
+            qualification/publish-sha256.txt

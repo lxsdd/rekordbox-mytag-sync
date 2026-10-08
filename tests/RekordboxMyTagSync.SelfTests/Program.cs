@@ -4,6 +4,16 @@ using System.Text.Json;
 using System.Xml.Linq;
 using RekordboxMyTagSync.Core;
 
+if (args.Contains("--verify-remote-access-sources", StringComparer.Ordinal))
+{
+    var sources = RekordboxDatabaseAccessResolver.ProbePinnedSourcesAsync()
+        .GetAwaiter()
+        .GetResult();
+    Console.WriteLine(
+        $"Pinned automatic database-access sources PASS ({sources.Count} available: {string.Join(", ", sources)})");
+    return;
+}
+
 static void AssertSequence(string name, IReadOnlyList<string> actual, params string[] expected)
 {
     if (!actual.SequenceEqual(expected, StringComparer.Ordinal))
@@ -144,6 +154,16 @@ try
     if (!string.Equals(discovery.Libraries[0].DatabasePath, expectedDatabasePath, StringComparison.OrdinalIgnoreCase))
         throw new InvalidOperationException("discovered database path mismatch");
 
+    var manualTarget = RekordboxDiscovery.InspectManual(
+        dbPath,
+        new RekordboxDiscoveryOptions(programRoot, appRoot));
+    if (!manualTarget.Safe ||
+        manualTarget.UsedBy.Count != 2 ||
+        manualTarget.Evidence.Count != 1 ||
+        manualTarget.Evidence[0] != "manual browse selection" ||
+        !string.Equals(manualTarget.DatabasePath, expectedDatabasePath, StringComparison.OrdinalIgnoreCase))
+        throw new InvalidOperationException("manual rekordbox target qualification failed");
+
     PathMatcherSelfTest.Run(temp);
     PreviewSelfTest.Run(temp);
     RekordboxMutationPreflightSelfTest.Run(temp);
@@ -154,6 +174,7 @@ try
     RekordboxUpdateCounterSelfTest.Run();
     RekordboxMyTagDefinitionWriterSelfTest.Run();
     RekordboxMutationExecutorSelfTest.Run(temp);
+    RekordboxDatabaseAccessResolverSelfTest.Run(temp);
     AppSettingsStoreSelfTest.Run(temp);
     RekordboxDatabaseSelfTest.Run(temp);
     ProvenanceSelfTest.Run(temp);
@@ -173,4 +194,4 @@ finally
     try { Directory.Delete(temp, true); } catch { }
 }
 
-Console.WriteLine("Mapping + bridge + rekordbox discovery + preview + mutation preflight + transaction rollback + runtime SongMyTag semantics/writer + postimage/provenance/integrity + update counter + fail-closed MyTag definition creation + encrypted transactional executor/restore + encrypted database + provenance + rolling backup/restore self-tests PASS");
+Console.WriteLine("Mapping + bridge + rekordbox discovery + preview + mutation preflight + transaction rollback + runtime SongMyTag semantics/writer + postimage/provenance/integrity + update counter + fail-closed MyTag definition creation + encrypted transactional executor/restore + automatic database access + encrypted database + provenance + rolling backup/restore self-tests PASS");

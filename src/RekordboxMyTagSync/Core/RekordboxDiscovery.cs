@@ -77,6 +77,37 @@ public static class RekordboxDiscovery
         return new RekordboxDiscoveryResult(installations, libraries, diagnostics);
     }
 
+    public static RekordboxLibraryCandidate InspectManual(
+        string databasePath,
+        RekordboxDiscoveryOptions? options = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
+        options ??= RekordboxDiscoveryOptions.ForCurrentUser();
+
+        var diagnostics = new List<string>();
+        var installations = DiscoverInstallations(
+            options.ProgramFilesRoot,
+            diagnostics);
+        var canonical = CanonicalPath(databasePath);
+        var exists = File.Exists(canonical);
+        var supportedInstallations = installations
+            .Where(x => x.MajorVersion is 6 or 7)
+            .ToArray();
+
+        string? error = null;
+        if (!exists)
+            error = "Selected master.db does not exist.";
+        else if (supportedInstallations.Length == 0)
+            error = "No supported rekordbox 6/7 installation was discovered for manual target qualification.";
+
+        return new RekordboxLibraryCandidate(
+            canonical,
+            supportedInstallations,
+            new[] { "manual browse selection" },
+            error is null,
+            error);
+    }
+
     private static IReadOnlyList<RekordboxInstallation> DiscoverInstallations(string programFilesRoot, List<string> diagnostics)
     {
         var found = new List<RekordboxInstallation>();

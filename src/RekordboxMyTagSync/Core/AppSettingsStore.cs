@@ -11,7 +11,7 @@ public sealed record AppSettings(
     IReadOnlyList<MappingRule>? Mappings = null,
     string? BridgeDirectory = null,
     IReadOnlyList<string>? KnownBridgeDirectories = null,
-    IReadOnlyList<string>? SupportedDbVersions = null)
+    IReadOnlyList<string>? SupportedDbVersions = null) // Legacy schema-v1 input; ignored for runtime qualification.
 {
     public IReadOnlyList<PathAlias> EffectivePathAliases =>
         PathAliases ?? Array.Empty<PathAlias>();
@@ -23,7 +23,7 @@ public sealed record AppSettings(
         KnownBridgeDirectories ?? Array.Empty<string>();
 
     public IReadOnlyList<string> EffectiveSupportedDbVersions =>
-        SupportedDbVersions ?? Array.Empty<string>();
+        Array.Empty<string>();
 
     public string? EffectiveBridgeDirectory =>
         !string.IsNullOrWhiteSpace(BridgeDirectory)
@@ -147,13 +147,6 @@ public static class AppSettingsStore
             !knownBridgeDirectories.Contains(bridgeDirectory, StringComparer.OrdinalIgnoreCase))
             knownBridgeDirectories.Add(bridgeDirectory);
 
-        var supportedDbVersions = (settings.SupportedDbVersions ?? Array.Empty<string>())
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Select(x => x.Trim())
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(x => x, StringComparer.Ordinal)
-            .ToArray();
-
         var aliases = (settings.PathAliases ?? Array.Empty<PathAlias>())
             .Select(x => x ?? throw new InvalidDataException("Settings contain a null path alias."))
             .Select(x => new PathAlias(
@@ -175,7 +168,7 @@ public static class AppSettingsStore
             mappings,
             bridgeDirectory,
             knownBridgeDirectories,
-            supportedDbVersions);
+            SupportedDbVersions: null);
     }
 
     private static MappingRule ValidateMapping(MappingRule rule)
