@@ -12,12 +12,22 @@ concurrency:
 jobs:
   build-and-selftest:
     runs-on: windows-latest
+    env:
+      PRODUCT_PROJECT: src/RekordboxMyTagSync/RekordboxMyTagSync.csproj
+      TEST_PROJECT: tests/RekordboxMyTagSync.SelfTests/RekordboxMyTagSync.SelfTests.csproj
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+      - name: Restore locked dependency graph
+        shell: pwsh
+        run: |
+          dotnet restore $env:PRODUCT_PROJECT -r win-x64 --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw "Product locked restore failed." }
+          dotnet restore $env:TEST_PROJECT -r win-x64 --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw "Self-test locked restore failed." }
       - name: Build product
-        run: dotnet build src/RekordboxMyTagSync/RekordboxMyTagSync.csproj -c Release
+        run: dotnet build $env:PRODUCT_PROJECT -c Release --no-restore
       - name: Run deterministic mapping self-tests
-        run: dotnet run --project tests/RekordboxMyTagSync.SelfTests/RekordboxMyTagSync.SelfTests.csproj -c Release
+        run: dotnet run --project $env:TEST_PROJECT -c Release --no-restore
