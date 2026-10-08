@@ -504,6 +504,10 @@ public partial class MainWindow : Window
                 databasePath,
                 key,
                 policy);
+            _databaseAccess = _databaseAccess with
+            {
+                Snapshot = _databaseSnapshot
+            };
             _bridgeSnapshot = bridge;
 
             if (!string.IsNullOrWhiteSpace(result.BackupPackagePath))
@@ -617,6 +621,10 @@ public partial class MainWindow : Window
                 restoredSnapshot);
 
             _databaseSnapshot = restoredSnapshot;
+            _databaseAccess = _databaseAccess with
+            {
+                Snapshot = restoredSnapshot
+            };
             _databaseAccessQualified = true;
             InvalidatePreview("Rolling backup restored; a new preview is required.");
             QualifyRestorePoint(restoredSnapshot.Identity);
