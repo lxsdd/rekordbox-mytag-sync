@@ -12,11 +12,43 @@ public partial class App : Application
             StartupUri = null;
             base.OnStartup(e);
 
-            _ = new MainWindow();
+            RunUiSmoke();
             Shutdown(0);
             return;
         }
 
         base.OnStartup(e);
+    }
+
+    private static void RunUiSmoke()
+    {
+        var window = new MainWindow();
+        try
+        {
+            foreach (var name in new[]
+            {
+                "BridgeDirectoryTextBox",
+                "SourceCandidatesGrid",
+                "TargetDatabaseTextBox",
+                "ValidateDatabaseAccessButton",
+                "MappingGrid",
+                "PathAliasGrid",
+                "BuildPreviewButton",
+                "PreviewGrid",
+                "ApplyButton",
+                "RestoreButton",
+                "SaveSettingsButton",
+                "DiagnosticsTextBox"
+            })
+            {
+                if (window.FindName(name) is null)
+                    throw new InvalidOperationException(
+                        $"Required WPF workflow element '{name}' is missing.");
+            }
+        }
+        finally
+        {
+            window.Close();
+        }
     }
 }
