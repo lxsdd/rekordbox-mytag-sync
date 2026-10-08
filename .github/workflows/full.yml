@@ -41,6 +41,17 @@ jobs:
           dotnet run --project $env:TEST_PROJECT -c Release --no-restore
           if ($LASTEXITCODE -ne 0) { throw "Deterministic self-tests failed." }
 
+      - name: Verify automatic database-access compatibility sources
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force qualification | Out-Null
+          $output = (& dotnet run --project $env:TEST_PROJECT -c Release --no-restore -- --verify-remote-access-sources) -join [Environment]::NewLine
+          if ($LASTEXITCODE -ne 0) {
+            throw "Pinned automatic database-access source qualification failed."
+          }
+          $output | Set-Content qualification/database-access-source-audit.txt -Encoding UTF8
+          Write-Host $output
+
       - name: Audit repository credential and privacy hygiene
         shell: pwsh
         run: |
@@ -265,6 +276,7 @@ jobs:
           Copy-Item "artifacts/publish-a/*" $stage -Recurse
           Copy-Item "qualification/dependencies.json" $stage
           Copy-Item "qualification/vulnerability-audit.json" $stage
+          Copy-Item "qualification/database-access-source-audit.txt" $stage
           Copy-Item "qualification/repository-hygiene-audit.txt" $stage
           Copy-Item "qualification/license-audit.tsv" $stage
           Copy-Item "qualification/publish-sha256.txt" $stage
@@ -341,6 +353,7 @@ jobs:
             deterministicPackage = "PASS"
             uiSmoke = "PASS"
             repositoryHygieneAudit = "PASS"
+            databaseAccessSourceAudit = "PASS"
             dependencyAudit = "PASS"
             dependencyLockAudit = "PASS"
             licenseAudit = "PASS"
@@ -388,6 +401,7 @@ jobs:
             "deterministicPackage",
             "uiSmoke",
             "repositoryHygieneAudit",
+            "databaseAccessSourceAudit",
             "dependencyAudit",
             "dependencyLockAudit",
             "licenseAudit",
@@ -418,6 +432,7 @@ jobs:
               "candidate-manifest.json",
               "dependencies.json",
               "vulnerability-audit.json",
+              "database-access-source-audit.txt",
               "repository-hygiene-audit.txt",
               "license-audit.tsv",
               "publish-sha256.txt",
@@ -497,6 +512,7 @@ jobs:
             artifacts/FULL-QUALIFICATION.json
             qualification/dependencies.json
             qualification/vulnerability-audit.json
+            qualification/database-access-source-audit.txt
             qualification/repository-hygiene-audit.txt
             qualification/license-audit.tsv
             qualification/publish-sha256.txt
