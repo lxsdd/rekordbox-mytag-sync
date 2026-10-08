@@ -4,6 +4,16 @@ using System.Text.Json;
 using System.Xml.Linq;
 using RekordboxMyTagSync.Core;
 
+if (args.Contains("--verify-remote-access-sources", StringComparer.Ordinal))
+{
+    var sources = RekordboxDatabaseAccessResolver.ProbePinnedSourcesAsync()
+        .GetAwaiter()
+        .GetResult();
+    Console.WriteLine(
+        $"Pinned automatic database-access sources PASS ({sources.Count} available: {string.Join(", ", sources)})");
+    return;
+}
+
 static void AssertSequence(string name, IReadOnlyList<string> actual, params string[] expected)
 {
     if (!actual.SequenceEqual(expected, StringComparer.Ordinal))
