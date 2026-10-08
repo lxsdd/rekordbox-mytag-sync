@@ -6,18 +6,20 @@ public partial class App : Application
 {
     protected override void OnStartup(StartupEventArgs e)
     {
+        base.OnStartup(e);
+
         if (e.Args.Any(arg =>
                 string.Equals(arg, "--ui-smoke", StringComparison.OrdinalIgnoreCase)))
         {
-            StartupUri = null;
-            base.OnStartup(e);
-
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
             RunUiSmoke();
             Shutdown(0);
             return;
         }
 
-        base.OnStartup(e);
+        var window = new MainWindow();
+        MainWindow = window;
+        window.Show();
     }
 
     private static void RunUiSmoke()
