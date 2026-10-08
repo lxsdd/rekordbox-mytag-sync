@@ -144,6 +144,16 @@ try
     if (!string.Equals(discovery.Libraries[0].DatabasePath, expectedDatabasePath, StringComparison.OrdinalIgnoreCase))
         throw new InvalidOperationException("discovered database path mismatch");
 
+    var manualTarget = RekordboxDiscovery.InspectManual(
+        dbPath,
+        new RekordboxDiscoveryOptions(programRoot, appRoot));
+    if (!manualTarget.Safe ||
+        manualTarget.UsedBy.Count != 2 ||
+        manualTarget.Evidence.Count != 1 ||
+        manualTarget.Evidence[0] != "manual browse selection" ||
+        !string.Equals(manualTarget.DatabasePath, expectedDatabasePath, StringComparison.OrdinalIgnoreCase))
+        throw new InvalidOperationException("manual rekordbox target qualification failed");
+
     PathMatcherSelfTest.Run(temp);
     PreviewSelfTest.Run(temp);
     RekordboxMutationPreflightSelfTest.Run(temp);
