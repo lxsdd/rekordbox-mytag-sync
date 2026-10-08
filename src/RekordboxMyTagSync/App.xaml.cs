@@ -30,6 +30,7 @@ public partial class App : Application
                 "BridgeDirectoryTextBox",
                 "SourceCandidatesGrid",
                 "TargetDatabaseTextBox",
+                "BrowseTargetButton",
                 "ValidateDatabaseAccessButton",
                 "MappingGrid",
                 "PathAliasGrid",
