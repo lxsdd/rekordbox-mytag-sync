@@ -156,6 +156,13 @@ jobs:
         id: package
         shell: pwsh
         run: |
+          $productExe = Resolve-Path "artifacts/publish-a/RekordboxMyTagSync.exe"
+          $productVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($productExe).ProductVersion
+          if ([string]::IsNullOrWhiteSpace($productVersion) -or
+              -not $productVersion.StartsWith("0.1.0-dev", [StringComparison]::Ordinal)) {
+            throw "FULL candidate product version '$productVersion' does not satisfy the required 0.1.0-dev pre-release identity."
+          }
+
           $stage = Join-Path $PWD "artifacts/stage"
           New-Item -ItemType Directory -Force $stage | Out-Null
           Copy-Item "artifacts/publish-a/*" $stage -Recurse
@@ -180,6 +187,7 @@ jobs:
           $manifest = [ordered]@{
             schemaVersion = 1
             sourceSha = "${{ github.sha }}"
+            productVersion = $productVersion
             runtime = "win-x64"
             selfContained = $true
             singleFile = $true
@@ -228,6 +236,7 @@ jobs:
           $qualification = [ordered]@{
             schemaVersion = 1
             sourceSha = "${{ github.sha }}"
+            productVersion = $productVersion
             artifactFile = $candidateName
             artifactSha256 = $hashA
             deterministicPublish = "PASS"
@@ -247,14 +256,78 @@ jobs:
         shell: pwsh
         run: |
           $candidate = "artifacts/${{ steps.package.outputs.candidate_name }}"
+          $shaFile = "$candidate.sha256"
+          $qualificationPath = "artifacts/FULL-QUALIFICATION.json"
           if (-not (Test-Path $candidate)) { throw "Candidate ZIP is missing." }
-          if (-not (Test-Path "$candidate.sha256")) { throw "Candidate SHA-256 file is missing." }
-          if (-not (Test-Path "artifacts/FULL-QUALIFICATION.json")) { throw "FULL qualification metadata is missing." }
+          if (-not (Test-Path $shaFile)) { throw "Candidate SHA-256 file is missing." }
+          if (-not (Test-Path $qualificationPath)) { throw "FULL qualification metadata is missing." }
+
+          $candidateHash = (Get-FileHash $candidate -Algorithm SHA256).Hash.ToLowerInvariant()
+          $shaLine = (Get-Content $shaFile -Raw).Trim()
+          if ($shaLine -notmatch '^([0-9a-fA-F]{64})\s+(.+)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RekordboxMyTagSync-FULL-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+          path: |
+            artifacts/${{ steps.package.outputs.candidate_name }}
+            artifacts/${{ steps.package.outputs.candidate_name }}.sha256
+            artifacts/FULL-QUALIFICATION.json
+            qualification/dependencies.json
+            qualification/vulnerability-audit.json
+            qualification/license-audit.tsv
+            qualification/publish-sha256.txt
+) {
+            throw "Candidate SHA-256 sidecar has invalid format."
+          }
+          if ($Matches[1].ToLowerInvariant() -ne $candidateHash) {
+            throw "Candidate SHA-256 sidecar does not match the candidate ZIP."
+          }
+          if ($Matches[2] -ne [IO.Path]::GetFileName($candidate)) {
+            throw "Candidate SHA-256 sidecar names a different artifact."
+          }
+
+          $qualification = Get-Content $qualificationPath -Raw | ConvertFrom-Json
+          if ([string]$qualification.sourceSha -ne "${{ github.sha }}") {
+            throw "FULL qualification source SHA does not match the workflow SHA."
+          }
+          if ([string]$qualification.artifactFile -ne [IO.Path]::GetFileName($candidate)) {
+            throw "FULL qualification artifact file does not match the candidate."
+          }
+          if ([string]$qualification.artifactSha256 -ne $candidateHash) {
+            throw "FULL qualification artifact SHA-256 does not match the candidate."
+          }
+          foreach ($gate in @(
+            "deterministicPublish",
+            "deterministicPackage",
+            "uiSmoke",
+            "dependencyAudit",
+            "dependencyLockAudit",
+            "licenseAudit",
+            "vulnerabilityAudit")) {
+            if ([string]$qualification.$gate -ne "PASS") {
+              throw "FULL qualification gate '$gate' is not PASS."
+            }
+          }
+          if ([string]::IsNullOrWhiteSpace([string]$qualification.productVersion) -or
+              -not ([string]$qualification.productVersion).StartsWith("0.1.0-dev", [StringComparison]::Ordinal)) {
+            throw "FULL qualification product version is not the required 0.1.0-dev identity."
+          }
 
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           $archive = [IO.Compression.ZipFile]::OpenRead((Resolve-Path $candidate))
           try {
-            $names = @($archive.Entries | ForEach-Object FullName)
+            $entries = @{}
+            foreach ($entry in $archive.Entries) {
+              if ($entries.ContainsKey($entry.FullName)) {
+                throw "Candidate contains duplicate entry '$($entry.FullName)'."
+              }
+              $entries[$entry.FullName] = $entry
+            }
+
             foreach ($required in @(
               "RekordboxMyTagSync.exe",
               "SOURCE_SHA.txt",
@@ -265,14 +338,67 @@ jobs:
               "publish-sha256.txt",
               "product-packages.lock.json",
               "selftest-packages.lock.json")) {
-              if ($names -notcontains $required) { throw "Candidate is missing '$required'." }
+              if (-not $entries.ContainsKey($required)) { throw "Candidate is missing '$required'." }
+            }
+
+            function Read-ZipText([IO.Compression.ZipArchiveEntry]$Entry) {
+              $stream = $Entry.Open()
+              try {
+                $reader = [IO.StreamReader]::new($stream, [Text.UTF8Encoding]::new($false), $true)
+                try { return $reader.ReadToEnd() } finally { $reader.Dispose() }
+              } finally { $stream.Dispose() }
+            }
+
+            $sourceSha = (Read-ZipText $entries["SOURCE_SHA.txt"]).Trim()
+            if ($sourceSha -ne "${{ github.sha }}") {
+              throw "Candidate SOURCE_SHA.txt does not match the workflow SHA."
+            }
+
+            $manifest = (Read-ZipText $entries["candidate-manifest.json"]) | ConvertFrom-Json
+            if ([string]$manifest.sourceSha -ne "${{ github.sha }}") {
+              throw "Candidate manifest source SHA does not match the workflow SHA."
+            }
+            if ([string]$manifest.productVersion -ne [string]$qualification.productVersion) {
+              throw "Candidate manifest product version does not match FULL qualification metadata."
+            }
+            if ([string]$manifest.runtime -ne "win-x64" -or
+                -not [bool]$manifest.selfContained -or
+                -not [bool]$manifest.singleFile) {
+              throw "Candidate manifest runtime/package mode is invalid."
+            }
+
+            foreach ($file in @($manifest.files)) {
+              $name = [string]$file.path
+              if (-not $entries.ContainsKey($name)) {
+                throw "Candidate manifest references missing entry '$name'."
+              }
+              $entry = $entries[$name]
+              if ([long]$file.bytes -ne $entry.Length) {
+                throw "Candidate manifest length mismatch for '$name'."
+              }
+
+              $stream = $entry.Open()
+              try {
+                $sha = [Security.Cryptography.SHA256]::Create()
+                try {
+                  $actual = [Convert]::ToHexString($sha.ComputeHash($stream)).ToLowerInvariant()
+                } finally {
+                  $sha.Dispose()
+                }
+              } finally {
+                $stream.Dispose()
+              }
+              if ([string]$file.sha256 -ne $actual) {
+                throw "Candidate manifest SHA-256 mismatch for '$name'."
+              }
             }
           } finally {
             $archive.Dispose()
           }
 
           Write-Host "FULL candidate source SHA: ${{ github.sha }}"
-          Write-Host "FULL candidate artifact SHA-256: ${{ steps.package.outputs.artifact_sha256 }}"
+          Write-Host "FULL candidate artifact SHA-256: $candidateHash"
+          Write-Host "FULL candidate product version: $($qualification.productVersion)"
 
       - uses: actions/upload-artifact@v4
         with:
