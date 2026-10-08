@@ -39,6 +39,57 @@ jobs:
           dotnet run --project $env:TEST_PROJECT -c Release --no-restore
           if ($LASTEXITCODE -ne 0) { throw "Deterministic self-tests failed." }
 
+      - name: Audit repository credential and privacy hygiene
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force qualification | Out-Null
+
+          $patterns = @(
+            @{ Name = "GitHub classic token"; Regex = 'ghp_[A-Za-z0-9_]{20,}' },
+            @{ Name = "GitHub fine-grained token"; Regex = 'github_pat_[A-Za-z0-9_]{20,}' },
+            @{ Name = "OpenAI-style secret"; Regex = 'sk-[A-Za-z0-9_-]{20,}' },
+            @{ Name = "AWS access key"; Regex = 'AKIA[0-9A-Z]{16}' },
+            @{ Name = "Google API key"; Regex = 'AIza[0-9A-Za-z_-]{20,}' },
+            @{ Name = "Slack token"; Regex = 'xox[baprs]-[0-9A-Za-z-]{10,}' },
+            @{ Name = "Private key block"; Regex = '-----BEGIN [A-Z ]*PRIVATE KEY-----' },
+            @{ Name = "Local Windows user path"; Regex = 'C:\\Users\\[^\\\s]+' }
+          )
+
+          $tracked = @(git ls-files)
+          if ($LASTEXITCODE -ne 0 -or $tracked.Count -eq 0) {
+            throw "Could not enumerate tracked repository files for hygiene audit."
+          }
+
+          $findings = @()
+          foreach ($file in $tracked) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
+            try {
+              $content = Get-Content -LiteralPath $file -Raw -ErrorAction Stop
+            } catch {
+              continue
+            }
+
+            foreach ($pattern in $patterns) {
+              if ($content -match $pattern.Regex) {
+                $findings += [PSCustomObject]@{
+                  File = $file
+                  Pattern = $pattern.Name
+                }
+              }
+            }
+          }
+
+          if ($findings.Count -gt 0) {
+            $findings | Sort-Object File, Pattern -Unique | Format-Table | Out-String | Write-Host
+            throw "Repository hygiene audit found credential-like or private local-path material."
+          }
+
+          @(
+            "status=PASS"
+            "tracked_files=$($tracked.Count)"
+            "checked_patterns=$($patterns.Count)"
+          ) | Set-Content qualification/repository-hygiene-audit.txt -Encoding ASCII
+
       - name: Capture dependency graph and audit vulnerabilities
         shell: pwsh
         run: |
@@ -168,6 +219,7 @@ jobs:
           Copy-Item "artifacts/publish-a/*" $stage -Recurse
           Copy-Item "qualification/dependencies.json" $stage
           Copy-Item "qualification/vulnerability-audit.json" $stage
+          Copy-Item "qualification/repository-hygiene-audit.txt" $stage
           Copy-Item "qualification/license-audit.tsv" $stage
           Copy-Item "qualification/publish-sha256.txt" $stage
           Copy-Item "src/RekordboxMyTagSync/packages.lock.json" (Join-Path $stage "product-packages.lock.json")
@@ -242,6 +294,7 @@ jobs:
             deterministicPublish = "PASS"
             deterministicPackage = "PASS"
             uiSmoke = "PASS"
+            repositoryHygieneAudit = "PASS"
             dependencyAudit = "PASS"
             dependencyLockAudit = "PASS"
             licenseAudit = "PASS"
@@ -288,6 +341,7 @@ jobs:
             "deterministicPublish",
             "deterministicPackage",
             "uiSmoke",
+            "repositoryHygieneAudit",
             "dependencyAudit",
             "dependencyLockAudit",
             "licenseAudit",
@@ -318,6 +372,7 @@ jobs:
               "candidate-manifest.json",
               "dependencies.json",
               "vulnerability-audit.json",
+              "repository-hygiene-audit.txt",
               "license-audit.tsv",
               "publish-sha256.txt",
               "product-packages.lock.json",
@@ -396,5 +451,6 @@ jobs:
             artifacts/FULL-QUALIFICATION.json
             qualification/dependencies.json
             qualification/vulnerability-audit.json
+            qualification/repository-hygiene-audit.txt
             qualification/license-audit.tsv
             qualification/publish-sha256.txt
