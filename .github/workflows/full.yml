@@ -257,8 +257,11 @@ jobs:
       - name: Smoke-test published WPF application
         shell: pwsh
         run: |
-          & (Resolve-Path "artifacts/publish-a/RekordboxMyTagSync.exe") --ui-smoke
-          if ($LASTEXITCODE -ne 0) { throw "Published WPF UI smoke test failed with exit code $LASTEXITCODE." }
+          $exe = (Resolve-Path "artifacts/publish-a/RekordboxMyTagSync.exe").Path
+          $process = Start-Process -FilePath $exe -ArgumentList "--ui-smoke" -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Published WPF UI smoke test failed with exit code $($process.ExitCode)."
+          }
 
       - name: Build deterministic portable package and freeze hashes
         id: package
