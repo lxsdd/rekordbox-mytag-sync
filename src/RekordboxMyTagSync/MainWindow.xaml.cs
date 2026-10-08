@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private bool _backupAvailable;
     private bool _backupMatchesTarget;
     private RekordboxDatabaseSnapshot? _databaseSnapshot;
+    private RekordboxResolvedDatabaseAccess? _databaseAccess;
     private BridgeSourceSnapshot? _bridgeSnapshot;
     private PreviewResult? _approvedPreview;
 
@@ -39,7 +40,7 @@ public partial class MainWindow : Window
         DiscoverSourceButton.Click += (_, _) => DiscoverSources();
         InspectSourceButton.Click += (_, _) => InspectSelectedSource();
         DiscoverTargetButton.Click += (_, _) => DiscoverTargets();
-        ValidateDatabaseAccessButton.Click += (_, _) => ValidateDatabaseAccess();
+        ValidateDatabaseAccessButton.Click += async (_, _) => await ValidateDatabaseAccessAsync();
         AddMappingButton.Click += (_, _) => AddMapping();
         RemoveMappingButton.Click += (_, _) => RemoveSelectedMapping();
         AddAliasButton.Click += (_, _) => AddAlias();
@@ -68,16 +69,6 @@ public partial class MainWindow : Window
                 UpdateWorkflowGate();
             }
         };
-        DatabaseKeyPasswordBox.PasswordChanged += (_, _) =>
-        {
-            InvalidateDatabaseAccess("Database key changed.");
-            UpdateWorkflowGate();
-        };
-        SupportedDbVersionsTextBox.TextChanged += (_, _) =>
-        {
-            InvalidateDatabaseAccess("Supported DBVersion list changed.");
-            UpdateWorkflowGate();
-        };
         BridgeDirectoryTextBox.TextChanged += (_, _) =>
         {
             _sourceSafe = false;
@@ -105,7 +96,6 @@ public partial class MainWindow : Window
             _settings = AppSettingsStore.Load(_settingsPath);
             BridgeDirectoryTextBox.Text = _settings.EffectiveBridgeDirectory ?? string.Empty;
             TargetDatabaseTextBox.Text = _settings.RekordboxDatabasePath ?? string.Empty;
-            SupportedDbVersionsTextBox.Text = string.Join(", ", _settings.EffectiveSupportedDbVersions);
 
             _mappings.Clear();
             foreach (var rule in _settings.EffectiveMappings)
@@ -171,8 +161,7 @@ public partial class MainWindow : Window
             aliases,
             mappings,
             bridgeDirectory,
-            known,
-            ParseSupportedDbVersions(SupportedDbVersionsTextBox.Text)));
+            known));
     }
 
     private void DiscoverSources()
@@ -283,52 +272,56 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ValidateDatabaseAccess()
+    private async Task ValidateDatabaseAccessAsync()
     {
+        ValidateDatabaseAccessButton.IsEnabled = false;
+        DatabaseAccessStatusTextBlock.Text =
+            "Resolving SQLCipher access and qualifying the selected database…";
         try
         {
-            if (!_targetSafe)
-                throw new InvalidDataException("Selected target library is not qualified as safe.");
-
             var databasePath = OptionalPath(TargetDatabaseTextBox.Text)
                 ?? throw new InvalidDataException("No target master.db is selected.");
-            var key = DatabaseKeyPasswordBox.Password;
-            if (string.IsNullOrWhiteSpace(key))
-                throw new InvalidDataException("SQLCipher key is empty.");
 
-            var versions = ParseSupportedDbVersions(SupportedDbVersionsTextBox.Text);
-            if (versions.Count == 0)
-                throw new InvalidDataException("At least one exact supported DBVersion is required.");
+            var discovery = RekordboxDiscovery.Discover();
+            var matches = discovery.Libraries
+                .Where(x =>
+                    x.Safe &&
+                    PathsEqual(x.DatabasePath, databasePath))
+                .ToArray();
+            if (matches.Length != 1)
+                throw new InvalidDataException(
+                    matches.Length == 0
+                        ? "Selected target is not a uniquely discovered safe rekordbox library."
+                        : "Selected target is ambiguous across discovered rekordbox libraries.");
 
-            var snapshot = RekordboxSqlCipherDatabase.ReadSnapshot(
-                databasePath,
-                key,
-                new RekordboxDatabaseReadPolicy(
-                    versions.ToHashSet(StringComparer.Ordinal),
-                    RequireRekordboxClosed: true));
-
-            _databaseSnapshot = snapshot;
+            var access = await RekordboxDatabaseAccessResolver.ResolveAsync(matches[0]);
+            _databaseAccess = access;
+            _databaseSnapshot = access.Snapshot;
+            _targetSafe = true;
             _databaseAccessQualified = true;
-            QualifyRestorePoint(snapshot.Identity);
-            _previewExists = false;
-            _previewValid = false;
-            _previewFresh = false;
+            QualifyRestorePoint(access.Snapshot.Identity);
+            InvalidatePreview("Database access was requalified.");
 
             DatabaseAccessStatusTextBlock.Text =
-                $"Qualified: DBVersion {snapshot.Identity.DbVersion}, DBID {snapshot.Identity.DbId}, " +
-                $"{snapshot.Tracks.Count} tracks, {snapshot.MyTagDefinitions.Count} MyTag definitions.";
+                $"Qualified automatically: DBVersion {access.Snapshot.Identity.DbVersion}, " +
+                $"DBID {access.Snapshot.Identity.DbId}, {access.Snapshot.Tracks.Count} tracks, " +
+                $"{access.Snapshot.MyTagDefinitions.Count} MyTag definitions.";
             AppendDiagnostic(
-                $"Database access qualified for exact DBVersion '{snapshot.Identity.DbVersion}' " +
-                $"using SQLite3MC {snapshot.Identity.SqliteCipherVersion}. Key material was not persisted or logged.");
+                $"Database access automatically qualified from {access.KeySource}; " +
+                $"SQLite3MC {access.Snapshot.Identity.SqliteCipherVersion}. " +
+                "Key material was neither logged nor stored in settings.");
         }
         catch (Exception ex)
         {
-            InvalidateDatabaseAccess("Database access validation failed.");
+            InvalidateDatabaseAccess("Automatic database access validation failed.");
             DatabaseAccessStatusTextBlock.Text = $"Blocked: {ex.Message}";
-            AppendDiagnostic($"Database access validation blocked: {ex.Message}");
+            AppendDiagnostic($"Automatic database access validation blocked: {ex.Message}");
         }
-
-        UpdateWorkflowGate();
+        finally
+        {
+            ValidateDatabaseAccessButton.IsEnabled = true;
+            UpdateWorkflowGate();
+        }
     }
 
     private void InvalidateDatabaseAccess(string reason)
@@ -338,6 +331,7 @@ public partial class MainWindow : Window
 
         _databaseAccessQualified = false;
         _databaseSnapshot = null;
+        _databaseAccess = null;
         _previewExists = false;
         _previewValid = false;
         _previewFresh = false;
@@ -468,7 +462,9 @@ public partial class MainWindow : Window
                 !_previewValid ||
                 !_previewFresh)
                 throw new InvalidDataException("A fresh conflict-free preview is required before Apply.");
-            if (_databaseSnapshot is null || !_databaseAccessQualified)
+            if (_databaseSnapshot is null ||
+                _databaseAccess is null ||
+                !_databaseAccessQualified)
                 throw new InvalidDataException("Target database access is not qualified.");
 
             var settings = BuildSettingsFromUi();
@@ -476,17 +472,8 @@ public partial class MainWindow : Window
                 ?? throw new InvalidDataException("No target master.db is selected.");
             var bridgeDirectory = settings.EffectiveBridgeDirectory
                 ?? throw new InvalidDataException("No bridge source directory is selected.");
-            var key = DatabaseKeyPasswordBox.Password;
-            if (string.IsNullOrWhiteSpace(key))
-                throw new InvalidDataException("SQLCipher key is empty.");
-
-            var versions = settings.EffectiveSupportedDbVersions;
-            if (versions.Count == 0)
-                throw new InvalidDataException("At least one exact supported DBVersion is required.");
-
-            var policy = new RekordboxDatabaseReadPolicy(
-                versions.ToHashSet(StringComparer.Ordinal),
-                RequireRekordboxClosed: true);
+            var key = _databaseAccess.Key;
+            var policy = _databaseAccess.Policy;
             var bridge = BridgeSourceDiscovery.ReadStable(bridgeDirectory);
             var stateRoot = AppStateRoot();
             var provenancePath = ProvenanceStore.GetStatePath(
@@ -576,7 +563,9 @@ public partial class MainWindow : Window
     {
         try
         {
-            if (_databaseSnapshot is null || !_databaseAccessQualified)
+            if (_databaseSnapshot is null ||
+                _databaseAccess is null ||
+                !_databaseAccessQualified)
                 throw new InvalidDataException("Target database access is not qualified.");
             if (!_backupAvailable || !_backupMatchesTarget)
                 throw new InvalidDataException("No coordinated rolling restore point matches the selected target.");
@@ -584,11 +573,7 @@ public partial class MainWindow : Window
             var settings = BuildSettingsFromUi();
             var databasePath = settings.RekordboxDatabasePath
                 ?? throw new InvalidDataException("No target master.db is selected.");
-            var key = DatabaseKeyPasswordBox.Password;
-            if (string.IsNullOrWhiteSpace(key))
-                throw new InvalidDataException("SQLCipher key is empty.");
-            if (settings.EffectiveSupportedDbVersions.Count == 0)
-                throw new InvalidDataException("At least one exact supported DBVersion is required.");
+            var key = _databaseAccess.Key;
 
             var packagePath = BackupPackageTextBox.Text.Trim();
             if (packagePath.Length == 0)
@@ -611,9 +596,7 @@ public partial class MainWindow : Window
                 inspection.PackagePath,
                 currentIdentity);
 
-            var policy = new RekordboxDatabaseReadPolicy(
-                settings.EffectiveSupportedDbVersions.ToHashSet(StringComparer.Ordinal),
-                RequireRekordboxClosed: true);
+            var policy = _databaseAccess.Policy;
             var restoredSnapshot = RekordboxSqlCipherDatabase.ReadSnapshot(
                 databasePath,
                 key,
@@ -793,6 +776,8 @@ public partial class MainWindow : Window
         builder.AppendLine($"Path aliases: {_aliases.Count}");
         builder.AppendLine($"rekordbox running: {RekordboxProcessGuard.IsRunning()}");
         builder.AppendLine($"Database access qualified: {_databaseAccessQualified}");
+        builder.AppendLine($"Database access source: {_databaseAccess?.KeySource ?? "none"}");
+        builder.AppendLine($"Database version: {_databaseSnapshot?.Identity.DbVersion ?? "unknown"}");
         builder.AppendLine($"Preview: exists={_previewExists}, valid={_previewValid}, fresh={_previewFresh}");
         builder.AppendLine($"Backup: available={_backupAvailable}, matches target={_backupMatchesTarget}");
         DiagnosticsTextBox.Text = builder.ToString();
@@ -806,13 +791,6 @@ public partial class MainWindow : Window
             (DiagnosticsTextBox.Text.Length == 0 ? string.Empty : Environment.NewLine) + line);
         DiagnosticsTextBox.ScrollToEnd();
     }
-
-    private static IReadOnlyList<string> ParseSupportedDbVersions(string? text) =>
-        (text ?? string.Empty)
-            .Split(new[] { ',', ';', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(x => x.Length != 0)
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
 
     private static bool PathsEqual(string left, string right) =>
         string.Equals(
