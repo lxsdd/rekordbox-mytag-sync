@@ -467,8 +467,13 @@ jobs:
               throw "Candidate manifest runtime/package mode is invalid."
             }
 
+            $manifestNames = @{}
             foreach ($file in @($manifest.files)) {
               $name = [string]$file.path
+              if ([string]::IsNullOrWhiteSpace($name) -or $manifestNames.ContainsKey($name)) {
+                throw "Candidate manifest has an empty or duplicate file path '$name'."
+              }
+              $manifestNames[$name] = $true
               if (-not $entries.ContainsKey($name)) {
                 throw "Candidate manifest references missing entry '$name'."
               }
@@ -490,6 +495,15 @@ jobs:
               }
               if ([string]$file.sha256 -ne $actual) {
                 throw "Candidate manifest SHA-256 mismatch for '$name'."
+              }
+            }
+            $expectedEntries = @($manifestNames.Keys) + @("candidate-manifest.json")
+            if ($entries.Count -ne $expectedEntries.Count) {
+              throw "Candidate archive contains unmanifested entries or omits an expected entry."
+            }
+            foreach ($name in $entries.Keys) {
+              if ($name -ne "candidate-manifest.json" -and -not $manifestNames.ContainsKey($name)) {
+                throw "Candidate contains an unmanifested entry '$name'."
               }
             }
           } finally {
