@@ -77,6 +77,32 @@ public static class PhysicalFileIdentityVerifierSelfTest
             ambiguous.SamePhysicalFiles != 0)
             throw new InvalidOperationException("Duplicate rekordbox path entered physical file verification.");
 
+        // A single subsong-0 physical file with virtual cuesheet children
+        // is safe for FILE-level identity proof; subsongs themselves never
+        // become separate rekordbox ContentIds.
+        var mixedSource = tracks.Concat(new[]
+        {
+            new BridgeTrack(tracks[0].Path, 1, empty, empty),
+            new BridgeTrack(tracks[0].Path, 2, empty, empty)
+        }).ToArray();
+        var mixed = PhysicalFileIdentityVerifier.Verify(
+            mixedSource, targets, new PathAlias(original, targetRoot));
+        if (mixed.EligiblePairs != 3 || mixed.SamePhysicalFiles != 1 ||
+            mixed.RecoveredMixedSubsongPaths != 1 ||
+            mixed.AmbiguousSourcePaths != 1 || mixed.ExcludedSubsongs != 3 ||
+            mixed.VerifiedPairs?.Count != 1 ||
+            mixed.VerifiedPairs[0].SourcePath != tracks[0].Path)
+            throw new InvalidOperationException(
+                "Unique physical file was not isolated from virtual subsongs.");
+        var duplicatePhysical = PhysicalFileIdentityVerifier.Verify(
+            mixedSource.Concat(new[] { tracks[0] }).ToArray(), targets,
+            new PathAlias(original, targetRoot));
+        if (duplicatePhysical.RecoveredMixedSubsongPaths != 0 ||
+            duplicatePhysical.EligiblePairs != 2 ||
+            duplicatePhysical.SamePhysicalFiles != 0)
+            throw new InvalidOperationException(
+                "Two physical source records with the same path were silently selected.");
+
         // Same file byte content deliberately has a different physical file ID
         // if copied. This is not a hash mismatch and cannot be reported as one.
         var copied = PhysicalFileIdentityVerifier.Verify(

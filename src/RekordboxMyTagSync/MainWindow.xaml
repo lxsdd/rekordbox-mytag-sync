@@ -365,13 +365,16 @@
                                 <DataGrid x:Name="PreviewInvestigationGrid"
                                           IsReadOnly="True"
                                           AutoGenerateColumns="False"
+                                          FrozenColumnCount="2"
+                                          CanUserSortColumns="True"
+                                          CanUserResizeColumns="True"
                                           CanUserAddRows="False">
                                     <DataGrid.Columns>
-                                        <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="110"/>
+                                        <DataGridTextColumn Header="Reason" Binding="{Binding ReasonCode}" Width="220"/>
                                         <DataGridTextColumn Header="Content ID" Binding="{Binding ContentId}" Width="145"/>
-                                        <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="680"/>
-                                        <DataGridTextColumn Header="MyTag" Binding="{Binding Tag}" Width="210"/>
-                                        <DataGridTextColumn Header="Evidence / reason (no automatic changes)" Binding="{Binding Message}" Width="950"/>
+                                        <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="650"/>
+                                        <DataGridTextColumn Header="MyTag" Binding="{Binding MyTag}" Width="250"/>
+                                        <DataGridTextColumn Header="Evidence / DB row IDs (read-only)" Binding="{Binding Details}" Width="950"/>
                                     </DataGrid.Columns>
                                 </DataGrid>
                             </DockPanel>

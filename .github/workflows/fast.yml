@@ -40,5 +40,11 @@ jobs:
           }
           $process = Start-Process -FilePath $exe -ArgumentList "--ui-smoke" -Wait -PassThru
           if ($process.ExitCode -ne 0) {
+            $errorPath = Join-Path ([System.IO.Path]::GetTempPath()) "RekordboxMyTagSync-ui-smoke-error.txt"
+            if (Test-Path -LiteralPath $errorPath -PathType Leaf) {
+              Write-Host "WPF UI SMOKE EXCEPTION:"
+              Get-Content -LiteralPath $errorPath
+              Remove-Item -LiteralPath $errorPath -Force
+            }
             throw "WPF UI smoke test failed with exit code $($process.ExitCode)."
           }

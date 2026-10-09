@@ -140,6 +140,9 @@ public partial class MainWindow
             PreviewGrid.ItemsSource = result.preview.Details;
             var pathByContentId = database.Tracks.ToDictionary(
                 x => x.ContentId, x => x.Path, StringComparer.OrdinalIgnoreCase);
+            var qualifiedContentIds = result.scope.Targets
+                .Select(x => x.ContentId)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
             var rawDuplicates = (database.DuplicateMyTagLinks ??
                 Array.Empty<DuplicateMyTagLinkEvidence>())
                 .Select(x => new PreviewDetail(
@@ -152,16 +155,19 @@ public partial class MainWindow
                     $"djmdSongMyTag row IDs=[{string.Join(", ", x.AssignmentRowIds)}]."))
                 .ToArray();
             PreviewInvestigationGrid.ItemsSource = result.scope.ExcludedTargets
-                .Concat(rawDuplicates).ToArray();
+                .Concat(rawDuplicates)
+                .Select(InvestigationDisplayRow.FromPreview).ToArray();
             var reasonGroups = result.scope.ExcludedTargets
-                .GroupBy(x => x.Message, StringComparer.Ordinal)
+                .GroupBy(x => x.Message.Split(':')[0], StringComparer.Ordinal)
                 .OrderByDescending(x => x.Count())
-                .Select(x => $"{x.Key.Split(':')[0]} {x.Count():N0}")
+                .ThenBy(x => x.Key, StringComparer.Ordinal)
+                .Select(x => $"{x.Key} {x.Count():N0}")
                 .ToArray();
             PreviewInvestigationStatusTextBlock.Text =
                 $"Excluded rekordbox ContentIDs: {result.scope.ExcludedTargets.Count:N0}. " +
                 (reasonGroups.Length == 0 ? "None. " : string.Join(" · ", reasonGroups) + ". ") +
-                $"Existing duplicate MyTag link groups: {rawDuplicates.Length:N0}. " +
+                $"Existing duplicate MyTag link groups: {rawDuplicates.Length:N0} across the complete rekordbox DB, " +
+                $"{rawDuplicates.Count(x => qualifiedContentIds.Contains(x.ContentId)):N0} in the physically matched preview scope. " +
                 "Rows show original MyTagIDs and assignment-row IDs; NO automatic deletion. " +
                 "An existing duplicate tag link does not prove duplicate music tracks.";
             PreviewCountsTextBlock.Text =
@@ -175,9 +181,11 @@ public partial class MainWindow
                 (result.reuse ? "(reused read-only same-session evidence; no file-ID rescan); " :
                     "(fresh read-only file-ID scan); ") +
                 $"{result.scope.ExcludedTargets.Count:N0} rekordbox tracks excluded and listed below; " +
-                $"{result.evidence.ExcludedSubsongs:N0} virtual subsongs excluded; " +
-                $"{result.evidence.AmbiguousSourcePaths:N0} source and " +
-                $"{result.evidence.AmbiguousTargetPaths:N0} target path collisions. " +
+                $"{result.evidence.ExcludedSubsongs:N0} virtual subsongs remain excluded; " +
+                $"{result.evidence.RecoveredMixedSubsongPaths:N0} files recovered from mixed " +
+                "physical/virtual source path groups with native file-ID proof; " +
+                $"{result.evidence.AmbiguousSourcePaths:N0} multi-entry source path groups total, " +
+                $"{result.evidence.AmbiguousTargetPaths:N0} duplicate target path groups. " +
                 (settings.EffectiveMappings.Count == 0
                     ? "No MyTag mappings configured yet; no tag changes proposed. "
                     : $"{settings.EffectiveMappings.Count} mapping rule(s) evaluated. ") +

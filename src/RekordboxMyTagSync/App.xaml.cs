@@ -13,8 +13,22 @@ public partial class App : Application
                 string.Equals(arg, "--ui-smoke", StringComparison.OrdinalIgnoreCase)))
         {
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
-            RunUiSmoke();
-            Shutdown(0);
+            try
+            {
+                RunUiSmoke();
+                Shutdown(0);
+            }
+            catch (Exception exception)
+            {
+                // Windows GUI executables have no usable CI stderr stream.
+                // Write ONLY in explicit --ui-smoke mode and let the runner
+                // print the failure for targeted regression repairs.
+                System.IO.File.WriteAllText(
+                    System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+                        "RekordboxMyTagSync-ui-smoke-error.txt"),
+                    exception.ToString());
+                Shutdown(1);
+            }
             return;
         }
 
@@ -99,6 +113,28 @@ public partial class App : Application
             if (!exampleHeader.Contains("Illustrative", StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException(
                     "Path proposal example still looks like a single unmatched track.");
+
+            // Investigation columns have long file paths / raw DB row IDs.
+            // Keep classification and ContentId visible during horizontal
+            // touchpad or scrollbar navigation.
+            var investigation = window.PreviewInvestigationGrid;
+            if (investigation.FrozenColumnCount != 2 ||
+                investigation.Columns.Count != 5 ||
+                investigation.Columns[0].SortMemberPath != "ReasonCode" &&
+                investigation.Columns[0].Header?.ToString() != "Reason" ||
+                investigation.Columns[1].Header?.ToString() != "Content ID")
+                throw new InvalidOperationException(
+                    $"Investigation must freeze reason and Content ID: frozen={investigation.FrozenColumnCount}, " +
+                    $"columns={investigation.Columns.Count}, reasonColumn={investigation.Columns[0].Header}, " +
+                    $"sortMember={investigation.Columns[0].SortMemberPath}, " +
+                    $"idColumn={investigation.Columns[1].Header}.");
+            var display = InvestigationDisplayRow.FromPreview(
+                new PreviewDetail(PreviewDetailKind.Unmatched, "C1", @"R:\Music\Track.mp3", null,
+                    "AMBIGUOUS_SOURCE_PATH: virtual source siblings"));
+            if (display.ReasonCode != "AMBIGUOUS_SOURCE_PATH" ||
+                display.ContentId != "C1")
+                throw new InvalidOperationException(
+                    "Investigation reason code / ContentId display regression.");
 
             var proposals = window.PathProposalsGrid;
             if (proposals.Columns.Count != 6 ||
