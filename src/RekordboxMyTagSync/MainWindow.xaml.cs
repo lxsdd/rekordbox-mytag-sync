@@ -56,7 +56,8 @@ public partial class MainWindow : Window
         foreach (var grid in new[]
         {
             SourceCandidatesGrid, PathAliasGrid, TargetCandidatesGrid,
-            PathProposalsGrid, MappingGrid, PreviewGrid, PreviewInvestigationGrid
+            PathProposalsGrid, MappingGrid, PreviewGrid, PreviewInvestigationGrid,
+            PhysicalExceptionsGrid
         })
             HorizontalScrollSupport.Enable(grid);
         Loaded += async (_, _) => await LoadSettingsAsync();
@@ -94,6 +95,7 @@ public partial class MainWindow : Window
         RefreshDiagnosticsButton.Click += (_, _) => RefreshDiagnostics();
         BuildPreviewButton.Click += async (_, _) => await BuildPreviewAsync();
         BuildVerifiedPreviewButton.Click += async (_, _) => await BuildVerifiedPreviewAsync();
+        InvestigatePhysicalExceptionsButton.Click += async (_, _) => await InspectPhysicalExceptionsAsync();
         CancelVerifiedPreviewButton.Click += (_, _) => _identityCancellation?.Cancel();
         ApplyButton.Click += (_, _) => ApplyApprovedPreview();
         RestoreButton.Click += (_, _) => RestoreRollingBackup();
@@ -1312,6 +1314,7 @@ public partial class MainWindow : Window
 
         BuildPreviewButton.IsEnabled = !_operationBusy && state.CanBuildPreview;
         BuildVerifiedPreviewButton.IsEnabled = !_operationBusy && state.CanBuildPreview;
+        InvestigatePhysicalExceptionsButton.IsEnabled = !_operationBusy && state.CanBuildPreview;
         CancelVerifiedPreviewButton.IsEnabled = _operationBusy && _identityCancellation is not null;
         AnalyzePathsButton.IsEnabled = !_operationBusy;
         VerifyRootSampleButton.IsEnabled = !_operationBusy &&
