@@ -194,6 +194,7 @@ try
     PathPairVerifierSelfTest.Run(temp);
     PhysicalFileIdentityVerifierSelfTest.Run(temp);
     VerifiedPreviewScopeSelfTest.Run(temp);
+    ReadOnlyDiagnosticsSelfTest.Run(temp);
     PreviewSelfTest.Run(temp);
     RekordboxMutationPreflightSelfTest.Run(temp);
     RekordboxMutationVerificationSelfTest.Run(temp);
