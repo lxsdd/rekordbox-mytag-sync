@@ -64,6 +64,35 @@ public partial class App : Application
                         $"Required WPF workflow element '{name}' is missing.");
             }
 
+            // Production table templates must never silently clip columns.
+            // In particular Path matching needs horizontal overflow for
+            // long Z:/R: source and destination paths at normal window width.
+            var tableNames = new[]
+            {
+                "SourceCandidatesGrid", "PathAliasGrid", "TargetCandidatesGrid",
+                "PathProposalsGrid", "MappingGrid", "PreviewGrid"
+            };
+            foreach (var name in tableNames)
+            {
+                if (window.FindName(name) is not System.Windows.Controls.DataGrid table)
+                    throw new InvalidOperationException($"Missing production table '{name}'.");
+                table.ApplyTemplate();
+                var mode = System.Windows.Controls.ScrollViewer.GetHorizontalScrollBarVisibility(table);
+                if (mode != System.Windows.Controls.ScrollBarVisibility.Auto &&
+                    mode != System.Windows.Controls.ScrollBarVisibility.Visible)
+                    throw new InvalidOperationException(
+                        $"Production table '{name}' disables horizontal scrolling.");
+            }
+
+            var proposals = window.PathProposalsGrid;
+            if (proposals.Columns.Count != 6 ||
+                proposals.Columns[4].MinWidth < 500 ||
+                proposals.Columns[5].MinWidth < 500 ||
+                proposals.Columns[0].Width.IsStar ||
+                proposals.Columns[1].Width.IsStar)
+                throw new InvalidOperationException(
+                    "Path proposals cannot horizontally overflow to reveal complete R:/Z: examples.");
+
             // Click the real production button with no inspected inputs.
             // The actual event wiring must produce an immediate, persistent
             // blocked explanation rather than an inert/no-op control.
