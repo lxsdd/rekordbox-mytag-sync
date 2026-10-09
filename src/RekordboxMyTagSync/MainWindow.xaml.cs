@@ -830,6 +830,14 @@ public partial class MainWindow : Window
                 !settingsIdentity.Equals(JsonSerializer.Serialize(BuildSettingsFromUi()), StringComparison.Ordinal))
                 throw new InvalidOperationException("Source, target, selected root or settings changed during verification.");
 
+            // A successful explicit read-only full scan may accelerate
+            // Auto-match in this same session. Reuse remains forbidden if
+            // the bridge export or database fingerprint has changed.
+            var verifiedRoot = new PathAlias(proposal.SourceRoot, proposal.TargetRoot);
+            var observed = ReadOnlyIdentityCache.Capture(bridge, database, verifiedRoot, report);
+            if (observed.IsValidFor(bridge, database, verifiedRoot))
+                _cachedIdentityEvidence = observed;
+
             var summary =
                 $"Physical file check completed: {report.SamePhysicalFiles:N0} of " +
                 $"{report.EligiblePairs:N0} unique pairs reference the SAME underlying file; " +
