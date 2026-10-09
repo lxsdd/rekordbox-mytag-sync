@@ -211,25 +211,36 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
                     <TextBlock TextWrapping="Wrap"
                                Text="Read-only analysis of foobar and rekordbox track paths. Suggested root aliases are UNVERIFIED folder/file similarities, not evidence of identical audio files. No aliases are applied or saved automatically."/>
-                    <Button x:Name="AnalyzePathsButton"
-                            Grid.Row="1"
-                            HorizontalAlignment="Left"
-                            Margin="0,12,0,10"
-                            Padding="16,7"
-                            Content="Analyze paths (read-only)"
-                            ToolTip="Compare already inspected source and validated rekordbox paths without writing any files, database rows, aliases or settings. Suggestions require independent verification."
-                            ToolTipService.ShowOnDisabled="True"/>
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,12,0,10">
+                        <Button x:Name="AnalyzePathsButton"
+                                Padding="16,7"
+                                Content="Analyze paths (read-only)"
+                                ToolTip="Compare inspected foobar and rekordbox paths without writing files, database rows, aliases or settings. Path similarities are never file identity proof."
+                                ToolTipService.ShowOnDisabled="True"/>
+                        <Button x:Name="VerifyRootSampleButton"
+                                Margin="8,0,0,0"
+                                Padding="16,7"
+                                Content="Check selected files (read-only)"
+                                ToolTip="Read the selected proposed root mapping. Compare file sizes for all unambiguous physical pairs, then SHA-256 hash a small deterministic sample of file pairs up to 64 MiB each. No aliases or settings are changed; sampling never authorizes MyTag writes."
+                                ToolTipService.ShowOnDisabled="True"/>
+                    </StackPanel>
                     <TextBlock x:Name="PathAnalysisStatusTextBlock"
                                Grid.Row="2"
                                TextWrapping="Wrap"
                                Margin="0,0,0,10"
                                Text="Path analysis not performed. Inspect Source and Validate target access first."/>
+                    <TextBlock x:Name="PathVerificationStatusTextBlock"
+                               Grid.Row="3"
+                               Margin="0,0,0,10"
+                               TextWrapping="Wrap"
+                               Text="No file-content comparison performed. Select a proposed root mapping and choose Check selected files (read-only)."/>
                     <DataGrid x:Name="PathProposalsGrid"
-                              Grid.Row="3"
+                              Grid.Row="4"
                               AutoGenerateColumns="False"
                               IsReadOnly="True"
                               CanUserAddRows="False">
