@@ -2,24 +2,82 @@ name: FULL
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: ["FAST"]
+    types: [completed]
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: full-${{ github.ref }}
+  group: full-${{ github.event.workflow_run.head_sha || github.sha }}
   cancel-in-progress: false
 
 jobs:
+  preflight:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.run_attempt == 1)
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.decision.outputs.should_run }}
+      source_sha: ${{ steps.decision.outputs.source_sha }}
+    steps:
+      - name: Pin triggering commit and reject duplicate/superseded automatic FULL
+        id: decision
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "${#SOURCE_SHA}" -eq 40
+          echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_run" ]]; then
+            current_main="$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq '.commit.sha')"
+            if [[ "$SOURCE_SHA" != "$current_main" ]]; then
+              echo "Superseded main commit: skipping automatic FULL for $SOURCE_SHA"
+              echo "should_run=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            # Existing successful manual or automated FULL on this SHA
+            # is authoritative; retries may not silently replace it.
+            previous="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/full.yml/runs?branch=main&per_page=100" \
+              --jq "[.workflow_runs[] | select(.head_sha == \"$SOURCE_SHA\" and .conclusion == \"success\")] | length")"
+            if [[ "$previous" != "0" ]]; then
+              echo "Already qualified FULL for $SOURCE_SHA: skipping duplicate."
+              echo "should_run=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo "should_run=true" >> "$GITHUB_OUTPUT"
+
   qualify-portable-candidate:
+    needs: preflight
+    if: needs.preflight.outputs.should_run == 'true'
     runs-on: windows-latest
     env:
+      SOURCE_SHA: ${{ needs.preflight.outputs.source_sha }}
       PRODUCT_PROJECT: src/RekordboxMyTagSync/RekordboxMyTagSync.csproj
       TEST_PROJECT: tests/RekordboxMyTagSync.SelfTests/RekordboxMyTagSync.SelfTests.csproj
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ needs.preflight.outputs.source_sha }}
           fetch-depth: 0
+
+      - name: Verify the checkout is the triggering FAST-qualified SHA
+        shell: pwsh
+        run: |
+          $actual = (& git rev-parse HEAD).Trim()
+          if ($actual -ne $env:SOURCE_SHA) {
+            throw "FULL checkout is not bound to the source commit."
+          }
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -224,7 +282,7 @@ jobs:
           New-Item -ItemType Directory -Force artifacts | Out-Null
 
           function Publish-Candidate([string]$OutputPath) {
-            dotnet publish $env:PRODUCT_PROJECT -c Release -r win-x64 --self-contained true --no-restore -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:ContinuousIntegrationBuild=true -p:Deterministic=true -p:DeterministicSourcePaths=true -p:DebugType=None -p:DebugSymbols=false -p:PublishReadyToRun=false -p:SourceRevisionId=${{ github.sha }} -o $OutputPath
+            dotnet publish $env:PRODUCT_PROJECT -c Release -r win-x64 --self-contained true --no-restore -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:ContinuousIntegrationBuild=true -p:Deterministic=true -p:DeterministicSourcePaths=true -p:DebugType=None -p:DebugSymbols=false -p:PublishReadyToRun=false -p:SourceRevisionId=${{ env.SOURCE_SHA }} -o $OutputPath
             if ($LASTEXITCODE -ne 0) { throw "Publish failed for $OutputPath." }
           }
 
@@ -285,7 +343,7 @@ jobs:
           Copy-Item "qualification/publish-sha256.txt" $stage
           Copy-Item "src/RekordboxMyTagSync/packages.lock.json" (Join-Path $stage "product-packages.lock.json")
           Copy-Item "tests/RekordboxMyTagSync.SelfTests/packages.lock.json" (Join-Path $stage "selftest-packages.lock.json")
-          Set-Content -Path (Join-Path $stage "SOURCE_SHA.txt") -Value "${{ github.sha }}" -Encoding ASCII
+          Set-Content -Path (Join-Path $stage "SOURCE_SHA.txt") -Value "${{ env.SOURCE_SHA }}" -Encoding ASCII
 
           $publishedFiles = Get-ChildItem $stage -File -Recurse |
             Sort-Object FullName |
@@ -299,7 +357,7 @@ jobs:
 
           $manifest = [ordered]@{
             schemaVersion = 1
-            sourceSha = "${{ github.sha }}"
+            sourceSha = "${{ env.SOURCE_SHA }}"
             productVersion = $productVersion
             runtime = "win-x64"
             selfContained = $true
@@ -340,7 +398,7 @@ jobs:
           $hashB = (Get-FileHash $zipB -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($hashA -ne $hashB) { throw "Portable package creation is not deterministic." }
 
-          $candidateName = "RekordboxMyTagSync-win-x64-${{ github.sha }}.zip"
+          $candidateName = "RekordboxMyTagSync-win-x64-${{ env.SOURCE_SHA }}.zip"
           $candidatePath = Join-Path $PWD ("artifacts/" + $candidateName)
           Move-Item $zipA $candidatePath -Force
           Remove-Item $zipB -Force
@@ -348,7 +406,7 @@ jobs:
           "$hashA  $candidateName" | Set-Content "artifacts/$candidateName.sha256" -Encoding ASCII
           $qualification = [ordered]@{
             schemaVersion = 1
-            sourceSha = "${{ github.sha }}"
+            sourceSha = "${{ env.SOURCE_SHA }}"
             productVersion = $productVersion
             artifactFile = $candidateName
             artifactSha256 = $hashA
@@ -390,7 +448,7 @@ jobs:
           }
 
           $qualification = Get-Content $qualificationPath -Raw | ConvertFrom-Json
-          if ([string]$qualification.sourceSha -ne "${{ github.sha }}") {
+          if ([string]$qualification.sourceSha -ne "${{ env.SOURCE_SHA }}") {
             throw "FULL qualification source SHA does not match the workflow SHA."
           }
           if ([string]$qualification.artifactFile -ne [IO.Path]::GetFileName($candidate)) {
@@ -453,12 +511,12 @@ jobs:
             }
 
             $sourceSha = (Read-ZipText $entries["SOURCE_SHA.txt"]).Trim()
-            if ($sourceSha -ne "${{ github.sha }}") {
+            if ($sourceSha -ne "${{ env.SOURCE_SHA }}") {
               throw "Candidate SOURCE_SHA.txt does not match the workflow SHA."
             }
 
             $manifest = (Read-ZipText $entries["candidate-manifest.json"]) | ConvertFrom-Json
-            if ([string]$manifest.sourceSha -ne "${{ github.sha }}") {
+            if ([string]$manifest.sourceSha -ne "${{ env.SOURCE_SHA }}") {
               throw "Candidate manifest source SHA does not match the workflow SHA."
             }
             if ([string]$manifest.productVersion -ne [string]$qualification.productVersion) {
@@ -513,13 +571,13 @@ jobs:
             $archive.Dispose()
           }
 
-          Write-Host "FULL candidate source SHA: ${{ github.sha }}"
+          Write-Host "FULL candidate source SHA: ${{ env.SOURCE_SHA }}"
           Write-Host "FULL candidate artifact SHA-256: $candidateHash"
           Write-Host "FULL candidate product version: $($qualification.productVersion)"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: RekordboxMyTagSync-FULL-${{ github.sha }}
+          name: RekordboxMyTagSync-FULL-${{ env.SOURCE_SHA }}
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
