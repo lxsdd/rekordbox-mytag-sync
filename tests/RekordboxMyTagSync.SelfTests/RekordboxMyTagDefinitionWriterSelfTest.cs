@@ -6,6 +6,9 @@ public static class RekordboxMyTagDefinitionWriterSelfTest
     public static void Run()
     {
         QualifyAndCreate();
+        QualifyAndCreateRootSentinel();
+        RejectMixedRootConvention();
+        RejectRootSentinelOrphan();
         RejectMissingDefault();
         RejectAmbiguousAttribute();
         RejectMixedIdScheme();
@@ -66,6 +69,54 @@ public static class RekordboxMyTagDefinitionWriterSelfTest
                 throw new InvalidOperationException("created/existing MyTag UUID is not a GUID");
     }
 
+    private static void QualifyAndCreateRootSentinel()
+    {
+        using var connection = NewConnection(QualifiedSchema);
+        SeedQualified(connection, rootSentinel: true);
+        var profile = RekordboxMyTagDefinitionWriter.Qualify(connection);
+        if (profile.StoredRootParentId != "root")
+            throw new InvalidOperationException("Root-sentinel insertion convention was not qualified.");
+
+        using var transaction = connection.BeginTransaction();
+        var result = RekordboxMyTagDefinitionWriter.EnsureDefinitions(
+            connection, transaction,
+            new[] {
+                new MyTagAssignment("Genre", "Techno"),
+                new MyTagAssignment("Energy", "Peak")
+            },
+            profile, 101);
+        transaction.Commit();
+
+        if (result.Created.Count != 3 || result.NextLocalUsn != 104)
+            throw new InvalidOperationException("Root-sentinel writer added unexpected MyTag rows.");
+        AssertDefinition(connection, "Energy", "root", 3, 10, 101, 256, 0, 0, 0);
+        var energyId = ScalarString(connection,
+            "SELECT ID FROM djmdMyTag WHERE ParentID='root' AND Name='Energy';");
+        AssertDefinition(connection, "Peak", energyId, 1, 20, 102, 256, 0, 0, 0);
+        AssertDefinition(connection, "Techno", "1", 2, 20, 103, 256, 0, 0, 0);
+        if (ScalarLong(connection,
+            "SELECT COUNT(*) FROM djmdMyTag WHERE Name='Genre' AND ParentID='root';") != 1)
+            throw new InvalidOperationException("Writer duplicated an existing root-sentinel MyTag group.");
+    }
+
+    private static void RejectMixedRootConvention()
+    {
+        using var connection = NewConnection(QualifiedSchema);
+        SeedQualified(connection, rootSentinel: true);
+        Execute(connection, "UPDATE djmdMyTag SET ParentID=NULL WHERE ID='2';");
+        AssertBlocked(() => RekordboxMyTagDefinitionWriter.Qualify(connection),
+            "mixed (NULL/root)");
+    }
+
+    private static void RejectRootSentinelOrphan()
+    {
+        using var connection = NewConnection(QualifiedSchema);
+        SeedQualified(connection, rootSentinel: true);
+        Execute(connection, "UPDATE djmdMyTag SET ParentID='ghost' WHERE ID='3';");
+        AssertBlocked(() => RekordboxMyTagDefinitionWriter.Qualify(connection),
+            "unknown or nested");
+    }
+
     private static void RejectMissingDefault()
     {
         var schema = QualifiedSchema.Replace(
@@ -124,10 +175,10 @@ public static class RekordboxMyTagDefinitionWriterSelfTest
         return connection;
     }
 
-    private static void SeedQualified(SqliteConnection connection)
+    private static void SeedQualified(SqliteConnection connection, bool rootSentinel = false)
     {
-        Insert(connection, "1", "Genre", null, 1, 10);
-        Insert(connection, "2", "Mood", null, 2, 10);
+        Insert(connection, "1", "Genre", rootSentinel ? "root" : null, 1, 10);
+        Insert(connection, "2", "Mood", rootSentinel ? "root" : null, 2, 10);
         Insert(connection, "3", "House", "1", 1, 20);
         Insert(connection, "4", "Euphoric", "2", 1, 20);
     }
