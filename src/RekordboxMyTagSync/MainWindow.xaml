@@ -314,6 +314,18 @@
                         <Button x:Name="BuildPreviewButton" Padding="16,7" Content="Build fresh preview"
                                 ToolTip="Compare the verified bridge and rekordbox tracks without writing files, settings or database rows. Every new preview invalidates the previous one."
                                 ToolTipService.ShowOnDisabled="True"/>
+                        <Button x:Name="BuildVerifiedPreviewButton"
+                                Margin="8,0,0,0"
+                                Padding="16,7"
+                                Content="Auto-match and preview (read-only)"
+                                ToolTip="Automatically find one unambiguous source/target root candidate, recheck all physically identical file pairs with read-only Windows handles, show excluded ContentIDs, and preview MyTag changes. Never saves an alias or permits database writes."
+                                ToolTipService.ShowOnDisabled="True"/>
+                        <Button x:Name="CancelVerifiedPreviewButton"
+                                Margin="8,0,0,0"
+                                Padding="12,7"
+                                IsEnabled="False"
+                                Content="Cancel"
+                                ToolTip="Cancel the running read-only verified preview; no partial result is retained."/>
                         <TextBlock x:Name="PreviewStatusTextBlock"
                                    Margin="14,0,0,0"
                                    VerticalAlignment="Center"
@@ -323,7 +335,7 @@
                                Grid.Row="1"
                                Margin="0,10,0,0"
                                TextWrapping="Wrap"
-                               Text="Read-only preview has not been built."/>
+                               Text="No preview yet. Auto-match and preview checks physical file IDs again, uses the proven root only in memory, and shows excluded rekordbox tracks. Live writes stay locked."/>
                     <TextBlock x:Name="PreviewCountsTextBlock"
                                Grid.Row="2"
                                Margin="0,10,0,10"

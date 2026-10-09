@@ -46,6 +46,8 @@ public partial class App : Application
                 "PathAnalysisStatusTextBlock",
                 "PathProposalsGrid",
                 "BuildPreviewButton",
+                "BuildVerifiedPreviewButton",
+                "CancelVerifiedPreviewButton",
                 "PreviewRunStatusTextBlock",
                 "PreviewGrid",
                 "ApplyButton",
@@ -145,6 +147,25 @@ public partial class App : Application
                 string.IsNullOrWhiteSpace(preview.ToolTip?.ToString()))
                 throw new InvalidOperationException(
                     "Production read-only preview action/tooltip is missing.");
+            if (window.FindName("BuildVerifiedPreviewButton") is not System.Windows.Controls.Button verified ||
+                string.IsNullOrWhiteSpace(verified.ToolTip?.ToString()))
+                throw new InvalidOperationException(
+                    "Production auto-match preview action or read-only explanation is missing.");
+            verified.RaiseEvent(new RoutedEventArgs(
+                System.Windows.Controls.Primitives.ButtonBase.ClickEvent, verified));
+            if (!window.PreviewRunStatusTextBlock.Text.Contains("blocked", StringComparison.OrdinalIgnoreCase) ||
+                !window.PreviewRunStatusTextBlock.Text.Contains("Inspect", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    "Verified preview button must explain its missing source/target qualification.");
+            if (window.FindName("CancelVerifiedPreviewButton") is not System.Windows.Controls.Button)
+                throw new InvalidOperationException("Read-only verified preview cancellation control missing.");
+            if (window.ApplyButton.IsEnabled || window.RestoreButton.IsEnabled)
+                throw new InvalidOperationException("Read-only build must not enable database mutations.");
+            window.ApplyButton.RaiseEvent(new RoutedEventArgs(
+                System.Windows.Controls.Primitives.ButtonBase.ClickEvent, window.ApplyButton));
+            if (!window.ApplyStatusTextBox.Text.Contains("blocked", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    "Direct production Apply handler must fail closed even when clicked programmatically.");
 
             if (window.Icon is null ||
                 !string.Equals(window.Title, "rekordbox MyTagSync", StringComparison.Ordinal))

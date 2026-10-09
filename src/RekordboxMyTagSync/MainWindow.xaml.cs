@@ -20,6 +20,9 @@ public partial class MainWindow : Window
     private AppSettings _settings = new();
     private readonly List<string> _diagnosticEvents = new();
     private bool _operationBusy;
+    // Live master.db mutation is disabled until a separately authorized
+    // hardware write qualification. Successful read-only checks are not approval.
+    private static readonly bool LiveDatabaseWritesApproved = false;
     private CancellationTokenSource? _identityCancellation;
     private bool _targetDiscoveryUpdatingSelection;
     private bool _sourceSafe;
@@ -86,6 +89,8 @@ public partial class MainWindow : Window
         };
         RefreshDiagnosticsButton.Click += (_, _) => RefreshDiagnostics();
         BuildPreviewButton.Click += async (_, _) => await BuildPreviewAsync();
+        BuildVerifiedPreviewButton.Click += async (_, _) => await BuildVerifiedPreviewAsync();
+        CancelVerifiedPreviewButton.Click += (_, _) => _identityCancellation?.Cancel();
         ApplyButton.Click += (_, _) => ApplyApprovedPreview();
         RestoreButton.Click += (_, _) => RestoreRollingBackup();
 
@@ -975,6 +980,13 @@ public partial class MainWindow : Window
 
     private void ApplyApprovedPreview()
     {
+        if (!LiveDatabaseWritesApproved)
+        {
+            ApplyStatusTextBox.Text =
+                "Apply blocked: the live rekordbox database is read-only until explicit write qualification.";
+            AppendDiagnostic(ApplyStatusTextBox.Text);
+            return;
+        }
         try
         {
             if (_approvedPreview is null ||
@@ -1085,6 +1097,13 @@ public partial class MainWindow : Window
 
     private void RestoreRollingBackup()
     {
+        if (!LiveDatabaseWritesApproved)
+        {
+            ApplyStatusTextBox.Text =
+                "Restore blocked: database mutations are not authorized in this read-only build.";
+            AppendDiagnostic(ApplyStatusTextBox.Text);
+            return;
+        }
         try
         {
             if (_databaseSnapshot is null ||
@@ -1280,6 +1299,8 @@ public partial class MainWindow : Window
             BackupMatchesTarget: _backupMatchesTarget));
 
         BuildPreviewButton.IsEnabled = !_operationBusy && state.CanBuildPreview;
+        BuildVerifiedPreviewButton.IsEnabled = !_operationBusy && state.CanBuildPreview;
+        CancelVerifiedPreviewButton.IsEnabled = _operationBusy && _identityCancellation is not null;
         AnalyzePathsButton.IsEnabled = !_operationBusy;
         VerifyRootSampleButton.IsEnabled = !_operationBusy &&
             PathProposalsGrid.SelectedItem is PathAliasProposal;
@@ -1289,18 +1310,22 @@ public partial class MainWindow : Window
         SaveSettingsButton.IsEnabled = !_operationBusy;
         AddAliasButton.IsEnabled = !_operationBusy;
         RemoveAliasButton.IsEnabled = !_operationBusy;
-        ApplyButton.IsEnabled = !_operationBusy && state.CanApply;
-        RestoreButton.IsEnabled = !_operationBusy && state.CanRestore;
+        ApplyButton.IsEnabled = LiveDatabaseWritesApproved && !_operationBusy && state.CanApply;
+        RestoreButton.IsEnabled = LiveDatabaseWritesApproved && !_operationBusy && state.CanRestore;
 
-        PreviewStatusTextBlock.Text = state.CanApply
-            ? "Fresh conflict-free preview approved."
+        PreviewStatusTextBlock.Text = !LiveDatabaseWritesApproved
+            ? "Read-only qualification — database writes locked."
+            : state.CanApply
+                ? "Fresh conflict-free preview approved."
             : state.CanBuildPreview
                 ? "Ready to build a fresh preview."
                 : "Preview blocked by safety prerequisites.";
 
-        ApplyStatusTextBox.Text = state.Blockers.Count == 0
-            ? "All workflow safety gates are satisfied."
-            : string.Join(Environment.NewLine, state.Blockers.Select(x => "• " + x));
+        ApplyStatusTextBox.Text = !LiveDatabaseWritesApproved
+            ? "DATABASE WRITES LOCKED: no live Apply or Restore is authorized in this qualification build."
+            : state.Blockers.Count == 0
+                ? "All workflow safety gates are satisfied."
+                : string.Join(Environment.NewLine, state.Blockers.Select(x => "• " + x));
     }
 
     private void RefreshDiagnostics()
