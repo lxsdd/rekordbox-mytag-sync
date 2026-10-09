@@ -54,24 +54,22 @@ public static class PhysicalFileIdentityVerifier
             throw new PlatformNotSupportedException("Native file IDs can only be checked on Windows.");
 
         var mapping = PathPairVerifier.CollectPairs(bridge, target, proposedRoot);
-        var identical = 0;
-        var distinct = 0;
-        var missing = 0;
-        var unreadable = 0;
-        var unsupported = 0;
-        var examples = new List<string>();
-        var verified = new List<VerifiedPhysicalPair>();
-        static bool Missing(Exception ex) => ex is FileNotFoundException or DirectoryNotFoundException;
-        void Note(string message)
-        {
-            // Use counts for diagnostics; do not dump private library paths to CI.
-            if (examples.Count < 6) examples.Add(message);
-        }
-
+        // File-ID lookups are latency-bound on mapped/network drives.
+        // Four workers substantially reduce total wall time without
+        // unbounded handles, random audio reads or persisted cache files.
+        // Indexed results preserve deterministic diagnostics and pair lists.
+        var outcomes = new (IdentityStatus Status, string? Example)[mapping.Pairs.Count];
+        var completed = 0;
+        var progressGate = new object();
         progress?.Report(new PhysicalIdentityProgress(0, mapping.Pairs.Count));
-        for (var i = 0; i < mapping.Pairs.Count; i++)
+        var options = new ParallelOptions
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            CancellationToken = cancellationToken,
+            MaxDegreeOfParallelism = Math.Min(4, Math.Max(1, Environment.ProcessorCount))
+        };
+        Parallel.For(0, mapping.Pairs.Count, options, i =>
+        {
+            options.CancellationToken.ThrowIfCancellationRequested();
             var (source, destination) = mapping.Pairs[i];
             try
             {
@@ -83,42 +81,74 @@ public static class PhysicalFileIdentityVerifier
                     bufferSize: 1, options: FileOptions.None);
                 if (!TryGetFileInformation(first.SafeFileHandle, out var a) ||
                     !TryGetFileInformation(second.SafeFileHandle, out var b))
-                {
-                    unsupported++;
-                    Note("Native file identity unavailable for an open pair.");
-                }
+                    outcomes[i] = (IdentityStatus.Unsupported, "Native file identity unavailable for this pair.");
                 else if (a.VolumeSerialNumber == b.VolumeSerialNumber &&
                          a.FileIndexHigh == b.FileIndexHigh &&
                          a.FileIndexLow == b.FileIndexLow)
-                {
-                    identical++;
-                    verified.Add(new VerifiedPhysicalPair(source, destination));
-                }
+                    outcomes[i] = (IdentityStatus.SameFile, null);
                 else
-                {
-                    distinct++;
-                    Note($"Different underlying file IDs: {source} <> {destination}");
-                }
+                    outcomes[i] = (IdentityStatus.DistinctFile,
+                        $"Different underlying file IDs: {source} <> {destination}");
             }
-            catch (Exception e) when (Missing(e))
+            catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
             {
-                missing++;
-                Note($"Missing file: {source} <> {destination}");
+                outcomes[i] = (IdentityStatus.Missing, $"Missing file: {source} <> {destination}");
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException or NotSupportedException)
             {
-                unreadable++;
-                Note($"Unable to inspect file IDs: {source} ({e.GetType().Name})");
+                outcomes[i] = (IdentityStatus.Unreadable,
+                    $"Unable to inspect file IDs: {source} ({e.GetType().Name})");
             }
 
-            if ((i + 1) % 100 == 0 || i + 1 == mapping.Pairs.Count)
-                progress?.Report(new PhysicalIdentityProgress(i + 1, mapping.Pairs.Count));
-        }
+            var done = Interlocked.Increment(ref completed);
+            if (done % 100 == 0)
+            {
+                lock (progressGate)
+                    progress?.Report(new PhysicalIdentityProgress(done, mapping.Pairs.Count));
+            }
+        });
+        cancellationToken.ThrowIfCancellationRequested();
+        progress?.Report(new PhysicalIdentityProgress(mapping.Pairs.Count, mapping.Pairs.Count));
 
+        var verified = new List<VerifiedPhysicalPair>();
+        var examples = new List<string>();
+        var identical = 0;
+        var distinct = 0;
+        var missing = 0;
+        var unreadable = 0;
+        var unsupported = 0;
+        for (var i = 0; i < outcomes.Length; i++)
+        {
+            var (status, example) = outcomes[i];
+            switch (status)
+            {
+                case IdentityStatus.SameFile:
+                    identical++;
+                    verified.Add(new VerifiedPhysicalPair(
+                        mapping.Pairs[i].Source, mapping.Pairs[i].Target));
+                    break;
+                case IdentityStatus.DistinctFile: distinct++; break;
+                case IdentityStatus.Missing: missing++; break;
+                case IdentityStatus.Unreadable: unreadable++; break;
+                case IdentityStatus.Unsupported: unsupported++; break;
+                default: throw new InvalidDataException("File identity check produced an unknown status.");
+            }
+            if (example is not null && examples.Count < 6)
+                examples.Add(example);
+        }
         return new PhysicalIdentityReport(
             mapping.Pairs.Count, identical, distinct, missing, unreadable, unsupported,
             mapping.AmbiguousSourcePaths, mapping.AmbiguousTargetPaths,
             mapping.ExcludedSubsongs, examples, verified);
+    }
+
+    private enum IdentityStatus
+    {
+        SameFile,
+        DistinctFile,
+        Missing,
+        Unreadable,
+        Unsupported
     }
 
     [StructLayout(LayoutKind.Sequential)]
