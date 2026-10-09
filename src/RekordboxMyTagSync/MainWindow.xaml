@@ -212,6 +212,7 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
                     <TextBlock TextWrapping="Wrap"
@@ -228,6 +229,19 @@
                                 Content="Check selected files (read-only)"
                                 ToolTip="Read the selected proposed root mapping. Compare file sizes for all unambiguous physical pairs, then SHA-256 hash a small deterministic sample of file pairs up to 64 MiB each. No aliases or settings are changed; sampling never authorizes MyTag writes."
                                 ToolTipService.ShowOnDisabled="True"/>
+                        <Button x:Name="VerifyPhysicalIdsButton"
+                                Margin="8,0,0,0"
+                                Padding="16,7"
+                                Content="Check all file identities (read-only)"
+                                ToolTip="Open each uniquely matched physical file pair with read-only Windows handles, then compare filesystem file IDs. Fast for mapped drives pointing at the same underlying files. Different file IDs do not mean different audio bytes; no alias is saved, and writing remains blocked."
+                                ToolTipService.ShowOnDisabled="True"/>
+                        <Button x:Name="CancelPhysicalIdsButton"
+                                Margin="8,0,0,0"
+                                Padding="16,7"
+                                IsEnabled="False"
+                                Content="Cancel file check"
+                                ToolTip="Stop the current read-only physical-file identity verification. No partial result authorizes any writes."
+                                ToolTipService.ShowOnDisabled="True"/>
                     </StackPanel>
                     <TextBlock x:Name="PathAnalysisStatusTextBlock"
                                Grid.Row="2"
@@ -239,8 +253,13 @@
                                Margin="0,0,0,10"
                                TextWrapping="Wrap"
                                Text="No file-content comparison performed. Select a proposed root mapping and choose Check selected files (read-only)."/>
+                    <TextBlock x:Name="PhysicalIdentityStatusTextBlock"
+                               Grid.Row="4"
+                               Margin="0,0,0,10"
+                               TextWrapping="Wrap"
+                               Text="Entire mapping not checked against physical file IDs. No alias is approved."/>
                     <DataGrid x:Name="PathProposalsGrid"
-                              Grid.Row="4"
+                              Grid.Row="5"
                               AutoGenerateColumns="False"
                               IsReadOnly="True"
                               CanUserAddRows="False">
