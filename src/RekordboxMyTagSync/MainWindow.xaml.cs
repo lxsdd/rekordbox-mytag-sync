@@ -52,7 +52,7 @@ public partial class MainWindow : Window
         foreach (var grid in new[]
         {
             SourceCandidatesGrid, PathAliasGrid, TargetCandidatesGrid,
-            PathProposalsGrid, MappingGrid, PreviewGrid
+            PathProposalsGrid, MappingGrid, PreviewGrid, PreviewInvestigationGrid
         })
             HorizontalScrollSupport.Enable(grid);
         Loaded += async (_, _) => await LoadSettingsAsync();
