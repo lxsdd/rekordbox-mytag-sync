@@ -216,7 +216,7 @@
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
                     <TextBlock TextWrapping="Wrap"
-                               Text="Read-only analysis of foobar and rekordbox track paths. Suggested root aliases are UNVERIFIED folder/file similarities, not evidence of identical audio files. No aliases are applied or saved automatically."/>
+                               Text="Each table row is ONE proposed mapping between entire folder roots, not one unmatched track. The source/target tracks shown are illustrative examples only. Proposed aliases remain UNVERIFIED until read-only file checks succeed; no aliases are applied or saved automatically."/>
                     <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,12,0,10">
                         <Button x:Name="AnalyzePathsButton"
                                 Padding="16,7"
@@ -268,8 +268,8 @@
                             <DataGridTextColumn Header="Unverified target root" Binding="{Binding TargetRoot}" Width="SizeToCells" MinWidth="240" MaxWidth="800"/>
                             <DataGridTextColumn Header="Unique suffix pairs" Binding="{Binding UniqueSuffixPairs}" Width="140"/>
                             <DataGridTextColumn Header="Evidence — not file identity" Binding="{Binding Evidence}" Width="250"/>
-                            <DataGridTextColumn Header="Example source" Binding="{Binding ExampleSource}" Width="SizeToCells" MinWidth="520" MaxWidth="1500"/>
-                            <DataGridTextColumn Header="Example target" Binding="{Binding ExampleTarget}" Width="SizeToCells" MinWidth="520" MaxWidth="1500"/>
+                            <DataGridTextColumn Header="Illustrative source file" Binding="{Binding ExampleSource}" Width="SizeToCells" MinWidth="520" MaxWidth="1500"/>
+                            <DataGridTextColumn Header="Illustrative target file" Binding="{Binding ExampleTarget}" Width="SizeToCells" MinWidth="520" MaxWidth="1500"/>
                         </DataGrid.Columns>
                     </DataGrid>
                 </Grid>

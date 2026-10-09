@@ -41,6 +41,17 @@ public partial class MainWindow : Window
 
         MappingGrid.ItemsSource = _mappings;
         PathAliasGrid.ItemsSource = _aliases;
+
+        // Centralized Precision Touchpad WM_MOUSEHWHEEL + Shift-wheel routing,
+        // shared with DJ Library. Scrollbar visibility alone does not route
+        // two-finger horizontal gestures in WPF DataGrid controls.
+        HorizontalScrollSupport.Enable(this);
+        foreach (var grid in new[]
+        {
+            SourceCandidatesGrid, PathAliasGrid, TargetCandidatesGrid,
+            PathProposalsGrid, MappingGrid, PreviewGrid
+        })
+            HorizontalScrollSupport.Enable(grid);
         Loaded += async (_, _) => await LoadSettingsAsync();
         SourceInitialized += (_, _) => WindowPlacementStore.Restore(this);
         Closing += (_, _) =>

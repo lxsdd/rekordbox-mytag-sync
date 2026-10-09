@@ -76,6 +76,9 @@ public partial class App : Application
             {
                 if (window.FindName(name) is not System.Windows.Controls.DataGrid table)
                     throw new InvalidOperationException($"Missing production table '{name}'.");
+                if (!HorizontalScrollSupport.IsEnabled(table))
+                    throw new InvalidOperationException(
+                        $"Production table '{name}' is missing DJ Library precision-touchpad horizontal routing.");
                 table.ApplyTemplate();
                 var mode = System.Windows.Controls.ScrollViewer.GetHorizontalScrollBarVisibility(table);
                 if (mode != System.Windows.Controls.ScrollBarVisibility.Auto &&
@@ -83,6 +86,14 @@ public partial class App : Application
                     throw new InvalidOperationException(
                         $"Production table '{name}' disables horizontal scrolling.");
             }
+
+            // The single root mapping must not be presented as one
+            // unexplained leftover track. The examples are illustrative.
+            var guidance = window.PathProposalsGrid;
+            var exampleHeader = guidance.Columns[4].Header?.ToString() ?? string.Empty;
+            if (!exampleHeader.Contains("Illustrative", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    "Path proposal example still looks like a single unmatched track.");
 
             var proposals = window.PathProposalsGrid;
             if (proposals.Columns.Count != 6 ||
