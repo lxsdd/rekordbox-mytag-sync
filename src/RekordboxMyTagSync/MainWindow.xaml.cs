@@ -60,7 +60,7 @@ public partial class MainWindow : Window
         RemoveAliasButton.Click += (_, _) => RemoveSelectedAlias();
         AnalyzePathsButton.Click += async (_, _) => await AnalyzePathsAsync();
         RefreshDiagnosticsButton.Click += (_, _) => RefreshDiagnostics();
-        BuildPreviewButton.Click += (_, _) => BuildPreview();
+        BuildPreviewButton.Click += async (_, _) => await BuildPreviewAsync();
         ApplyButton.Click += (_, _) => ApplyApprovedPreview();
         RestoreButton.Click += (_, _) => RestoreRollingBackup();
 
@@ -620,69 +620,108 @@ public partial class MainWindow : Window
         }
     }
 
-    private void BuildPreview()
+    private async Task BuildPreviewAsync()
     {
+        if (_operationBusy) return;
+
+        AppSettings settings;
+        RekordboxDatabaseSnapshot database;
+        string bridgeDirectory;
         try
         {
-            if (!_sourceSafe)
-                throw new InvalidDataException("Selected bridge source is not qualified as safe.");
+            if (!_sourceSafe || _bridgeSnapshot is null)
+                throw new InvalidDataException("Inspect the bridge source first; discovery alone is insufficient.");
             if (!_targetSafe || !_databaseAccessQualified || _databaseSnapshot is null)
-                throw new InvalidDataException("Target database access is not qualified.");
-
-            var settings = BuildSettingsFromUi();
-            var bridgeDirectory = settings.EffectiveBridgeDirectory
+                throw new InvalidDataException("Validate rekordbox database access first.");
+            settings = BuildSettingsFromUi();
+            bridgeDirectory = settings.EffectiveBridgeDirectory
                 ?? throw new InvalidDataException("No bridge source directory is selected.");
-            var bridge = BridgeSourceDiscovery.ReadStable(bridgeDirectory);
-            var provenanceRoot = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "RekordboxMyTagSync",
-                "provenance");
-            var provenancePath = ProvenanceStore.GetStatePath(
-                provenanceRoot,
-                _databaseSnapshot.Identity);
-            var provenance = ProvenanceStore.Load(
-                provenancePath,
-                _databaseSnapshot.Identity);
-            var managed = ProvenanceStore.ToManagedAssignments(
-                provenance,
-                _databaseSnapshot);
-
-            var preview = PreviewEngine.Create(new PreviewRequest(
-                _databaseSnapshot.Identity.PreviewIdentity,
-                bridge.Tracks,
-                settings.EffectiveMappings,
-                _databaseSnapshot.Tracks,
-                managed,
-                settings.EffectivePathAliases,
-                _databaseSnapshot.MyTagDefinitions));
-
-            _bridgeSnapshot = bridge;
-            _approvedPreview = preview;
-            _previewExists = true;
-            _previewValid = preview.IsValid && preview.Counts.Conflicts == 0;
-            _previewFresh = true;
-
-            PreviewGrid.ItemsSource = preview.Details;
-            PreviewCountsTextBlock.Text =
-                $"Add {preview.Counts.Additions} · Remove {preview.Counts.Removals} · " +
-                $"Correct {preview.Counts.AlreadyCorrect} · Conflicts {preview.Counts.Conflicts} · " +
-                $"Unmatched {preview.Counts.Unmatched}";
-            AppendDiagnostic(
-                $"Fresh preview built: valid={preview.IsValid}, fingerprint={preview.FingerprintSha256}, " +
-                $"missing definitions={preview.MissingDefinitions?.Count ?? 0}.");
+            database = _databaseSnapshot;
         }
         catch (Exception ex)
         {
-            _approvedPreview = null;
-            _previewExists = false;
-            _previewValid = false;
-            _previewFresh = false;
-            PreviewGrid.ItemsSource = null;
-            PreviewCountsTextBlock.Text = "Add 0 · Remove 0 · Correct 0 · Conflicts 0 · Unmatched 0";
-            AppendDiagnostic($"Preview blocked: {ex.Message}");
+            InvalidatePreview("Read-only preview prerequisites failed.");
+            PreviewRunStatusTextBlock.Text = $"Preview blocked: {ex.Message}";
+            SetOperationStatus(PreviewRunStatusTextBlock.Text, error: true);
+            AppendDiagnostic(PreviewRunStatusTextBlock.Text);
+            UpdateWorkflowGate();
+            return;
         }
 
+        var settingsIdentity = JsonSerializer.Serialize(settings);
+        InvalidatePreview("A new read-only preview is being built.");
+        BuildPreviewButton.IsEnabled = false;
+        PreviewRunStatusTextBlock.Text =
+            "Building read-only preview — loading the stable bridge snapshot, provenance and MyTag comparisons…";
+        SetOperationStatus("Building read-only preview — please wait…", busy: true);
+        AppendDiagnostic("Read-only preview started.");
         UpdateWorkflowGate();
+        await Dispatcher.Yield(DispatcherPriority.Background);
+
+        try
+        {
+            var read = await Task.Run(() =>
+            {
+                var bridge = BridgeSourceDiscovery.ReadStable(bridgeDirectory);
+                var provenanceRoot = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "RekordboxMyTagSync",
+                    "provenance");
+                var provenancePath = ProvenanceStore.GetStatePath(
+                    provenanceRoot, database.Identity);
+                var provenance = ProvenanceStore.Load(provenancePath, database.Identity);
+                var managed = ProvenanceStore.ToManagedAssignments(provenance, database);
+                var preview = PreviewEngine.Create(new PreviewRequest(
+                    database.Identity.PreviewIdentity,
+                    bridge.Tracks,
+                    settings.EffectiveMappings,
+                    database.Tracks,
+                    managed,
+                    settings.EffectivePathAliases,
+                    database.MyTagDefinitions));
+                return (bridge, preview);
+            });
+
+            if (!ReferenceEquals(database, _databaseSnapshot) ||
+                !_sourceSafe || !_targetSafe || !_databaseAccessQualified ||
+                !string.Equals(settingsIdentity, JsonSerializer.Serialize(BuildSettingsFromUi()), StringComparison.Ordinal))
+                throw new InvalidOperationException("Source, target, mappings or aliases changed during the preview.");
+
+            _bridgeSnapshot = read.bridge;
+            _approvedPreview = read.preview;
+            _previewExists = true;
+            _previewValid = read.preview.IsValid && read.preview.Counts.Conflicts == 0;
+            _previewFresh = true;
+            PreviewGrid.ItemsSource = read.preview.Details;
+            PreviewCountsTextBlock.Text =
+                $"Add {read.preview.Counts.Additions} · Remove {read.preview.Counts.Removals} · " +
+                $"Correct {read.preview.Counts.AlreadyCorrect} · Conflicts {read.preview.Counts.Conflicts} · " +
+                $"Unmatched {read.preview.Counts.Unmatched}";
+            PreviewRunStatusTextBlock.Text =
+                $"Read-only preview completed: {read.bridge.Tracks.Count:N0} foobar entries; " +
+                $"{database.Tracks.Count:N0} rekordbox tracks; " +
+                $"{read.preview.MissingDefinitions?.Count ?? 0} missing MyTag definition(s). " +
+                (read.preview.IsValid
+                    ? "No conflicts found."
+                    : "Conflicts found — inspect the details; Apply is blocked.") +
+                " No database or audio changes made.";
+            SetOperationStatus("Read-only preview complete — no files or database rows changed.");
+            AppendDiagnostic(
+                $"{PreviewRunStatusTextBlock.Text} fingerprint={read.preview.FingerprintSha256}.");
+        }
+        catch (Exception ex)
+        {
+            InvalidatePreview("Read-only preview failed.");
+            PreviewRunStatusTextBlock.Text = $"Preview blocked: {ex.Message}";
+            SetOperationStatus(PreviewRunStatusTextBlock.Text, error: true);
+            AppendDiagnostic(PreviewRunStatusTextBlock.Text);
+        }
+        finally
+        {
+            OperationProgressBar.Visibility = Visibility.Collapsed;
+            BuildPreviewButton.IsEnabled = true;
+            UpdateWorkflowGate();
+        }
     }
 
     private void ApplyApprovedPreview()
