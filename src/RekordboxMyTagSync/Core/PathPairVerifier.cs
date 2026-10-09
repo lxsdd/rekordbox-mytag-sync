@@ -181,6 +181,8 @@ public static class PathPairVerifier
     private static byte[]? HashReadOnly(string path, long maxBytes)
     {
         var before = new FileInfo(path);
+        if (!before.Exists) throw new FileNotFoundException("Sample file disappeared.", path);
+        var originalWriteTime = before.LastWriteTimeUtc;
         using var stream = new FileStream(
             path, FileMode.Open, FileAccess.Read, FileShare.Read,
             bufferSize: 128 * 1024, options: FileOptions.SequentialScan);
@@ -190,7 +192,7 @@ public static class PathPairVerifier
         var bytes = SHA256.HashData(stream);
         before.Refresh();
         if (!before.Exists || before.Length != stream.Length ||
-            before.LastWriteTimeUtc != File.GetLastWriteTimeUtc(path))
+            before.LastWriteTimeUtc != originalWriteTime)
             throw new InvalidDataException("File changed during verification.");
         return bytes;
     }
