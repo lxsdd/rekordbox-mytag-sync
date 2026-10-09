@@ -45,6 +45,7 @@ public partial class MainWindow : Window
         // DataGrid.FrozenColumnCount is coerced against Columns.Count during
         // XAML initialization; set it only AFTER the five columns exist.
         PreviewInvestigationGrid.FrozenColumnCount = 2;
+        PhysicalExceptionsGrid.FrozenColumnCount = 2;
 
         MappingGrid.ItemsSource = _mappings;
         PathAliasGrid.ItemsSource = _aliases;
