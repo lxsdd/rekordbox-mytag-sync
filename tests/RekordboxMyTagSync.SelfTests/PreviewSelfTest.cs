@@ -65,6 +65,24 @@ public static class PreviewSelfTest
                                      string.Equals(x.Tag?.Value, "Manual", StringComparison.OrdinalIgnoreCase)))
             throw new InvalidOperationException("manual/unmanaged MyTag assignment was scheduled for removal");
 
+        // Never silently collapse a virtual foobar subsong to a physical
+        // rekordbox file even when the file path itself is unique.
+        var virtualOnlyPreview = PreviewEngine.Create(request with
+        {
+            BridgeTracks = new[] { bridgeOne with { Subsong = 1 } },
+            Mappings = new[] { new MappingRule("MOOD", "Mood") },
+            ManagedAssignments = Array.Empty<ManagedAssignment>()
+        });
+        if (!virtualOnlyPreview.IsValid ||
+            virtualOnlyPreview.Counts.Additions != 0 ||
+            virtualOnlyPreview.Counts.Removals != 0 ||
+            virtualOnlyPreview.Counts.Unmatched != 1 ||
+            !virtualOnlyPreview.Details.Any(x =>
+                x.Kind == PreviewDetailKind.Unmatched &&
+                x.Message.Contains("segment-level", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException(
+                "Virtual foobar subsong incorrectly produced a file-level MyTag write.");
+
         var definitions = new RekordboxMyTagDefinition[]
         {
             new("G1", "Genre", null, 0, 0),
