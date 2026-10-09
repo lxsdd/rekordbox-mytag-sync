@@ -39,6 +39,9 @@ public partial class App : Application
                 "PathAliasGrid",
                 "AnalyzePathsButton",
                 "VerifyRootSampleButton",
+                "VerifyPhysicalIdsButton",
+                "CancelPhysicalIdsButton",
+                "PhysicalIdentityStatusTextBlock",
                 "PathVerificationStatusTextBlock",
                 "PathAnalysisStatusTextBlock",
                 "PathProposalsGrid",
@@ -84,6 +87,19 @@ public partial class App : Application
                 !window.PathVerificationStatusTextBlock.Text.Contains("select", StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException(
                     "Production sample button did not display its blocked prerequisite.");
+
+            if (window.FindName("VerifyPhysicalIdsButton") is not System.Windows.Controls.Button allIds ||
+                string.IsNullOrWhiteSpace(allIds.ToolTip?.ToString()))
+                throw new InvalidOperationException(
+                    "Production whole-library read-only file-ID control or scope tooltip is missing.");
+            allIds.RaiseEvent(new RoutedEventArgs(
+                System.Windows.Controls.Primitives.ButtonBase.ClickEvent, allIds));
+            if (!window.PhysicalIdentityStatusTextBlock.Text.Contains("blocked", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    "Production physical identity button lacks persistent blocked-click feedback.");
+            if (window.FindName("CancelPhysicalIdsButton") is not System.Windows.Controls.Button cancelIds ||
+                string.IsNullOrWhiteSpace(cancelIds.ToolTip?.ToString()))
+                throw new InvalidOperationException("Physical identity cancellation control missing.");
 
             if (window.FindName("BuildPreviewButton") is not System.Windows.Controls.Button preview ||
                 string.IsNullOrWhiteSpace(preview.ToolTip?.ToString()))
