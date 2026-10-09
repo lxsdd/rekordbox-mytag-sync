@@ -6,7 +6,7 @@ public static class PathMatchAdvisorSelfTest
     {
         var sourceRoot = Path.Combine(temp, "SourceMusic", "Singles");
         var targetRoot = Path.Combine(temp, "RekordboxMusic", "Collection");
-        var files = new[] { ("A", "One.mp3"), ("B", "Two.mp3"), ("C", "Three.mp3"), ("D", "Four.mp3") };
+        (string Folder, string File)[] files = { ("A", "One.mp3"), ("B", "Two.mp3"), ("C", "Three.mp3"), ("D", "Four.mp3") };
         var empty = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
         BridgeTrack Bridge((string Folder, string File) x, uint subsong = 0) =>
             new(Path.Combine(sourceRoot, x.Folder, x.File), subsong, empty, empty);
