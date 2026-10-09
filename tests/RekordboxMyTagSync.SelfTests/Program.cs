@@ -190,6 +190,7 @@ try
         throw new InvalidOperationException("manual rekordbox target qualification failed");
 
     PathMatcherSelfTest.Run(temp);
+    PathMatchAdvisorSelfTest.Run(temp);
     PreviewSelfTest.Run(temp);
     RekordboxMutationPreflightSelfTest.Run(temp);
     RekordboxMutationVerificationSelfTest.Run(temp);

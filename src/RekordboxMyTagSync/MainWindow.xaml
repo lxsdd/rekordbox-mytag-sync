@@ -205,6 +205,46 @@
                 </Grid>
             </TabItem>
 
+            <TabItem Header="Path matching">
+                <Grid Margin="14">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock TextWrapping="Wrap"
+                               Text="Read-only analysis of foobar and rekordbox track paths. Suggested root aliases are UNVERIFIED folder/file similarities, not evidence of identical audio files. No aliases are applied or saved automatically."/>
+                    <Button x:Name="AnalyzePathsButton"
+                            Grid.Row="1"
+                            HorizontalAlignment="Left"
+                            Margin="0,12,0,10"
+                            Padding="16,7"
+                            Content="Analyze paths (read-only)"
+                            ToolTip="Compare already inspected source and validated rekordbox paths without writing any files, database rows, aliases or settings. Suggestions require independent verification."
+                            ToolTipService.ShowOnDisabled="True"/>
+                    <TextBlock x:Name="PathAnalysisStatusTextBlock"
+                               Grid.Row="2"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,10"
+                               Text="Path analysis not performed. Inspect Source and Validate target access first."/>
+                    <DataGrid x:Name="PathProposalsGrid"
+                              Grid.Row="3"
+                              AutoGenerateColumns="False"
+                              IsReadOnly="True"
+                              CanUserAddRows="False">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Unverified source root" Binding="{Binding SourceRoot}" Width="*"/>
+                            <DataGridTextColumn Header="Unverified target root" Binding="{Binding TargetRoot}" Width="*"/>
+                            <DataGridTextColumn Header="Unique suffix pairs" Binding="{Binding UniqueSuffixPairs}" Width="140"/>
+                            <DataGridTextColumn Header="Evidence — not file identity" Binding="{Binding Evidence}" Width="250"/>
+                            <DataGridTextColumn Header="Example source" Binding="{Binding ExampleSource}" Width="260"/>
+                            <DataGridTextColumn Header="Example target" Binding="{Binding ExampleTarget}" Width="260"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+
             <TabItem Header="Mapping">
                 <Grid Margin="14">
                     <Grid.RowDefinitions>

@@ -37,6 +37,9 @@ public partial class App : Application
                 "ValidateDatabaseAccessButton",
                 "MappingGrid",
                 "PathAliasGrid",
+                "AnalyzePathsButton",
+                "PathAnalysisStatusTextBlock",
+                "PathProposalsGrid",
                 "BuildPreviewButton",
                 "PreviewGrid",
                 "ApplyButton",
@@ -54,6 +57,19 @@ public partial class App : Application
                     throw new InvalidOperationException(
                         $"Required WPF workflow element '{name}' is missing.");
             }
+
+            // Click the real production button with no inspected inputs.
+            // The actual event wiring must produce an immediate, persistent
+            // blocked explanation rather than an inert/no-op control.
+            if (window.FindName("AnalyzePathsButton") is not System.Windows.Controls.Button analyze ||
+                string.IsNullOrWhiteSpace(analyze.ToolTip?.ToString()))
+                throw new InvalidOperationException("Path diagnostics action/tooltip is not wired.");
+            analyze.RaiseEvent(new RoutedEventArgs(
+                System.Windows.Controls.Primitives.ButtonBase.ClickEvent, analyze));
+            if (!window.PathAnalysisStatusTextBlock.Text.Contains("blocked", StringComparison.OrdinalIgnoreCase) ||
+                !window.PathAnalysisStatusTextBlock.Text.Contains("inspect", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    "Production path-analysis button did not report its blocked prerequisite on click.");
 
             if (window.Icon is null ||
                 !string.Equals(window.Title, "rekordbox MyTagSync", StringComparison.Ordinal))
