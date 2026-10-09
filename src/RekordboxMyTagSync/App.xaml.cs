@@ -89,7 +89,7 @@ public partial class App : Application
             {
                 "SourceCandidatesGrid", "PathAliasGrid", "TargetCandidatesGrid",
                 "PathProposalsGrid", "MappingGrid", "PreviewGrid",
-                "PreviewInvestigationGrid"
+                "PreviewInvestigationGrid", "PhysicalExceptionsGrid"
             };
             foreach (var name in tableNames)
             {
@@ -105,6 +105,23 @@ public partial class App : Application
                     throw new InvalidOperationException(
                         $"Production table '{name}' disables horizontal scrolling.");
             }
+
+            var physicalTable = window.PhysicalExceptionsGrid;
+            if (physicalTable.Columns.Count != 12 || physicalTable.FrozenColumnCount != 2 ||
+                physicalTable.Columns[0].Header?.ToString() != "Reason" ||
+                physicalTable.Columns[1].Header?.ToString() != "Content ID")
+                throw new InvalidOperationException(
+                    "Targeted exception grid must preserve Reason/Content ID and all twelve evidence fields.");
+            if (window.FindName("InvestigatePhysicalExceptionsButton") is not
+                    System.Windows.Controls.Button inspectEight ||
+                string.IsNullOrWhiteSpace(inspectEight.ToolTip?.ToString()))
+                throw new InvalidOperationException("Targeted physical exception button has no explanation.");
+            inspectEight.RaiseEvent(new RoutedEventArgs(
+                System.Windows.Controls.Primitives.ButtonBase.ClickEvent, inspectEight));
+            if (!window.PhysicalExceptionsStatusTextBlock.Text.Contains("Blocked",
+                StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    "Unqualified physical exception inspection must fail closed and report its prerequisites.");
 
             // The single root mapping must not be presented as one
             // unexplained leftover track. The examples are illustrative.

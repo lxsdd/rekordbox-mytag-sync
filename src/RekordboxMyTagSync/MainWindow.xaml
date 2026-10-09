@@ -394,6 +394,45 @@
                                 </DataGrid>
                             </DockPanel>
                         </TabItem>
+                        <TabItem Header="Physical exceptions (8)">
+                            <DockPanel Margin="4">
+                                <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button x:Name="InvestigatePhysicalExceptionsButton"
+                                                Padding="12,7"
+                                                Content="Inspect physical exceptions (read-only)"
+                                                ToolTip="Inspect only the duplicate rekordbox file paths and missing foobar-path matches, including existing track/playlist/cue/MyTag links. No full 40,000-track file-ID rescan and no database changes."/>
+                                        <TextBlock x:Name="PhysicalExceptionsStatusTextBlock"
+                                                   Margin="12,0,0,0"
+                                                   VerticalAlignment="Center"
+                                                   Text="Inspect Source and Validate Target first. No files or tags will be changed."/>
+                                    </StackPanel>
+                                    <TextBlock Margin="0,8,0,0" TextWrapping="Wrap"
+                                               Text="This identifies individual physical FILE references, not virtual CUE tracks. A pair of rekordbox ContentIDs at one path is not necessarily two audio files. Reference counts do not prove that a track is safe to delete."/>
+                                </StackPanel>
+                                <DataGrid x:Name="PhysicalExceptionsGrid"
+                                          IsReadOnly="True"
+                                          AutoGenerateColumns="False"
+                                          CanUserResizeColumns="True"
+                                          CanUserSortColumns="True"
+                                          CanUserAddRows="False">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Reason" Binding="{Binding Reason}" Width="210"/>
+                                        <DataGridTextColumn Header="Content ID" Binding="{Binding ContentId}" Width="125"/>
+                                        <DataGridTextColumn Header="Same-path ContentIDs" Binding="{Binding RelatedContentIds}" Width="200"/>
+                                        <DataGridTextColumn Header="Rekordbox path" Binding="{Binding TargetPath}" Width="580"/>
+                                        <DataGridTextColumn Header="Expected foobar path" Binding="{Binding ExpectedSourcePath}" Width="580"/>
+                                        <DataGridTextColumn Header="Files on disk" Binding="{Binding DiskEvidence}" Width="500"/>
+                                        <DataGridTextColumn Header="Bridge snapshot" Binding="{Binding BridgeEvidence}" Width="510"/>
+                                        <DataGridTextColumn Header="Playlist refs" Binding="{Binding PlaylistReferences}" Width="105"/>
+                                        <DataGridTextColumn Header="Cue refs" Binding="{Binding CueReferences}" Width="90"/>
+                                        <DataGridTextColumn Header="MyTag refs" Binding="{Binding MyTagReferences}" Width="105"/>
+                                        <DataGridTextColumn Header="Hot-cue bank refs" Binding="{Binding OtherDjReferences}" Width="130"/>
+                                        <DataGridTextColumn Header="Conclusion" Binding="{Binding Conclusion}" Width="620"/>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </DockPanel>
+                        </TabItem>
                     </TabControl>
                 </Grid>
             </TabItem>

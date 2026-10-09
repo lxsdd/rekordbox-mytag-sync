@@ -66,7 +66,8 @@ public sealed record VerifiedPreviewScope(
                 else if (!sourceByMappedPath.TryGetValue(normalized, out var candidates))
                     reason = "NOT_IN_FOOBAR_SOURCE: no matching path in the inspected foobar bridge.";
                 else if (candidates.All(y => y.Subsong != 0))
-                    reason = "VIRTUAL_SUBSONG_ONLY: foobar has no file-level subsong-0 entry; cue segments cannot authorize MyTag changes.";
+                    reason = "VIRTUAL_SUBSONG_ONLY: this is the main audio file in rekordbox, NOT an imported cue segment. " +
+                             "The foobar export has only virtual cue entries for this path and no file-level subsong-0 metadata source; no safe whole-file MyTag source was selected.";
                 else if (candidates.Count(y => y.Subsong == 0) > 1)
                     reason = "MULTIPLE_PHYSICAL_SOURCE: several subsong-0 records collide at this path; no unique file-level source.";
                 else
