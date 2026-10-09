@@ -41,7 +41,11 @@ public partial class MainWindow : Window
         PathAliasGrid.ItemsSource = _aliases;
         Loaded += (_, _) => LoadSettings();
         SourceInitialized += (_, _) => WindowPlacementStore.Restore(this);
-        Closing += (_, _) => WindowPlacementStore.Save(this);
+        Closing += (_, _) =>
+        {
+            if (!Equals(Tag, "ui-smoke"))
+                WindowPlacementStore.Save(this);
+        };
 
         SaveSettingsButton.Click += (_, _) => SaveSettings();
         DiscoverSourceButton.Click += (_, _) => DiscoverSources();
