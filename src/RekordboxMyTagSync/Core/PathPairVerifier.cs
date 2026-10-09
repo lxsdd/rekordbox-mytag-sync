@@ -128,7 +128,7 @@ public static class PathPairVerifier
         }
 
         return new PathPairVerification(
-            eligible.Length,
+            eligible.Count,
             collection.AmbiguousSourcePaths,
             collection.AmbiguousTargetPaths,
             collection.ExcludedSubsongs,
