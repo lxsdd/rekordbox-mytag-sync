@@ -41,6 +41,7 @@ public partial class App : Application
                 "PathAnalysisStatusTextBlock",
                 "PathProposalsGrid",
                 "BuildPreviewButton",
+                "PreviewRunStatusTextBlock",
                 "PreviewGrid",
                 "ApplyButton",
                 "RestoreButton",
@@ -70,6 +71,11 @@ public partial class App : Application
                 !window.PathAnalysisStatusTextBlock.Text.Contains("inspect", StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException(
                     "Production path-analysis button did not report its blocked prerequisite on click.");
+
+            if (window.FindName("BuildPreviewButton") is not System.Windows.Controls.Button preview ||
+                string.IsNullOrWhiteSpace(preview.ToolTip?.ToString()))
+                throw new InvalidOperationException(
+                    "Production read-only preview action/tooltip is missing.");
 
             if (window.Icon is null ||
                 !string.Equals(window.Title, "rekordbox MyTagSync", StringComparison.Ordinal))
