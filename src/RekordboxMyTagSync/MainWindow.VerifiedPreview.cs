@@ -115,15 +115,23 @@ public partial class MainWindow
                 var managed = ProvenanceStore.ToManagedAssignments(provenance, database);
                 var includedIds = scope.Targets.Select(x => x.ContentId)
                     .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                // When no user-defined mappings exist, infer ONLY the
+                // exact unambiguous existing MyTag root groups Year/Genre.
+                // Suggestions exist exclusively inside this read-only preview;
+                // they never modify settings, the database or any file tags.
+                var advice = settings.EffectiveMappings.Count == 0
+                    ? AutomaticMyTagMappingAdvisor.Suggest(scope.Sources, database.MyTagDefinitions)
+                    : null;
+                var effectiveMappings = advice?.Rules ?? settings.EffectiveMappings;
                 var preview = PreviewEngine.Create(new PreviewRequest(
                     database.Identity.PreviewIdentity,
                     scope.Sources,
-                    settings.EffectiveMappings,
+                    effectiveMappings,
                     scope.Targets,
                     managed.Where(x => includedIds.Contains(x.ContentId)).ToArray(),
                     new[] { root },
                     database.MyTagDefinitions));
-                return (stable, evidence, scope, preview, observed, reuse);
+                return (stable, evidence, scope, preview, observed, reuse, advice, effectiveMappings);
             }, cancel.Token);
 
             cancel.Token.ThrowIfCancellationRequested();
@@ -170,11 +178,20 @@ public partial class MainWindow
                 $"{rawDuplicates.Count(x => qualifiedContentIds.Contains(x.ContentId)):N0} in the physically matched preview scope. " +
                 "Rows show original MyTagIDs and assignment-row IDs; NO automatic deletion. " +
                 "An existing duplicate tag link does not prove duplicate music tracks.";
+            var missingDefinitions = result.preview.MissingDefinitions ??
+                Array.Empty<MyTagAssignment>();
+            var missingByGroup = missingDefinitions
+                .GroupBy(x => x.Group, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(x => x.Key + ": " + x.Count().ToString("N0"))
+                .ToArray();
             PreviewCountsTextBlock.Text =
-                $"Add {result.preview.Counts.Additions} · Remove {result.preview.Counts.Removals} · " +
-                $"Correct {result.preview.Counts.AlreadyCorrect} · " +
-                $"Conflicts {result.preview.Counts.Conflicts} · " +
-                $"Unmatched target {result.scope.ExcludedTargets.Count}";
+                $"Suggested add {result.preview.Counts.Additions:N0} · " +
+                $"Remove (previously tool-owned only) {result.preview.Counts.Removals:N0} · " +
+                $"Already correct {result.preview.Counts.AlreadyCorrect:N0} · " +
+                $"Conflicts {result.preview.Counts.Conflicts:N0} · " +
+                $"Missing MyTag definitions {missingDefinitions.Count:N0} · " +
+                $"Excluded target {result.scope.ExcludedTargets.Count:N0}";
             PreviewRunStatusTextBlock.Text =
                 $"Read-only verified MyTag preview: {result.scope.Targets.Count:N0} " +
                 $"file-level rekordbox ContentIDs confirmed as the same physical files " +
@@ -186,10 +203,17 @@ public partial class MainWindow
                 "physical/virtual source path groups with native file-ID proof; " +
                 $"{result.evidence.AmbiguousSourcePaths:N0} multi-entry source path groups total, " +
                 $"{result.evidence.AmbiguousTargetPaths:N0} duplicate target path groups. " +
-                (settings.EffectiveMappings.Count == 0
-                    ? "No MyTag mappings configured yet; no tag changes proposed. "
-                    : $"{settings.EffectiveMappings.Count} mapping rule(s) evaluated. ") +
-                "Root mapping is TEMPORARY and read-only; Apply and Restore stay LOCKED.";
+                (result.advice is not null
+                    ? "Automatic read-only suggestions: " +
+                      (result.advice.Rules.Count == 0 ? "NO safe groups available. " :
+                       string.Join(", ", result.advice.Rules.Select(x =>
+                           x.SourceField + " → " + x.TargetMyTag)) + ". ") +
+                      string.Join(" ", result.advice.Messages) + " "
+                    : $"{result.effectiveMappings.Count} user-defined mapping rule(s) evaluated. ") +
+                $"Missing distinct existing MyTag definitions: {missingDefinitions.Count:N0}" +
+                (missingByGroup.Length == 0 ? ". " : " (" + string.Join(", ", missingByGroup) + "). ") +
+                "No definition was created and NO settings were saved. " +
+                "Root mapping is TEMPORARY; all results are proposals, Apply and Restore stay LOCKED.";
             // Intentionally never assign _approvedPreview. A display-only
             // report is not an authorization to mutate a real database.
             SetOperationStatus("Verified MyTag preview completed — no data or settings changed.");

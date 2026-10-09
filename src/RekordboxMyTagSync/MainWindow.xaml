@@ -371,7 +371,22 @@
                                           CanUserAddRows="False">
                                     <DataGrid.Columns>
                                         <DataGridTextColumn Header="Reason" Binding="{Binding ReasonCode}" Width="220"/>
-                                        <DataGridTextColumn Header="Content ID" Binding="{Binding ContentId}" Width="145"/>
+                                        <DataGridTextColumn Header="Content ID" Binding="{Binding ContentId}" Width="145">
+                                            <!-- Visible separator for the two pinned columns;
+                                                 keep theme colors and native selection behavior. -->
+                                            <DataGridTextColumn.CellStyle>
+                                                <Style TargetType="{x:Type DataGridCell}">
+                                                    <Setter Property="BorderThickness" Value="0,0,2,0"/>
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"/>
+                                                </Style>
+                                            </DataGridTextColumn.CellStyle>
+                                            <DataGridTextColumn.HeaderStyle>
+                                                <Style TargetType="{x:Type DataGridColumnHeader}">
+                                                    <Setter Property="BorderThickness" Value="0,0,2,0"/>
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"/>
+                                                </Style>
+                                            </DataGridTextColumn.HeaderStyle>
+                                        </DataGridTextColumn>
                                         <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="650"/>
                                         <DataGridTextColumn Header="MyTag" Binding="{Binding MyTag}" Width="250"/>
                                         <DataGridTextColumn Header="Evidence / DB row IDs (read-only)" Binding="{Binding Details}" Width="950"/>
