@@ -648,6 +648,7 @@ public partial class MainWindow : Window
             return;
         }
 
+        var source = _bridgeSnapshot;
         var settingsIdentity = JsonSerializer.Serialize(settings);
         InvalidatePreview("A new read-only preview is being built.");
         BuildPreviewButton.IsEnabled = false;
@@ -683,6 +684,7 @@ public partial class MainWindow : Window
             });
 
             if (!ReferenceEquals(database, _databaseSnapshot) ||
+                !ReferenceEquals(source, _bridgeSnapshot) ||
                 !_sourceSafe || !_targetSafe || !_databaseAccessQualified ||
                 !string.Equals(settingsIdentity, JsonSerializer.Serialize(BuildSettingsFromUi()), StringComparison.Ordinal))
                 throw new InvalidOperationException("Source, target, mappings or aliases changed during the preview.");
