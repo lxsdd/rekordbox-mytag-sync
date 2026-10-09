@@ -16,7 +16,8 @@ internal sealed record RekordboxMyTagDefinitionWriteProfile(
     int RootAttribute,
     int ChildAttribute,
     int FirstChildSequence,
-    RekordboxDefinitionIdKind IdKind);
+    RekordboxDefinitionIdKind IdKind,
+    string? StoredRootParentId = null);
 
 internal sealed record RekordboxCreatedMyTagDefinition(
     string Id,
@@ -66,11 +67,20 @@ internal static class RekordboxMyTagDefinitionWriter
             throw new InvalidDataException(
                 "djmdMyTag active status semantics do not match unambiguous schema defaults.");
 
-        var roots = active.Where(x => x.ParentId is null).ToArray();
-        var children = active.Where(x => x.ParentId is not null).ToArray();
+        RekordboxMyTagHierarchy.RejectRootIdCollision(rows.Select(x => x.Id));
+        var roots = active.Where(x => RekordboxMyTagHierarchy.IsTopLevel(x.ParentId)).ToArray();
+        var children = active.Where(x => !RekordboxMyTagHierarchy.IsTopLevel(x.ParentId)).ToArray();
         if (roots.Length == 0 || children.Length == 0)
             throw new InvalidDataException(
                 "Cannot qualify MyTag definition creation without both root-group and child-value evidence.");
+
+        var storedRootParentId = RekordboxMyTagHierarchy.QualifyStoredRootParent(
+            roots.Select(x => x.ParentId));
+        var rootIds = roots.Select(x => x.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (children.Any(x => x.ParentId is null || !rootIds.Contains(x.ParentId)))
+            throw new InvalidDataException(
+                "Cannot create MyTag definitions with unknown or nested parent groups.");
 
         var rootAttribute = UniqueAttribute(roots, "root-group");
         var childAttribute = UniqueAttribute(children, "child-value");
@@ -104,7 +114,8 @@ internal static class RekordboxMyTagDefinitionWriter
             rootAttribute,
             childAttribute,
             distinctStarts[0],
-            numericIds ? RekordboxDefinitionIdKind.Numeric : RekordboxDefinitionIdKind.Guid);
+            numericIds ? RekordboxDefinitionIdKind.Numeric : RekordboxDefinitionIdKind.Guid,
+            storedRootParentId);
     }
 
     internal static RekordboxDefinitionWriteResult EnsureDefinitions(
@@ -136,7 +147,17 @@ internal static class RekordboxMyTagDefinitionWriter
             .Where(x => !x.LocalDeleted)
             .ToList();
         var allIds = ReadAllIds(connection, transaction);
+        RekordboxMyTagHierarchy.RejectRootIdCollision(allIds);
         ValidateIdScheme(allIds, profile.IdKind);
+
+        // A changed NULL/root convention invalidates a previously
+        // qualified writer profile. Never silently mix parent encodings.
+        var rootConvention = RekordboxMyTagHierarchy.QualifyStoredRootParent(
+            rows.Where(x => RekordboxMyTagHierarchy.IsTopLevel(x.ParentId))
+                .Select(x => x.ParentId));
+        if (!string.Equals(rootConvention, profile.StoredRootParentId, StringComparison.Ordinal))
+            throw new InvalidDataException(
+                "MyTag top-level parent convention changed after qualification.");
 
         var created = new List<RekordboxCreatedMyTagDefinition>();
         var nextUsn = firstLocalUsn;
@@ -146,21 +167,23 @@ internal static class RekordboxMyTagDefinitionWriter
                      .OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
         {
             var parents = rows
-                .Where(x => x.ParentId is null &&
+                .Where(x => RekordboxMyTagHierarchy.IsTopLevel(x.ParentId) &&
                             string.Equals(x.Name, groupName, StringComparison.OrdinalIgnoreCase))
                 .ToArray();
             if (parents.Length > 1)
                 throw new InvalidDataException($"MyTag group '{groupName}' is ambiguous.");
             if (parents.Length == 0)
             {
-                var seq = NextSequence(rows.Where(x => x.ParentId is null), null, "root-group");
+                var seq = NextSequence(
+                    rows.Where(x => RekordboxMyTagHierarchy.IsTopLevel(x.ParentId)),
+                    profile.StoredRootParentId, "root-group");
                 var row = Insert(
                     connection,
                     transaction,
                     allIds,
                     profile.IdKind,
                     groupName,
-                    parentId: null,
+                    parentId: profile.StoredRootParentId,
                     seq,
                     profile.RootAttribute,
                     nextUsn);
@@ -173,7 +196,7 @@ internal static class RekordboxMyTagDefinitionWriter
         foreach (var tag in desired)
         {
             var parent = rows.Single(x =>
-                x.ParentId is null &&
+                RekordboxMyTagHierarchy.IsTopLevel(x.ParentId) &&
                 string.Equals(x.Name, tag.Group, StringComparison.OrdinalIgnoreCase));
             var matches = rows
                 .Where(x => string.Equals(x.ParentId, parent.Id, StringComparison.OrdinalIgnoreCase) &&
