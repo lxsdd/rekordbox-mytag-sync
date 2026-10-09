@@ -59,6 +59,12 @@ public partial class MainWindow : Window
         AddAliasButton.Click += (_, _) => AddAlias();
         RemoveAliasButton.Click += (_, _) => RemoveSelectedAlias();
         AnalyzePathsButton.Click += async (_, _) => await AnalyzePathsAsync();
+        VerifyRootSampleButton.Click += async (_, _) => await VerifySelectedRootSampleAsync();
+        PathProposalsGrid.SelectionChanged += (_, _) =>
+        {
+            VerifyRootSampleButton.IsEnabled = !_operationBusy &&
+                PathProposalsGrid.SelectedItem is PathAliasProposal;
+        };
         RefreshDiagnosticsButton.Click += (_, _) => RefreshDiagnostics();
         BuildPreviewButton.Click += async (_, _) => await BuildPreviewAsync();
         ApplyButton.Click += (_, _) => ApplyApprovedPreview();
@@ -572,6 +578,8 @@ public partial class MainWindow : Window
         }
 
         AnalyzePathsButton.IsEnabled = false;
+        VerifyRootSampleButton.IsEnabled = false;
+        PathVerificationStatusTextBlock.Text = "File-content evidence is not yet available for this analysis.";
         PathProposalsGrid.ItemsSource = null;
         PathAnalysisStatusTextBlock.Text =
             "Analyzing paths — comparing unique identities and identifying unverified suffix proposals…";
@@ -591,6 +599,7 @@ public partial class MainWindow : Window
                 throw new InvalidOperationException("Source, target or aliases changed during path analysis.");
 
             PathProposalsGrid.ItemsSource = result.Proposals;
+            PathProposalsGrid.SelectedItem = result.Proposals.FirstOrDefault();
             PathAnalysisStatusTextBlock.Text =
                 $"Read-only path analysis completed: {result.BridgeItems:N0} foobar entries, " +
                 $"{result.TargetTracks:N0} rekordbox tracks; " +
@@ -616,6 +625,105 @@ public partial class MainWindow : Window
         {
             OperationProgressBar.Visibility = Visibility.Collapsed;
             AnalyzePathsButton.IsEnabled = true;
+            VerifyRootSampleButton.IsEnabled =
+                PathProposalsGrid.SelectedItem is PathAliasProposal;
+            UpdateWorkflowGate();
+        }
+    }
+
+    private async Task VerifySelectedRootSampleAsync()
+    {
+        if (_operationBusy) return;
+        if (!_sourceSafe || _bridgeSnapshot is null ||
+            !_targetSafe || !_databaseAccessQualified || _databaseSnapshot is null ||
+            PathProposalsGrid.SelectedItem is not PathAliasProposal proposal)
+        {
+            PathVerificationStatusTextBlock.Text =
+                "File check blocked: inspect the source, validate the target and select a suggested root first.";
+            SetOperationStatus(PathVerificationStatusTextBlock.Text, error: true);
+            AppendDiagnostic(PathVerificationStatusTextBlock.Text);
+            return;
+        }
+
+        AppSettings settings;
+        try { settings = BuildSettingsFromUi(); }
+        catch (Exception ex)
+        {
+            PathVerificationStatusTextBlock.Text = $"File check blocked: {ex.Message}";
+            SetOperationStatus(PathVerificationStatusTextBlock.Text, error: true);
+            AppendDiagnostic(PathVerificationStatusTextBlock.Text);
+            return;
+        }
+
+        var bridge = _bridgeSnapshot;
+        var database = _databaseSnapshot;
+        var settingsIdentity = JsonSerializer.Serialize(settings);
+        AnalyzePathsButton.IsEnabled = false;
+        VerifyRootSampleButton.IsEnabled = false;
+        PathVerificationStatusTextBlock.Text =
+            "Checking file sizes and up to 16 complete SHA-256 pairs (64 MiB/file limit), read-only — please wait…";
+        SetOperationStatus("Checking selected source/target file bytes — read-only…", busy: true);
+        AppendDiagnostic($"Read-only file sample started: {proposal.SourceRoot} → {proposal.TargetRoot}. No aliases are applied.");
+        UpdateWorkflowGate();
+        await Dispatcher.Yield(DispatcherPriority.Background);
+
+        try
+        {
+            var report = await Task.Run(() =>
+            {
+                // Re-evaluate all proposals against current in-memory
+                // source/target evidence before touching the local files.
+                var current = PathMatchAdvisor.Analyze(
+                    bridge.Tracks, database.Tracks, settings.EffectivePathAliases);
+                if (!current.Proposals.Any(x =>
+                        string.Equals(x.SourceRoot, proposal.SourceRoot, StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(x.TargetRoot, proposal.TargetRoot, StringComparison.OrdinalIgnoreCase) &&
+                        x.UniqueSuffixPairs == proposal.UniqueSuffixPairs))
+                    throw new InvalidDataException("The proposed root is stale or no longer uniquely supported.");
+
+                return PathPairVerifier.Verify(bridge.Tracks, database.Tracks,
+                    new PathAlias(proposal.SourceRoot, proposal.TargetRoot));
+            });
+
+            if (!ReferenceEquals(bridge, _bridgeSnapshot) ||
+                !ReferenceEquals(database, _databaseSnapshot) ||
+                !settingsIdentity.Equals(JsonSerializer.Serialize(BuildSettingsFromUi()), StringComparison.Ordinal) ||
+                !ReferenceEquals(PathProposalsGrid.SelectedItem, proposal) ||
+                !_sourceSafe || !_targetSafe || !_databaseAccessQualified)
+                throw new InvalidOperationException("Source, target or selected mapping changed while checking files.");
+
+            var summary =
+                $"Read-only root check: {report.UniqueFilePairs:N0} distinct eligible file pairs; " +
+                $"{report.EqualLengthPairs:N0} equal sizes, " +
+                $"{report.DifferentLengthPairs:N0} different sizes, " +
+                $"{report.MissingFilePairs:N0} missing, " +
+                $"{report.UnreadableFilePairs:N0} unreadable; " +
+                $"SHA-256 sample {report.EqualHashSamples}/{report.SampledPairs} byte-identical, " +
+                $"{report.DifferentHashSamples} different, " +
+                $"{report.SkippedLargeSamples} over the 64 MiB cap, " +
+                $"{report.InconclusiveSamples} inconclusive. " +
+                $"{report.AmbiguousSourcePaths} ambiguous source paths, " +
+                $"{report.AmbiguousTargetPaths} ambiguous target paths, " +
+                $"{report.ExcludedSubsongs} virtual subsongs excluded. " +
+                "SAMPLE ONLY — no root alias approved, no change to files, settings or rekordbox database.";
+            PathVerificationStatusTextBlock.Text = summary;
+            SetOperationStatus("Read-only file sample completed. No changes made.");
+            AppendDiagnostic(summary);
+            foreach (var example in report.Examples)
+                AppendDiagnostic("File evidence: " + example);
+        }
+        catch (Exception ex)
+        {
+            PathVerificationStatusTextBlock.Text = $"Read-only file check blocked: {ex.Message}";
+            SetOperationStatus(PathVerificationStatusTextBlock.Text, error: true);
+            AppendDiagnostic(PathVerificationStatusTextBlock.Text);
+        }
+        finally
+        {
+            OperationProgressBar.Visibility = Visibility.Collapsed;
+            AnalyzePathsButton.IsEnabled = true;
+            VerifyRootSampleButton.IsEnabled =
+                PathProposalsGrid.SelectedItem is PathAliasProposal;
             UpdateWorkflowGate();
         }
     }

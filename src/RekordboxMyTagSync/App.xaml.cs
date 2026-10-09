@@ -38,6 +38,8 @@ public partial class App : Application
                 "MappingGrid",
                 "PathAliasGrid",
                 "AnalyzePathsButton",
+                "VerifyRootSampleButton",
+                "PathVerificationStatusTextBlock",
                 "PathAnalysisStatusTextBlock",
                 "PathProposalsGrid",
                 "BuildPreviewButton",
@@ -71,6 +73,17 @@ public partial class App : Application
                 !window.PathAnalysisStatusTextBlock.Text.Contains("inspect", StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException(
                     "Production path-analysis button did not report its blocked prerequisite on click.");
+
+            if (window.FindName("VerifyRootSampleButton") is not System.Windows.Controls.Button checkFiles ||
+                string.IsNullOrWhiteSpace(checkFiles.ToolTip?.ToString()))
+                throw new InvalidOperationException(
+                    "Production read-only file sample button or scope tooltip is missing.");
+            checkFiles.RaiseEvent(new RoutedEventArgs(
+                System.Windows.Controls.Primitives.ButtonBase.ClickEvent, checkFiles));
+            if (!window.PathVerificationStatusTextBlock.Text.Contains("blocked", StringComparison.OrdinalIgnoreCase) ||
+                !window.PathVerificationStatusTextBlock.Text.Contains("select", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    "Production sample button did not display its blocked prerequisite.");
 
             if (window.FindName("BuildPreviewButton") is not System.Windows.Controls.Button preview ||
                 string.IsNullOrWhiteSpace(preview.ToolTip?.ToString()))
