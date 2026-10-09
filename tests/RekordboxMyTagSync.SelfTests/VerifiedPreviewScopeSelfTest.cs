@@ -89,6 +89,19 @@ public static class VerifiedPreviewScopeSelfTest
             throw new InvalidOperationException(
                 "Duplicate physical source paths were not distinguished from virtual subsongs.");
 
+        var duplicatedTarget = VerifiedPreviewScope.Build(
+            b, t.Concat(new[]
+            {
+                new RekordboxTrackSnapshot("C5", first, Array.Empty<MyTagAssignment>())
+            }).ToArray(), alias, Array.Empty<VerifiedPhysicalPair>());
+        if (!duplicatedTarget.ExcludedTargets.Any(x =>
+                x.ContentId == "C1" && x.Message.StartsWith("DUPLICATE_TARGET_PATH:", StringComparison.Ordinal) &&
+                x.Message.Contains("C5", StringComparison.Ordinal)) ||
+            !duplicatedTarget.ExcludedTargets.Any(x => x.ContentId == "C5" &&
+                x.Message.Contains("C1", StringComparison.Ordinal)))
+            throw new InvalidOperationException(
+                "Same-path rekordbox ContentIds were not cross-referenced for review.");
+
         var mismatched = false;
         try { _ = VerifiedPreviewScope.Build(b, t, alias, new[] { new VerifiedPhysicalPair(one, second) }); }
         catch (InvalidDataException) { mismatched = true; }
