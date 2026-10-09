@@ -64,6 +64,45 @@ public static class RekordboxMutationVerificationSelfTest
             !string.Equals(next.Assignments[0].MyTagId, "V2", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("postimage verification did not rotate provenance from removed to added assignment");
 
+        // A newly inserted root-sentinel group appears with ParentId=null in
+        // the normalized snapshot; postimage verification must compare these
+        // as the SAME definition, without waiving any other drift checks.
+        var rootSentinelCreated = new RekordboxCreatedMyTagDefinition[]
+        {
+            new("G2", "Energy", "root", 2, 10, 101),
+            new("V4", "Peak", "G2", 1, 20, 102)
+        };
+        var rootSentinelAfter = before with
+        {
+            Identity = afterIdentity,
+            MyTagDefinitions = definitions.Concat(new[]
+            {
+                new RekordboxMyTagDefinition("G2", "Energy", null, 2, 10),
+                new RekordboxMyTagDefinition("V4", "Peak", "G2", 1, 20)
+            }).ToArray()
+        };
+        _ = RekordboxMutationVerification.VerifyPostimageAndBuildProvenance(
+            before, rootSentinelAfter, provenance,
+            Array.Empty<RekordboxAssignmentMutation>(), rootSentinelCreated);
+        var invalidParentRejected = false;
+        try
+        {
+            _ = RekordboxMutationVerification.VerifyPostimageAndBuildProvenance(
+                before, rootSentinelAfter, provenance,
+                Array.Empty<RekordboxAssignmentMutation>(),
+                rootSentinelCreated.Select(x => x.Id == "G2"
+                    ? x with { ParentId = "ghost" }
+                    : x).ToArray());
+        }
+        catch (InvalidDataException ex) when (
+            ex.Message.Contains("postimage", StringComparison.OrdinalIgnoreCase))
+        {
+            invalidParentRejected = true;
+        }
+        if (!invalidParentRejected)
+            throw new InvalidOperationException(
+                "postimage validation wrongly accepted an unrelated missing MyTag parent.");
+
         var manualLossBlocked = false;
         try
         {

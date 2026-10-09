@@ -189,11 +189,13 @@ public static class RekordboxSqlCipherDatabase
             result.Add(new RekordboxMyTagDefinition(
                 id,
                 name,
-                reader.IsDBNull(2) ? null : reader.GetString(2),
+                RekordboxMyTagHierarchy.NormalizeForSnapshot(
+                    reader.IsDBNull(2) ? null : reader.GetString(2)),
                 reader.IsDBNull(3) ? null : Convert.ToInt32(reader.GetValue(3), CultureInfo.InvariantCulture),
                 reader.IsDBNull(4) ? null : Convert.ToInt32(reader.GetValue(4), CultureInfo.InvariantCulture)));
         }
 
+        RekordboxMyTagHierarchy.RejectRootIdCollision(result.Select(x => x.Id));
         var byId = result.ToDictionary(x => x.Id, StringComparer.OrdinalIgnoreCase);
         foreach (var item in result.Where(x => x.ParentId is not null))
             if (!byId.ContainsKey(item.ParentId!))
