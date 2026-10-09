@@ -30,7 +30,7 @@ public static class VerifiedPreviewScopeSelfTest
             new[] { new VerifiedPhysicalPair(one, first) });
         if (scope.Sources.Count != 1 || scope.Targets.Count != 1 ||
             scope.Targets[0].ContentId != "C1" ||
-            scope.ExcludedTargets.Length != 2 ||
+            scope.ExcludedTargets.Count != 2 ||
             !scope.ExcludedTargets.Any(x => x.ContentId == "C2") ||
             !scope.ExcludedTargets.Any(x => x.ContentId == "C3"))
             throw new InvalidOperationException("Verified scope did not preserve unmatched/virtual entries as excluded.");
