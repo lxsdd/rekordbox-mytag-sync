@@ -61,12 +61,12 @@ public sealed record VerifiedPreviewScope(
                     reason = "DUPLICATE_TARGET_PATH: multiple rekordbox ContentIds point to the same path.";
                 else if (!sourceByMappedPath.TryGetValue(normalized, out var candidates))
                     reason = "NOT_IN_FOOBAR_SOURCE: no matching path in the inspected foobar bridge.";
-                else if (candidates.Length > 1)
-                    reason = "AMBIGUOUS_SOURCE_PATH: foobar has several subsong/file identities at this path.";
-                else if (candidates[0].Subsong != 0)
-                    reason = "VIRTUAL_SUBSONG_ONLY: foobar contains no physical subsong-0 entry at this path.";
+                else if (candidates.All(y => y.Subsong != 0))
+                    reason = "VIRTUAL_SUBSONG_ONLY: foobar has no file-level subsong-0 entry; cue segments cannot authorize MyTag changes.";
+                else if (candidates.Count(y => y.Subsong == 0) > 1)
+                    reason = "MULTIPLE_PHYSICAL_SOURCE: several subsong-0 records collide at this path; no unique file-level source.";
                 else
-                    reason = "FILE_IDENTITY_UNCONFIRMED: candidate path exists but same physical file was not proven.";
+                    reason = "FILE_IDENTITY_UNCONFIRMED: a unique physical subsong-0 candidate exists but its file ID was not verified.";
                 return new PreviewDetail(
                     PreviewDetailKind.Unmatched, x.ContentId, x.Path, null, reason);
             })
