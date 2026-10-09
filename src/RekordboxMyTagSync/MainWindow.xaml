@@ -340,19 +340,43 @@
                                Grid.Row="2"
                                Margin="0,10,0,10"
                                Text="Add 0 · Remove 0 · Correct 0 · Conflicts 0 · Unmatched 0"/>
-                    <DataGrid x:Name="PreviewGrid"
-                              Grid.Row="3"
-                              IsReadOnly="True"
-                              AutoGenerateColumns="False"
-                              CanUserAddRows="False">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="100"/>
-                            <DataGridTextColumn Header="Content ID" Binding="{Binding ContentId}" Width="130"/>
-                            <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="680"/>
-                            <DataGridTextColumn Header="Tag" Binding="{Binding Tag}" Width="180"/>
-                            <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="540"/>
-                        </DataGrid.Columns>
-                    </DataGrid>
+                    <TabControl Grid.Row="3" x:Name="PreviewResultsTabs">
+                        <TabItem Header="MyTag changes / conflicts">
+                            <DataGrid x:Name="PreviewGrid"
+                                      IsReadOnly="True"
+                                      AutoGenerateColumns="False"
+                                      CanUserAddRows="False">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="100"/>
+                                    <DataGridTextColumn Header="Content ID" Binding="{Binding ContentId}" Width="130"/>
+                                    <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="680"/>
+                                    <DataGridTextColumn Header="Tag" Binding="{Binding Tag}" Width="180"/>
+                                    <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="540"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </TabItem>
+                        <TabItem Header="Investigate excluded tracks / MyTags">
+                            <DockPanel Margin="4">
+                                <TextBlock x:Name="PreviewInvestigationStatusTextBlock"
+                                           DockPanel.Dock="Top"
+                                           Margin="0,0,0,8"
+                                           TextWrapping="Wrap"
+                                           Text="Run Auto-match and preview to classify excluded rekordbox ContentIDs and duplicate MyTag link rows."/>
+                                <DataGrid x:Name="PreviewInvestigationGrid"
+                                          IsReadOnly="True"
+                                          AutoGenerateColumns="False"
+                                          CanUserAddRows="False">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="110"/>
+                                        <DataGridTextColumn Header="Content ID" Binding="{Binding ContentId}" Width="145"/>
+                                        <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="680"/>
+                                        <DataGridTextColumn Header="MyTag" Binding="{Binding Tag}" Width="210"/>
+                                        <DataGridTextColumn Header="Evidence / reason (no automatic changes)" Binding="{Binding Message}" Width="950"/>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </DockPanel>
+                        </TabItem>
+                    </TabControl>
                 </Grid>
             </TabItem>
 
