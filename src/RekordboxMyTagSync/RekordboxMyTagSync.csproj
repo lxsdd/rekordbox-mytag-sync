@@ -1,6 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <ApplicationIcon>assets/MyTagSync.ico</ApplicationIcon>
+    <AssemblyTitle>rekordbox MyTagSync</AssemblyTitle>
+    <Product>rekordbox MyTagSync</Product>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
@@ -16,7 +19,15 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
   </PropertyGroup>
   <ItemGroup>
+    <Resource Include="assets/MyTagSync.ico" />
     <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.12" />
     <PackageReference Include="SQLite3MC.PCLRaw.bundle" Version="2.4.0" />
   </ItemGroup>
+  <Target Name="GenerateWindowsIcon"
+          BeforeTargets="PrepareForBuild"
+          Inputs="$(MSBuildProjectDirectory)/assets/Generate-AppIcon.ps1"
+          Outputs="$(MSBuildProjectDirectory)/assets/MyTagSync.ico"
+          Condition="'$(OS)' == 'Windows_NT' and '$(DesignTimeBuild)' != 'true'">
+    <Exec Command="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\assets\Generate-AppIcon.ps1&quot; -OutputPath &quot;$(MSBuildProjectDirectory)\assets\MyTagSync.ico&quot;" />
+  </Target>
 </Project>

@@ -3,3 +3,5 @@ obj/
 .vs/
 *.user
 artifacts/
+# Deterministically generated from the source-controlled icon generator
+src/RekordboxMyTagSync/assets/MyTagSync.ico

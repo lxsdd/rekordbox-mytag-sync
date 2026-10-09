@@ -5,6 +5,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Media;
+using System.Windows.Threading;
 using Microsoft.Win32;
 using RekordboxMyTagSync.Core;
 
@@ -16,6 +18,8 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<MappingRow> _mappings = new();
     private readonly ObservableCollection<AliasRow> _aliases = new();
     private AppSettings _settings = new();
+    private readonly List<string> _diagnosticEvents = new();
+    private bool _operationBusy;
     private bool _sourceSafe;
     private bool _targetSafe;
     private bool _databaseAccessQualified;
@@ -36,10 +40,16 @@ public partial class MainWindow : Window
         MappingGrid.ItemsSource = _mappings;
         PathAliasGrid.ItemsSource = _aliases;
         Loaded += (_, _) => LoadSettings();
+        SourceInitialized += (_, _) => WindowPlacementStore.Restore(this);
+        Closing += (_, _) =>
+        {
+            if (!Equals(Tag, "ui-smoke"))
+                WindowPlacementStore.Save(this);
+        };
 
         SaveSettingsButton.Click += (_, _) => SaveSettings();
         DiscoverSourceButton.Click += (_, _) => DiscoverSources();
-        InspectSourceButton.Click += (_, _) => InspectSelectedSource();
+        InspectSourceButton.Click += async (_, _) => await InspectSelectedSourceAsync();
         DiscoverTargetButton.Click += (_, _) => DiscoverTargets();
         BrowseTargetButton.Click += (_, _) => BrowseTarget();
         ValidateDatabaseAccessButton.Click += async (_, _) => await ValidateDatabaseAccessAsync();
@@ -220,34 +230,62 @@ public partial class MainWindow : Window
         }
     }
 
-    private void InspectSelectedSource()
+    private async Task InspectSelectedSourceAsync()
     {
+        if (_operationBusy) return;
+        _sourceSafe = false;
+        InvalidatePreview("Bridge source is being re-inspected.");
+        InspectSourceButton.IsEnabled = false;
+        SourceInspectionStatusTextBlock.Text = "Inspect is running — reading and validating the full bridge snapshot…";
+        SetOperationStatus("Inspecting foobar2000 source — please wait…", busy: true);
+        AppendDiagnostic("Source inspection started.");
+        UpdateWorkflowGate();
         try
         {
             var directory = OptionalPath(BridgeDirectoryTextBox.Text)
                 ?? throw new InvalidDataException("No bridge source directory is selected.");
-            var candidate = BridgeSourceDiscovery.Inspect(directory, selected: true);
-            SourceCandidatesGrid.ItemsSource = new[] { candidate };
 
-            if (!candidate.Safe)
-                throw new InvalidDataException(candidate.Error ?? "Bridge source is not safe.");
+            // The bridge may contain tens of thousands of rows. Never block
+            // the WPF dispatcher while validating its compressed snapshot.
+            var inspection = await Task.Run(() =>
+            {
+                var candidate = BridgeSourceDiscovery.Inspect(directory, selected: true);
+                var snapshot = candidate.Safe
+                    ? BridgeSourceDiscovery.ReadStable(directory)
+                    : null;
+                return (candidate, snapshot);
+            });
 
-            var snapshot = BridgeSourceDiscovery.ReadStable(directory);
-            _bridgeSnapshot = snapshot;
+            if (!PathsEqual(directory, OptionalPath(BridgeDirectoryTextBox.Text) ?? string.Empty))
+                throw new InvalidOperationException("Selected source changed during inspection.");
+            SourceCandidatesGrid.ItemsSource = new[] { inspection.candidate };
+            if (!inspection.candidate.Safe || inspection.snapshot is null)
+                throw new InvalidDataException(
+                    inspection.candidate.Error ?? "Bridge source is not safe.");
+
+            _bridgeSnapshot = inspection.snapshot;
             _sourceSafe = true;
             SourceInspectionStatusTextBlock.Text =
-                $"Source verified: {snapshot.Tracks.Count:N0} tracks, schema {snapshot.State.SchemaVersion}, " +
-                $"generation {snapshot.State.Generation}. No database changes made.";
-            InvalidatePreview("Bridge source was re-read.");
-            AppendDiagnostic(
-                $"Bridge source verified: schema {snapshot.State.SchemaVersion}, generation {snapshot.State.Generation}, {snapshot.Tracks.Count} track(s).");
-            UpdateWorkflowGate();
+                $"Source verified: {inspection.snapshot.Tracks.Count:N0} tracks, " +
+                $"schema {inspection.snapshot.State.SchemaVersion}, " +
+                $"generation {inspection.snapshot.State.Generation}. No database changes made.";
+            SetOperationStatus(
+                $"Source verified — {inspection.snapshot.Tracks.Count:N0} tracks; no changes made.");
+            AppendDiagnostic(SourceInspectionStatusTextBlock.Text);
         }
         catch (Exception ex)
         {
             _sourceSafe = false;
+            _bridgeSnapshot = null;
             SourceInspectionStatusTextBlock.Text = $"Source verification failed: {ex.Message}";
+            SetOperationStatus($"Inspect failed — {ex.Message}", error: true);
             AppendDiagnostic($"Bridge source inspection blocked: {ex.Message}");
+        }
+        finally
+        {
+            _operationBusy = false;
+            OperationProgressBar.Visibility = Visibility.Collapsed;
+            InspectSourceButton.IsEnabled = true;
             UpdateWorkflowGate();
         }
     }
@@ -325,9 +363,13 @@ public partial class MainWindow : Window
 
     private async Task ValidateDatabaseAccessAsync()
     {
+        if (_operationBusy) return;
         ValidateDatabaseAccessButton.IsEnabled = false;
         DatabaseAccessStatusTextBlock.Text =
-            "Resolving SQLCipher access and qualifying the selected database…";
+            "Validation running — checking rekordbox installation, SQLCipher and database schema…";
+        SetOperationStatus("Validating rekordbox database access — please wait…", busy: true);
+        AppendDiagnostic("Database access validation started.");
+        await Dispatcher.Yield(DispatcherPriority.Background);
         try
         {
             var databasePath = OptionalPath(TargetDatabaseTextBox.Text)
@@ -351,6 +393,8 @@ public partial class MainWindow : Window
                     target.Error ?? "Selected target is not qualified as a safe rekordbox 6/7 library.");
 
             var access = await RekordboxDatabaseAccessResolver.ResolveAsync(target);
+            if (!PathsEqual(databasePath, OptionalPath(TargetDatabaseTextBox.Text) ?? string.Empty))
+                throw new InvalidOperationException("Target path changed during database validation.");
             _databaseAccess = access;
             _databaseSnapshot = access.Snapshot;
             _targetSafe = true;
@@ -366,15 +410,19 @@ public partial class MainWindow : Window
                 $"Database access automatically qualified from {access.KeySource}; " +
                 $"SQLite3MC {access.Snapshot.Identity.SqliteCipherVersion}. " +
                 "Key material was neither logged nor stored in settings.");
+            SetOperationStatus("Database access qualified — read-only inspection succeeded.");
         }
         catch (Exception ex)
         {
             InvalidateDatabaseAccess("Automatic database access validation failed.");
             DatabaseAccessStatusTextBlock.Text = $"Blocked: {ex.Message}";
+            SetOperationStatus($"Database access blocked — {ex.Message}", error: true);
             AppendDiagnostic($"Automatic database access validation blocked: {ex.Message}");
         }
         finally
         {
+            _operationBusy = false;
+            OperationProgressBar.Visibility = Visibility.Collapsed;
             ValidateDatabaseAccessButton.IsEnabled = true;
             UpdateWorkflowGate();
         }
@@ -850,13 +898,29 @@ public partial class MainWindow : Window
         builder.AppendLine($"Database version: {_databaseSnapshot?.Identity.DbVersion ?? "unknown"}");
         builder.AppendLine($"Preview: exists={_previewExists}, valid={_previewValid}, fresh={_previewFresh}");
         builder.AppendLine($"Backup: available={_backupAvailable}, matches target={_backupMatchesTarget}");
+        builder.AppendLine();
+        builder.AppendLine("Recent events:");
+        foreach (var message in _diagnosticEvents.TakeLast(200))
+            builder.AppendLine(message);
         DiagnosticsTextBox.Text = builder.ToString();
         UpdateWorkflowGate();
+    }
+
+    private void SetOperationStatus(string message, bool busy = false, bool error = false)
+    {
+        _operationBusy = busy;
+        OperationStatusTextBlock.Text = message;
+        OperationStatusTextBlock.Foreground = error
+            ? Brushes.Firebrick
+            : SystemColors.ControlTextBrush;
+        OperationProgressBar.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void AppendDiagnostic(string message)
     {
         var line = $"[{DateTime.Now:HH:mm:ss}] {message}";
+        _diagnosticEvents.Add(line);
+        if (_diagnosticEvents.Count > 500) _diagnosticEvents.RemoveAt(0);
         DiagnosticsTextBox.AppendText(
             (DiagnosticsTextBox.Text.Length == 0 ? string.Empty : Environment.NewLine) + line);
         DiagnosticsTextBox.ScrollToEnd();
