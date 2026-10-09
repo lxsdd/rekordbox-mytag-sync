@@ -158,9 +158,10 @@ public partial class MainWindow
                 .Concat(rawDuplicates)
                 .Select(InvestigationDisplayRow.FromPreview).ToArray();
             var reasonGroups = result.scope.ExcludedTargets
-                .GroupBy(x => x.Message, StringComparer.Ordinal)
+                .GroupBy(x => x.Message.Split(':')[0], StringComparer.Ordinal)
                 .OrderByDescending(x => x.Count())
-                .Select(x => $"{x.Key.Split(':')[0]} {x.Count():N0}")
+                .ThenBy(x => x.Key, StringComparer.Ordinal)
+                .Select(x => $"{x.Key} {x.Count():N0}")
                 .ToArray();
             PreviewInvestigationStatusTextBlock.Text =
                 $"Excluded rekordbox ContentIDs: {result.scope.ExcludedTargets.Count:N0}. " +
