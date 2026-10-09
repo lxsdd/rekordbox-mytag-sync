@@ -52,7 +52,7 @@ public partial class MainWindow : Window
         foreach (var grid in new[]
         {
             SourceCandidatesGrid, PathAliasGrid, TargetCandidatesGrid,
-            PathProposalsGrid, MappingGrid, PreviewGrid
+            PathProposalsGrid, MappingGrid, PreviewGrid, PreviewInvestigationGrid
         })
             HorizontalScrollSupport.Enable(grid);
         Loaded += async (_, _) => await LoadSettingsAsync();
@@ -829,6 +829,14 @@ public partial class MainWindow : Window
                 !_sourceSafe || !_targetSafe || !_databaseAccessQualified ||
                 !settingsIdentity.Equals(JsonSerializer.Serialize(BuildSettingsFromUi()), StringComparison.Ordinal))
                 throw new InvalidOperationException("Source, target, selected root or settings changed during verification.");
+
+            // A successful explicit read-only full scan may accelerate
+            // Auto-match in this same session. Reuse remains forbidden if
+            // the bridge export or database fingerprint has changed.
+            var verifiedRoot = new PathAlias(proposal.SourceRoot, proposal.TargetRoot);
+            var observed = ReadOnlyIdentityCache.Capture(bridge, database, verifiedRoot, report);
+            if (observed.IsValidFor(bridge, database, verifiedRoot))
+                _cachedIdentityEvidence = observed;
 
             var summary =
                 $"Physical file check completed: {report.SamePhysicalFiles:N0} of " +

@@ -83,6 +83,34 @@ public static class RekordboxDatabaseSelfTest
             rootedTimestampBefore != File.GetLastWriteTimeUtc(rootedPath))
             throw new InvalidOperationException("root sentinel read changed encrypted database bytes or timestamp.");
 
+        // A repeated active Track↔MyTag link is a database-row issue,
+        // NOT evidence that the underlying music was imported twice.
+        var duplicatePath = Path.Combine(root, "duplicate-active-mytag-link.db");
+        CreateFixture(duplicatePath, Key, DbVersion, trackOne, trackTwo, compatibleSchema: true);
+        MutateEncryptedFixture(duplicatePath, """
+            INSERT INTO djmdSongMyTag(
+                ID, UUID, MyTagID, ContentID, TrackNo,
+                rb_data_status, rb_local_data_status, rb_local_deleted, rb_local_synced,
+                usn, rb_local_usn, created_at, updated_at)
+            SELECT 'S3', 'uuid-S3', MyTagID, ContentID, TrackNo + 3,
+                rb_data_status, rb_local_data_status, rb_local_deleted, rb_local_synced,
+                usn, rb_local_usn, created_at, updated_at
+            FROM djmdSongMyTag WHERE ID='S1';
+            """);
+        var duplicateHash = HashFile(duplicatePath);
+        var duplicateRead = RekordboxSqlCipherDatabase.ReadSnapshot(duplicatePath, Key, policy);
+        var duplicates = duplicateRead.DuplicateMyTagLinks ??
+            throw new InvalidOperationException("Duplicate MyTag evidence missing.");
+        if (duplicates.Count != 1 ||
+            duplicates[0].ContentId != "C1" ||
+            !duplicates[0].Reason.StartsWith("DUPLICATE_SAME_MYTAG_ID", StringComparison.Ordinal) ||
+            !duplicates[0].AssignmentRowIds.SequenceEqual(new[] { "S1", "S3" }) ||
+            !duplicates[0].MyTagIds.SequenceEqual(new[] { "T1", "T1" }))
+            throw new InvalidOperationException(
+                "Real encrypted MyTag duplicate row identities were not preserved.");
+        if (!duplicateHash.SequenceEqual(HashFile(duplicatePath)))
+            throw new InvalidOperationException("Raw MyTag duplicate audit modified encrypted database.");
+
         // The special case is ONLY the exact root sentinel, never a general
         // missing-parent bypass.
         var orphanPath = Path.Combine(root, "orphan-parent.db");

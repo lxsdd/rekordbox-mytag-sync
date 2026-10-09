@@ -32,7 +32,11 @@ public static class VerifiedPreviewScopeSelfTest
             scope.Targets[0].ContentId != "C1" ||
             scope.ExcludedTargets.Count != 2 ||
             !scope.ExcludedTargets.Any(x => x.ContentId == "C2") ||
-            !scope.ExcludedTargets.Any(x => x.ContentId == "C3"))
+            !scope.ExcludedTargets.Any(x => x.ContentId == "C3") ||
+            !scope.ExcludedTargets.Any(x => x.ContentId == "C2" &&
+                x.Message.StartsWith("AMBIGUOUS_SOURCE_PATH:", StringComparison.Ordinal)) ||
+            !scope.ExcludedTargets.Any(x => x.ContentId == "C3" &&
+                x.Message.StartsWith("NOT_IN_FOOBAR_SOURCE:", StringComparison.Ordinal)))
             throw new InvalidOperationException("Verified scope did not preserve unmatched/virtual entries as excluded.");
 
         var rejected = false;
