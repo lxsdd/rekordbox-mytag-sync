@@ -56,10 +56,30 @@ public static class VerifiedPreviewScopeSelfTest
                 new[] { new VerifiedPhysicalPair(two, second) });
         }
         catch (InvalidDataException) { rejected = true; }
-        // A virtual subsong must be excluded by the native verifier. It
-        // cannot independently authorize the same physical file.
+        // A unique subsong-0 file may be paired despite virtual siblings,
+        // but only after explicit physical identity proof supplied by verifier.
         if (rejected)
             throw new InvalidOperationException("File-level scope must not depend on virtual subsong path identity.");
+        var mixedScope = VerifiedPreviewScope.Build(
+            b, t, alias, new[] { new VerifiedPhysicalPair(two, second) });
+        if (mixedScope.Targets.Count != 1 ||
+            mixedScope.Targets[0].ContentId != "C2" ||
+            mixedScope.Sources.Single().Subsong != 0)
+            throw new InvalidOperationException(
+                "Physical subsong-0 identity was lost in mixed cue/physical source group.");
+
+        // An exclusive virtual cue path is still not a physical file identity.
+        var virtualOnlyPath = Path.Combine(temp, "Verified", "Source", "Singles", "C", "Cue.mp3");
+        var virtualOnlyTarget = Path.Combine(temp, "Verified", "Target", "Singles", "C", "Cue.mp3");
+        var virtualOnly = VerifiedPreviewScope.Build(
+            b.Concat(new[] { new BridgeTrack(virtualOnlyPath, 1, empty, empty) }).ToArray(),
+            t.Concat(new[] {
+                new RekordboxTrackSnapshot("C4", virtualOnlyTarget, Array.Empty<MyTagAssignment>())
+            }).ToArray(),
+            alias, new[] { new VerifiedPhysicalPair(one, first) });
+        if (!virtualOnly.ExcludedTargets.Any(x => x.ContentId == "C4" &&
+            x.Message.StartsWith("VIRTUAL_SUBSONG_ONLY:", StringComparison.Ordinal)))
+            throw new InvalidOperationException("Virtual-only cue path was not safely excluded.");
 
         var mismatched = false;
         try { _ = VerifiedPreviewScope.Build(b, t, alias, new[] { new VerifiedPhysicalPair(one, second) }); }
