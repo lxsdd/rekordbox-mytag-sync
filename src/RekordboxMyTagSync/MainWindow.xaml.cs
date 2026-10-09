@@ -58,6 +58,8 @@ public partial class MainWindow : Window
             {
                 BridgeDirectoryTextBox.Text = source.DirectoryPath;
                 _sourceSafe = source.Safe;
+                SourceInspectionStatusTextBlock.Text =
+                    "Selected source changed. Click Inspect to verify its stable snapshot.";
                 UpdateWorkflowGate();
             }
         };
@@ -75,6 +77,8 @@ public partial class MainWindow : Window
         {
             _sourceSafe = false;
             _bridgeSnapshot = null;
+            SourceInspectionStatusTextBlock.Text =
+                "Source path changed. Click Inspect to verify its stable snapshot.";
             InvalidatePreview("Bridge source changed and must be requalified.");
             UpdateWorkflowGate();
         };
@@ -201,6 +205,8 @@ public partial class MainWindow : Window
                     PathsEqual(x.DirectoryPath, bridgeDirectory));
 
             var safeCount = candidates.Count(x => x.Safe);
+            SourceInspectionStatusTextBlock.Text =
+                $"Discovered {safeCount} safe source(s). Click Inspect to validate the selected stable snapshot.";
             AppendDiagnostic($"Bridge discovery: {candidates.Count} candidate(s), {safeCount} safe.");
             UpdateWorkflowGate();
         }
@@ -208,6 +214,7 @@ public partial class MainWindow : Window
         {
             _sourceSafe = false;
             SourceCandidatesGrid.ItemsSource = null;
+            SourceInspectionStatusTextBlock.Text = $"Source discovery failed: {ex.Message}";
             AppendDiagnostic($"Bridge discovery blocked: {ex.Message}");
             UpdateWorkflowGate();
         }
@@ -228,6 +235,9 @@ public partial class MainWindow : Window
             var snapshot = BridgeSourceDiscovery.ReadStable(directory);
             _bridgeSnapshot = snapshot;
             _sourceSafe = true;
+            SourceInspectionStatusTextBlock.Text =
+                $"Source verified: {snapshot.Tracks.Count:N0} tracks, schema {snapshot.State.SchemaVersion}, " +
+                $"generation {snapshot.State.Generation}. No database changes made.";
             InvalidatePreview("Bridge source was re-read.");
             AppendDiagnostic(
                 $"Bridge source verified: schema {snapshot.State.SchemaVersion}, generation {snapshot.State.Generation}, {snapshot.Tracks.Count} track(s).");
@@ -236,6 +246,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             _sourceSafe = false;
+            SourceInspectionStatusTextBlock.Text = $"Source verification failed: {ex.Message}";
             AppendDiagnostic($"Bridge source inspection blocked: {ex.Message}");
             UpdateWorkflowGate();
         }
@@ -828,6 +839,12 @@ public partial class MainWindow : Window
         builder.AppendLine($"Mappings: {_mappings.Count}");
         builder.AppendLine($"Path aliases: {_aliases.Count}");
         builder.AppendLine($"rekordbox running: {RekordboxProcessGuard.IsRunning()}");
+        var discovered = RekordboxDiscovery.Discover();
+        builder.AppendLine($"rekordbox 6/7 installations found: {discovered.Installations.Count}");
+        foreach (var installed in discovered.Installations)
+            builder.AppendLine($"Installed rekordbox {installed.Version}: {installed.DirectoryPath}");
+        foreach (var message in discovered.Diagnostics)
+            builder.AppendLine($"Discovery: {message}");
         builder.AppendLine($"Database access qualified: {_databaseAccessQualified}");
         builder.AppendLine($"Database access source: {_databaseAccess?.KeySource ?? "none"}");
         builder.AppendLine($"Database version: {_databaseSnapshot?.Identity.DbVersion ?? "unknown"}");
