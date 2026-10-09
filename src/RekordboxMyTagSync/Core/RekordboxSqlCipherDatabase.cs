@@ -25,7 +25,8 @@ public sealed record RekordboxMyTagDefinition(
 public sealed record RekordboxDatabaseSnapshot(
     RekordboxDatabaseIdentity Identity,
     IReadOnlyList<RekordboxTrackSnapshot> Tracks,
-    IReadOnlyList<RekordboxMyTagDefinition> MyTagDefinitions);
+    IReadOnlyList<RekordboxMyTagDefinition> MyTagDefinitions,
+    IReadOnlyList<DuplicateMyTagLinkEvidence>? DuplicateMyTagLinks = null);
 
 public sealed record RekordboxDatabaseReadPolicy(
     IReadOnlySet<string> SupportedDbVersions,
@@ -106,10 +107,12 @@ public static class RekordboxSqlCipherDatabase
 
         var definitions = ReadMyTagDefinitions(connection);
         var tracks = ReadTracks(connection, definitions);
+        var duplicateLinks = ReadDuplicateMyTagLinks(connection, definitions);
         return new RekordboxDatabaseSnapshot(
             new RekordboxDatabaseIdentity(dbId, dbVersion, canonicalPath, file.Length, file.LastWriteTimeUtc, cipherVersion),
             tracks,
-            definitions);
+            definitions,
+            duplicateLinks);
     }
 
     internal static string BuildConnectionString(string databasePath, string key, SqliteOpenMode mode)
@@ -253,6 +256,36 @@ public static class RekordboxSqlCipherDatabase
         if (orphanContentIds.Length != 0)
             throw new InvalidDataException($"Active song MyTag assignments reference missing/inactive content: {string.Join(", ", orphanContentIds)}.");
         return tracks;
+    }
+
+    private static IReadOnlyList<DuplicateMyTagLinkEvidence> ReadDuplicateMyTagLinks(
+        SqliteConnection connection,
+        IReadOnlyList<RekordboxMyTagDefinition> definitions)
+    {
+        var definitionsById = definitions.ToDictionary(x => x.Id, StringComparer.OrdinalIgnoreCase);
+        var rows = new List<MyTagLinkAuditRow>();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT sm.ID, sm.ContentID, sm.MyTagID
+            FROM djmdSongMyTag sm
+            WHERE COALESCE(sm.rb_local_deleted, 0) = 0
+            ORDER BY sm.ContentID, sm.MyTagID, sm.ID;
+            """;
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            var rowId = RequiredString(reader, 0, "djmdSongMyTag.ID");
+            var contentId = RequiredString(reader, 1, "djmdSongMyTag.ContentID");
+            var tagId = RequiredString(reader, 2, "djmdSongMyTag.MyTagID");
+            if (!definitionsById.TryGetValue(tagId, out var tag) ||
+                string.IsNullOrWhiteSpace(tag.ParentId) ||
+                !definitionsById.TryGetValue(tag.ParentId, out var group))
+                throw new InvalidDataException(
+                    $"Active MyTag link '{rowId}' refers to an invalid MyTag definition.");
+            rows.Add(new MyTagLinkAuditRow(rowId, contentId, tagId, group.Name, tag.Name));
+        }
+
+        return MyTagLinkAudit.FindDuplicates(rows);
     }
 
     private static string ReadScalarString(SqliteConnection connection, string sql, string label)
