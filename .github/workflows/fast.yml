@@ -34,7 +34,7 @@ jobs:
       - name: Smoke-test WPF startup
         shell: pwsh
         run: |
-          $exe = Join-Path $env:GITHUB_WORKSPACE "src/RekordboxMyTagSync/bin/Release/net10.0-windows/win-x64/RekordboxMyTagSync.exe"
+          $exe = Join-Path $env:GITHUB_WORKSPACE "src/RekordboxMyTagSync/bin/Release/net10.0-windows/win-x64/rekordbox MyTagSync.exe"
           if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
             throw "WPF product executable is missing after build."
           }
