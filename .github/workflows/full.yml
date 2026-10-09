@@ -257,7 +257,7 @@ jobs:
       - name: Smoke-test published WPF application
         shell: pwsh
         run: |
-          $exe = (Resolve-Path "artifacts/publish-a/RekordboxMyTagSync.exe").Path
+          $exe = (Resolve-Path "artifacts/publish-a/rekordbox MyTagSync.exe").Path
           $process = Start-Process -FilePath $exe -ArgumentList "--ui-smoke" -Wait -PassThru
           if ($process.ExitCode -ne 0) {
             throw "Published WPF UI smoke test failed with exit code $($process.ExitCode)."
@@ -267,7 +267,7 @@ jobs:
         id: package
         shell: pwsh
         run: |
-          $productExe = Resolve-Path "artifacts/publish-a/RekordboxMyTagSync.exe"
+          $productExe = Resolve-Path "artifacts/publish-a/rekordbox MyTagSync.exe"
           $productVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($productExe).ProductVersion
           if ([string]::IsNullOrWhiteSpace($productVersion) -or
               -not $productVersion.StartsWith("0.1.0-dev", [StringComparison]::Ordinal)) {
@@ -430,7 +430,7 @@ jobs:
             }
 
             foreach ($required in @(
-              "RekordboxMyTagSync.exe",
+              "rekordbox MyTagSync.exe",
               "SOURCE_SHA.txt",
               "candidate-manifest.json",
               "dependencies.json",

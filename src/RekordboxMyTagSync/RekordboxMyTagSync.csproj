@@ -8,7 +8,7 @@
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>RekordboxMyTagSync</AssemblyName>
+    <AssemblyName>rekordbox MyTagSync</AssemblyName>
     <RootNamespace>RekordboxMyTagSync</RootNamespace>
     <Version>0.1.0-dev</Version>
     <AssemblyVersion>0.1.0.0</AssemblyVersion>
