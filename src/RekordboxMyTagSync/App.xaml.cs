@@ -49,6 +49,8 @@ public partial class App : Application
                 "BuildVerifiedPreviewButton",
                 "CancelVerifiedPreviewButton",
                 "PreviewRunStatusTextBlock",
+                "PreviewInvestigationStatusTextBlock",
+                "PreviewResultsTabs",
                 "PreviewGrid",
                 "ApplyButton",
                 "RestoreButton",
@@ -72,7 +74,8 @@ public partial class App : Application
             var tableNames = new[]
             {
                 "SourceCandidatesGrid", "PathAliasGrid", "TargetCandidatesGrid",
-                "PathProposalsGrid", "MappingGrid", "PreviewGrid"
+                "PathProposalsGrid", "MappingGrid", "PreviewGrid",
+                "PreviewInvestigationGrid"
             };
             foreach (var name in tableNames)
             {
