@@ -11,6 +11,8 @@ namespace RekordboxMyTagSync.Core;
 /// </summary>
 public sealed record PhysicalIdentityProgress(int Completed, int Total);
 
+public sealed record VerifiedPhysicalPair(string SourcePath, string TargetPath);
+
 public sealed record PhysicalIdentityReport(
     int EligiblePairs,
     int SamePhysicalFiles,
@@ -21,7 +23,8 @@ public sealed record PhysicalIdentityReport(
     int AmbiguousSourcePaths,
     int AmbiguousTargetPaths,
     int ExcludedSubsongs,
-    IReadOnlyList<string> Examples)
+    IReadOnlyList<string> Examples,
+    IReadOnlyList<VerifiedPhysicalPair>? VerifiedPairs = null)
 {
     // Pure evidence, NOT an approval of any database write or a persistent
     // assertion that files cannot change after the handles are closed.
@@ -57,6 +60,7 @@ public static class PhysicalFileIdentityVerifier
         var unreadable = 0;
         var unsupported = 0;
         var examples = new List<string>();
+        var verified = new List<VerifiedPhysicalPair>();
         static bool Missing(Exception ex) => ex is FileNotFoundException or DirectoryNotFoundException;
         void Note(string message)
         {
@@ -88,6 +92,7 @@ public static class PhysicalFileIdentityVerifier
                          a.FileIndexLow == b.FileIndexLow)
                 {
                     identical++;
+                    verified.Add(new VerifiedPhysicalPair(source, destination));
                 }
                 else
                 {
@@ -113,7 +118,7 @@ public static class PhysicalFileIdentityVerifier
         return new PhysicalIdentityReport(
             mapping.Pairs.Count, identical, distinct, missing, unreadable, unsupported,
             mapping.AmbiguousSourcePaths, mapping.AmbiguousTargetPaths,
-            mapping.ExcludedSubsongs, examples);
+            mapping.ExcludedSubsongs, examples, verified);
     }
 
     [StructLayout(LayoutKind.Sequential)]
