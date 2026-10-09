@@ -58,6 +58,7 @@ public partial class MainWindow : Window
         RemoveMappingButton.Click += (_, _) => RemoveSelectedMapping();
         AddAliasButton.Click += (_, _) => AddAlias();
         RemoveAliasButton.Click += (_, _) => RemoveSelectedAlias();
+        AnalyzePathsButton.Click += async (_, _) => await AnalyzePathsAsync();
         RefreshDiagnosticsButton.Click += (_, _) => RefreshDiagnostics();
         BuildPreviewButton.Click += (_, _) => BuildPreview();
         ApplyButton.Click += (_, _) => ApplyApprovedPreview();
@@ -544,6 +545,81 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task AnalyzePathsAsync()
+    {
+        if (_operationBusy) return;
+        if (!_sourceSafe || _bridgeSnapshot is null ||
+            !_targetSafe || !_databaseAccessQualified || _databaseSnapshot is null)
+        {
+            PathAnalysisStatusTextBlock.Text =
+                "Path analysis blocked: inspect the foobar source and validate rekordbox database access first.";
+            AppendDiagnostic(PathAnalysisStatusTextBlock.Text);
+            return;
+        }
+
+        var source = _bridgeSnapshot;
+        var target = _databaseSnapshot;
+        AppSettings settings;
+        try
+        {
+            settings = BuildSettingsFromUi();
+        }
+        catch (Exception ex)
+        {
+            PathAnalysisStatusTextBlock.Text = $"Path analysis blocked: invalid settings — {ex.Message}";
+            AppendDiagnostic(PathAnalysisStatusTextBlock.Text);
+            return;
+        }
+
+        AnalyzePathsButton.IsEnabled = false;
+        PathProposalsGrid.ItemsSource = null;
+        PathAnalysisStatusTextBlock.Text =
+            "Analyzing paths — comparing unique identities and identifying unverified suffix proposals…";
+        SetOperationStatus("Analyzing source/target paths — read-only…", busy: true);
+        AppendDiagnostic("Read-only path analysis started.");
+        UpdateWorkflowGate();
+        await Dispatcher.Yield(DispatcherPriority.Background);
+        try
+        {
+            var result = await Task.Run(() =>
+                PathMatchAdvisor.Analyze(
+                    source.Tracks, target.Tracks, settings.EffectivePathAliases));
+
+            if (!ReferenceEquals(source, _bridgeSnapshot) ||
+                !ReferenceEquals(target, _databaseSnapshot) ||
+                !settings.EffectivePathAliases.SequenceEqual(BuildSettingsFromUi().EffectivePathAliases))
+                throw new InvalidOperationException("Source, target or aliases changed during path analysis.");
+
+            PathProposalsGrid.ItemsSource = result.Proposals;
+            PathAnalysisStatusTextBlock.Text =
+                $"Read-only path analysis completed: {result.BridgeItems:N0} foobar entries, " +
+                $"{result.TargetTracks:N0} rekordbox tracks; " +
+                $"{result.ExactPathMatches:N0} exact path matches, " +
+                $"{result.ConfiguredAliasMatches:N0} matches using configured aliases, " +
+                $"{result.UnmatchedBridgeItems:N0} unmatched foobar entries, " +
+                $"{result.AmbiguousBridgePaths:N0} ambiguous foobar paths, " +
+                $"{result.AmbiguousTargetPaths:N0} ambiguous rekordbox paths, " +
+                $"{result.NonFileSubsongs:N0} nonzero subsongs. " +
+                $"{result.Proposals.Count:N0} UNVERIFIED root suggestion(s); " +
+                "never applied automatically. Matching names do not prove identical files. No changes made.";
+            SetOperationStatus("Path analysis complete — no files, settings or database rows changed.");
+            AppendDiagnostic(PathAnalysisStatusTextBlock.Text);
+        }
+        catch (Exception ex)
+        {
+            PathProposalsGrid.ItemsSource = null;
+            PathAnalysisStatusTextBlock.Text = $"Path analysis blocked: {ex.Message}";
+            SetOperationStatus(PathAnalysisStatusTextBlock.Text, error: true);
+            AppendDiagnostic(PathAnalysisStatusTextBlock.Text);
+        }
+        finally
+        {
+            OperationProgressBar.Visibility = Visibility.Collapsed;
+            AnalyzePathsButton.IsEnabled = true;
+            UpdateWorkflowGate();
+        }
+    }
+
     private void BuildPreview()
     {
         try
@@ -915,9 +991,9 @@ public partial class MainWindow : Window
             BackupAvailable: _backupAvailable,
             BackupMatchesTarget: _backupMatchesTarget));
 
-        BuildPreviewButton.IsEnabled = state.CanBuildPreview;
-        ApplyButton.IsEnabled = state.CanApply;
-        RestoreButton.IsEnabled = state.CanRestore;
+        BuildPreviewButton.IsEnabled = !_operationBusy && state.CanBuildPreview;
+        ApplyButton.IsEnabled = !_operationBusy && state.CanApply;
+        RestoreButton.IsEnabled = !_operationBusy && state.CanRestore;
 
         PreviewStatusTextBlock.Text = state.CanApply
             ? "Fresh conflict-free preview approved."
