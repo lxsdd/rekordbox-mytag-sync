@@ -37,14 +37,21 @@ public partial class MainWindow
             {
                 if (RekordboxProcessGuard.IsRunning())
                     throw new InvalidOperationException("Close rekordbox before examining its database.");
+                // Recheck stable bridge publication without inspecting 40k audio
+                // files. A newly exported foobar snapshot must not be mistaken
+                // for the previously selected source.
+                var stable = BridgeSourceDiscovery.ReadStable(source.DirectoryPath);
+                if (!Equals(stable.State, source.State))
+                    throw new InvalidDataException(
+                        "foobar bridge generation changed; click Source → Inspect again.");
                 var analysis = PathMatchAdvisor.Analyze(
-                    source.Tracks, db.Tracks, []);
+                    stable.Tracks, db.Tracks, []);
                 if (analysis.Proposals.Count != 1)
                     throw new InvalidDataException(
                         "Exactly one unique root proposal is required for exception diagnosis.");
                 var proposal = analysis.Proposals[0];
                 var root = new PathAlias(proposal.SourceRoot, proposal.TargetRoot);
-                var cases = PhysicalExceptionInvestigator.Identify(source.Tracks, db.Tracks, root);
+                var cases = PhysicalExceptionInvestigator.Identify(stable.Tracks, db.Tracks, root);
                 return PhysicalExceptionInvestigator.InspectReadOnly(
                     db.Identity.CanonicalPath, access.Key, cases);
             });
