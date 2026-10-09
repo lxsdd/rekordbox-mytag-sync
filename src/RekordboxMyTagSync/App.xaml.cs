@@ -124,7 +124,10 @@ public partial class App : Application
                 investigation.Columns[0].Header?.ToString() != "Reason" ||
                 investigation.Columns[1].Header?.ToString() != "Content ID")
                 throw new InvalidOperationException(
-                    "Investigation must freeze reason and Content ID.");
+                    $"Investigation must freeze reason and Content ID: frozen={investigation.FrozenColumnCount}, " +
+                    $"columns={investigation.Columns.Count}, reasonColumn={investigation.Columns[0].Header}, " +
+                    $"sortMember={investigation.Columns[0].SortMemberPath}, " +
+                    $"idColumn={investigation.Columns[1].Header}.");
             var display = InvestigationDisplayRow.FromPreview(
                 new PreviewDetail(PreviewDetailKind.Unmatched, "C1", @"R:\Music\Track.mp3", null,
                     "AMBIGUOUS_SOURCE_PATH: virtual source siblings"));
