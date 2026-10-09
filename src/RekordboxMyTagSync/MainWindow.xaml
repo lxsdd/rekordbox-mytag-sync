@@ -320,6 +320,12 @@
                                 Content="Auto-match and preview (read-only)"
                                 ToolTip="Automatically find one unambiguous source/target root candidate, recheck all physically identical file pairs with read-only Windows handles, show excluded ContentIDs, and preview MyTag changes. Never saves an alias or permits database writes."
                                 ToolTipService.ShowOnDisabled="True"/>
+                        <Button x:Name="CancelVerifiedPreviewButton"
+                                Margin="8,0,0,0"
+                                Padding="12,7"
+                                IsEnabled="False"
+                                Content="Cancel"
+                                ToolTip="Cancel the running read-only verified preview; no partial result is retained."/>
                         <TextBlock x:Name="PreviewStatusTextBlock"
                                    Margin="14,0,0,0"
                                    VerticalAlignment="Center"
