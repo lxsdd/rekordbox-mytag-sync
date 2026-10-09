@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     private AppSettings _settings = new();
     private readonly List<string> _diagnosticEvents = new();
     private bool _operationBusy;
+    private CancellationTokenSource? _identityCancellation;
     private bool _targetDiscoveryUpdatingSelection;
     private bool _sourceSafe;
     private bool _targetSafe;
@@ -44,6 +45,7 @@ public partial class MainWindow : Window
         SourceInitialized += (_, _) => WindowPlacementStore.Restore(this);
         Closing += (_, _) =>
         {
+            _identityCancellation?.Cancel();
             if (!Equals(Tag, "ui-smoke"))
                 WindowPlacementStore.Save(this);
         };
@@ -60,10 +62,16 @@ public partial class MainWindow : Window
         RemoveAliasButton.Click += (_, _) => RemoveSelectedAlias();
         AnalyzePathsButton.Click += async (_, _) => await AnalyzePathsAsync();
         VerifyRootSampleButton.Click += async (_, _) => await VerifySelectedRootSampleAsync();
+        VerifyPhysicalIdsButton.Click += async (_, _) => await VerifyPhysicalIdsAsync();
+        CancelPhysicalIdsButton.Click += (_, _) => _identityCancellation?.Cancel();
         PathProposalsGrid.SelectionChanged += (_, _) =>
         {
             VerifyRootSampleButton.IsEnabled = !_operationBusy &&
                 PathProposalsGrid.SelectedItem is PathAliasProposal;
+            VerifyPhysicalIdsButton.IsEnabled = !_operationBusy &&
+                PathProposalsGrid.SelectedItem is PathAliasProposal;
+            PhysicalIdentityStatusTextBlock.Text =
+                "Physical file identities have not been checked for this selection. No alias is approved.";
         };
         RefreshDiagnosticsButton.Click += (_, _) => RefreshDiagnostics();
         BuildPreviewButton.Click += async (_, _) => await BuildPreviewAsync();
@@ -579,6 +587,9 @@ public partial class MainWindow : Window
 
         AnalyzePathsButton.IsEnabled = false;
         VerifyRootSampleButton.IsEnabled = false;
+        VerifyPhysicalIdsButton.IsEnabled = false;
+        PhysicalIdentityStatusTextBlock.Text =
+            "Physical file identities have not been checked for this analysis.";
         PathVerificationStatusTextBlock.Text = "File-content evidence is not yet available for this analysis.";
         PathProposalsGrid.ItemsSource = null;
         PathAnalysisStatusTextBlock.Text =
@@ -724,6 +735,123 @@ public partial class MainWindow : Window
             AnalyzePathsButton.IsEnabled = true;
             VerifyRootSampleButton.IsEnabled =
                 PathProposalsGrid.SelectedItem is PathAliasProposal;
+            UpdateWorkflowGate();
+        }
+    }
+
+    private async Task VerifyPhysicalIdsAsync()
+    {
+        if (_operationBusy) return;
+        if (!_sourceSafe || _bridgeSnapshot is null ||
+            !_targetSafe || !_databaseAccessQualified || _databaseSnapshot is null ||
+            PathProposalsGrid.SelectedItem is not PathAliasProposal proposal)
+        {
+            PhysicalIdentityStatusTextBlock.Text =
+                "Physical ID check blocked: inspect Source, validate Target and select a proposed root first.";
+            SetOperationStatus(PhysicalIdentityStatusTextBlock.Text, error: true);
+            AppendDiagnostic(PhysicalIdentityStatusTextBlock.Text);
+            return;
+        }
+
+        AppSettings settings;
+        try { settings = BuildSettingsFromUi(); }
+        catch (Exception ex)
+        {
+            PhysicalIdentityStatusTextBlock.Text = $"Physical ID check blocked: {ex.Message}";
+            SetOperationStatus(PhysicalIdentityStatusTextBlock.Text, error: true);
+            AppendDiagnostic(PhysicalIdentityStatusTextBlock.Text);
+            return;
+        }
+
+        var bridge = _bridgeSnapshot;
+        var database = _databaseSnapshot;
+        var settingsIdentity = JsonSerializer.Serialize(settings);
+        using var cancellation = new CancellationTokenSource();
+        _identityCancellation = cancellation;
+        OperationProgressBar.IsIndeterminate = false;
+        OperationProgressBar.Minimum = 0;
+        OperationProgressBar.Maximum = 100;
+        OperationProgressBar.Value = 0;
+        PhysicalIdentityStatusTextBlock.Text =
+            "Checking all uniquely matched file IDs with read-only Windows handles — starting…";
+        SetOperationStatus("Checking physical identities — read-only…", busy: true);
+        AppendDiagnostic($"Physical file ID check started for {proposal.SourceRoot} → {proposal.TargetRoot}. No aliases adopted.");
+        UpdateWorkflowGate();
+        await Dispatcher.Yield(DispatcherPriority.Background);
+
+        try
+        {
+            var progress = new Progress<PhysicalIdentityProgress>(p =>
+            {
+                if (_identityCancellation != cancellation) return;
+                var pct = p.Total == 0 ? 100 : 100.0 * p.Completed / p.Total;
+                OperationProgressBar.Value = pct;
+                PhysicalIdentityStatusTextBlock.Text =
+                    $"Checking physical file identities: {p.Completed:N0} / {p.Total:N0} ({pct:0}%). " +
+                    "Read-only; cancellation available.";
+            });
+
+            var report = await Task.Run(() =>
+            {
+                var current = PathMatchAdvisor.Analyze(
+                    bridge.Tracks, database.Tracks, settings.EffectivePathAliases);
+                if (!current.Proposals.Any(x =>
+                    string.Equals(x.SourceRoot, proposal.SourceRoot, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(x.TargetRoot, proposal.TargetRoot, StringComparison.OrdinalIgnoreCase) &&
+                    x.UniqueSuffixPairs == proposal.UniqueSuffixPairs))
+                    throw new InvalidDataException("Root suggestion changed or is no longer unique.");
+                return PhysicalFileIdentityVerifier.Verify(
+                    bridge.Tracks, database.Tracks,
+                    new PathAlias(proposal.SourceRoot, proposal.TargetRoot),
+                    cancellation.Token, progress);
+            }, cancellation.Token);
+
+            cancellation.Token.ThrowIfCancellationRequested();
+            if (!ReferenceEquals(bridge, _bridgeSnapshot) ||
+                !ReferenceEquals(database, _databaseSnapshot) ||
+                !ReferenceEquals(proposal, PathProposalsGrid.SelectedItem) ||
+                !_sourceSafe || !_targetSafe || !_databaseAccessQualified ||
+                !settingsIdentity.Equals(JsonSerializer.Serialize(BuildSettingsFromUi()), StringComparison.Ordinal))
+                throw new InvalidOperationException("Source, target, selected root or settings changed during verification.");
+
+            var summary =
+                $"Physical file check completed: {report.SamePhysicalFiles:N0} of " +
+                $"{report.EligiblePairs:N0} unique pairs reference the SAME underlying file; " +
+                $"{report.DistinctPhysicalFiles:N0} reference different file objects " +
+                "(which could still contain identical bytes); " +
+                $"{report.MissingPairs:N0} missing, {report.UnreadablePairs:N0} unreadable, " +
+                $"{report.UnsupportedPairs:N0} unsupported; " +
+                $"{report.AmbiguousSourcePaths:N0} ambiguous source paths, " +
+                $"{report.AmbiguousTargetPaths:N0} ambiguous target paths, " +
+                $"{report.ExcludedSubsongs:N0} virtual subsongs excluded. " +
+                (report.AllEligibleWereSamePhysicalFile
+                    ? "All eligible pairs were the same physical files at check time. "
+                    : "Not all eligible pairs have confirmed physical identity. ") +
+                "READ-ONLY — no alias adopted; MyTag writes remain unapproved.";
+            PhysicalIdentityStatusTextBlock.Text = summary;
+            SetOperationStatus("Physical file check completed — no data or settings changed.");
+            AppendDiagnostic(summary);
+            foreach (var item in report.Examples)
+                AppendDiagnostic("Physical identity evidence: " + item);
+        }
+        catch (OperationCanceledException)
+        {
+            PhysicalIdentityStatusTextBlock.Text =
+                "Physical file ID check canceled. No partial results accepted, no changes made.";
+            SetOperationStatus(PhysicalIdentityStatusTextBlock.Text);
+            AppendDiagnostic(PhysicalIdentityStatusTextBlock.Text);
+        }
+        catch (Exception ex)
+        {
+            PhysicalIdentityStatusTextBlock.Text = $"Physical file ID check blocked: {ex.Message}";
+            SetOperationStatus(PhysicalIdentityStatusTextBlock.Text, error: true);
+            AppendDiagnostic(PhysicalIdentityStatusTextBlock.Text);
+        }
+        finally
+        {
+            _identityCancellation = null;
+            OperationProgressBar.IsIndeterminate = true;
+            OperationProgressBar.Visibility = Visibility.Collapsed;
             UpdateWorkflowGate();
         }
     }
@@ -1141,6 +1269,15 @@ public partial class MainWindow : Window
             BackupMatchesTarget: _backupMatchesTarget));
 
         BuildPreviewButton.IsEnabled = !_operationBusy && state.CanBuildPreview;
+        AnalyzePathsButton.IsEnabled = !_operationBusy;
+        VerifyRootSampleButton.IsEnabled = !_operationBusy &&
+            PathProposalsGrid.SelectedItem is PathAliasProposal;
+        VerifyPhysicalIdsButton.IsEnabled = !_operationBusy &&
+            PathProposalsGrid.SelectedItem is PathAliasProposal;
+        CancelPhysicalIdsButton.IsEnabled = _operationBusy && _identityCancellation is not null;
+        SaveSettingsButton.IsEnabled = !_operationBusy;
+        AddAliasButton.IsEnabled = !_operationBusy;
+        RemoveAliasButton.IsEnabled = !_operationBusy;
         ApplyButton.IsEnabled = !_operationBusy && state.CanApply;
         RestoreButton.IsEnabled = !_operationBusy && state.CanRestore;
 

@@ -1,5 +1,14 @@
 <Application x:Class="RekordboxMyTagSync.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <Application.Resources/>
+    <Application.Resources>
+        <!-- Every tabular grid must allow horizontal navigation without
+             silently hiding cells beyond the available viewport. -->
+        <Style TargetType="{x:Type DataGrid}">
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="ScrollViewer.CanContentScroll" Value="True"/>
+            <Setter Property="CanUserResizeColumns" Value="True"/>
+        </Style>
+    </Application.Resources>
 </Application>

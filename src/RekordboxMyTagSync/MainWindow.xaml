@@ -95,7 +95,7 @@
                               AutoGenerateColumns="False"
                               CanUserAddRows="False">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Directory" Binding="{Binding DirectoryPath}" Width="*"/>
+                            <DataGridTextColumn Header="Directory" Binding="{Binding DirectoryPath}" Width="SizeToCells" MinWidth="500" MaxWidth="1100"/>
                             <DataGridCheckBoxColumn Header="Safe" Binding="{Binding Safe}" Width="70"/>
                             <DataGridCheckBoxColumn Header="Selected" Binding="{Binding Selected}" Width="80"/>
                             <DataGridTextColumn Header="Items" Binding="{Binding State.ItemCount}" Width="80"/>
@@ -113,8 +113,8 @@
                               AutoGenerateColumns="False"
                               CanUserAddRows="False">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Bridge/source root" Binding="{Binding SourceRoot}" Width="*"/>
-                            <DataGridTextColumn Header="rekordbox/target root" Binding="{Binding TargetRoot}" Width="*"/>
+                            <DataGridTextColumn Header="Bridge/source root" Binding="{Binding SourceRoot}" Width="460"/>
+                            <DataGridTextColumn Header="rekordbox/target root" Binding="{Binding TargetRoot}" Width="460"/>
                         </DataGrid.Columns>
                     </DataGrid>
                     <StackPanel Grid.Row="6" Orientation="Horizontal" Margin="0,8,0,0">
@@ -169,7 +169,7 @@
                               AutoGenerateColumns="False"
                               CanUserAddRows="False">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Database" Binding="{Binding DatabasePath}" Width="*"/>
+                            <DataGridTextColumn Header="Database" Binding="{Binding DatabasePath}" Width="SizeToCells" MinWidth="500" MaxWidth="1100"/>
                             <DataGridCheckBoxColumn Header="Safe" Binding="{Binding Safe}" Width="70"/>
                             <DataGridTextColumn Header="Used by" Binding="{Binding UsedBy.Count}" Width="80"/>
                             <DataGridTextColumn Header="Evidence" Binding="{Binding Evidence.Count}" Width="80"/>
@@ -212,6 +212,7 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
                     <TextBlock TextWrapping="Wrap"
@@ -228,6 +229,19 @@
                                 Content="Check selected files (read-only)"
                                 ToolTip="Read the selected proposed root mapping. Compare file sizes for all unambiguous physical pairs, then SHA-256 hash a small deterministic sample of file pairs up to 64 MiB each. No aliases or settings are changed; sampling never authorizes MyTag writes."
                                 ToolTipService.ShowOnDisabled="True"/>
+                        <Button x:Name="VerifyPhysicalIdsButton"
+                                Margin="8,0,0,0"
+                                Padding="16,7"
+                                Content="Check all file identities (read-only)"
+                                ToolTip="Open each uniquely matched physical file pair with read-only Windows handles, then compare filesystem file IDs. Fast for mapped drives pointing at the same underlying files. Different file IDs do not mean different audio bytes; no alias is saved, and writing remains blocked."
+                                ToolTipService.ShowOnDisabled="True"/>
+                        <Button x:Name="CancelPhysicalIdsButton"
+                                Margin="8,0,0,0"
+                                Padding="16,7"
+                                IsEnabled="False"
+                                Content="Cancel file check"
+                                ToolTip="Stop the current read-only physical-file identity verification. No partial result authorizes any writes."
+                                ToolTipService.ShowOnDisabled="True"/>
                     </StackPanel>
                     <TextBlock x:Name="PathAnalysisStatusTextBlock"
                                Grid.Row="2"
@@ -239,18 +253,23 @@
                                Margin="0,0,0,10"
                                TextWrapping="Wrap"
                                Text="No file-content comparison performed. Select a proposed root mapping and choose Check selected files (read-only)."/>
+                    <TextBlock x:Name="PhysicalIdentityStatusTextBlock"
+                               Grid.Row="4"
+                               Margin="0,0,0,10"
+                               TextWrapping="Wrap"
+                               Text="Entire mapping not checked against physical file IDs. No alias is approved."/>
                     <DataGrid x:Name="PathProposalsGrid"
-                              Grid.Row="4"
+                              Grid.Row="5"
                               AutoGenerateColumns="False"
                               IsReadOnly="True"
                               CanUserAddRows="False">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Unverified source root" Binding="{Binding SourceRoot}" Width="*"/>
-                            <DataGridTextColumn Header="Unverified target root" Binding="{Binding TargetRoot}" Width="*"/>
+                            <DataGridTextColumn Header="Unverified source root" Binding="{Binding SourceRoot}" Width="SizeToCells" MinWidth="240" MaxWidth="800"/>
+                            <DataGridTextColumn Header="Unverified target root" Binding="{Binding TargetRoot}" Width="SizeToCells" MinWidth="240" MaxWidth="800"/>
                             <DataGridTextColumn Header="Unique suffix pairs" Binding="{Binding UniqueSuffixPairs}" Width="140"/>
                             <DataGridTextColumn Header="Evidence — not file identity" Binding="{Binding Evidence}" Width="250"/>
-                            <DataGridTextColumn Header="Example source" Binding="{Binding ExampleSource}" Width="260"/>
-                            <DataGridTextColumn Header="Example target" Binding="{Binding ExampleTarget}" Width="260"/>
+                            <DataGridTextColumn Header="Example source" Binding="{Binding ExampleSource}" Width="SizeToCells" MinWidth="520" MaxWidth="1500"/>
+                            <DataGridTextColumn Header="Example target" Binding="{Binding ExampleTarget}" Width="SizeToCells" MinWidth="520" MaxWidth="1500"/>
                         </DataGrid.Columns>
                     </DataGrid>
                 </Grid>
@@ -272,7 +291,7 @@
                             <DataGridCheckBoxColumn Header="Per value" Binding="{Binding PerValue}" Width="80"/>
                             <DataGridCheckBoxColumn Header="Ignore empty" Binding="{Binding IgnoreEmpty}" Width="90"/>
                             <DataGridTextColumn Header="Prefix" Binding="{Binding Prefix}" Width="120"/>
-                            <DataGridTextColumn Header="Pattern" Binding="{Binding Pattern}" Width="*"/>
+                            <DataGridTextColumn Header="Pattern" Binding="{Binding Pattern}" Width="540"/>
                             <DataGridTextColumn Header="Replacement" Binding="{Binding Replacement}" Width="140"/>
                         </DataGrid.Columns>
                     </DataGrid>
@@ -317,9 +336,9 @@
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="100"/>
                             <DataGridTextColumn Header="Content ID" Binding="{Binding ContentId}" Width="130"/>
-                            <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="*"/>
+                            <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="680"/>
                             <DataGridTextColumn Header="Tag" Binding="{Binding Tag}" Width="180"/>
-                            <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="280"/>
+                            <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="540"/>
                         </DataGrid.Columns>
                     </DataGrid>
                 </Grid>
