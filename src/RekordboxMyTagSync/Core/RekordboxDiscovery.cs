@@ -1,4 +1,8 @@
 using System.IO;
+using System.Diagnostics;
+using System.Security;
+using System.Text.RegularExpressions;
+using Microsoft.Win32;
 using System.Text.Json;
 using System.Xml.Linq;
 
@@ -32,9 +36,10 @@ public static class RekordboxDiscovery
 {
     public static RekordboxDiscoveryResult Discover(RekordboxDiscoveryOptions? options = null)
     {
+        var discoverRegistered = options is null;
         options ??= RekordboxDiscoveryOptions.ForCurrentUser();
         var diagnostics = new List<string>();
-        var installations = DiscoverInstallations(options.ProgramFilesRoot, diagnostics);
+        var installations = DiscoverInstallations(options.ProgramFilesRoot, diagnostics, discoverRegistered);
 
         var settingsPath = Path.Combine(options.PioneerAppDataRoot, "rekordbox6", "rekordbox3.settings");
         var optionsPath = Path.Combine(options.PioneerAppDataRoot, "rekordboxAgent", "storage", "options.json");
@@ -82,12 +87,14 @@ public static class RekordboxDiscovery
         RekordboxDiscoveryOptions? options = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
+        var discoverRegistered = options is null;
         options ??= RekordboxDiscoveryOptions.ForCurrentUser();
 
         var diagnostics = new List<string>();
         var installations = DiscoverInstallations(
             options.ProgramFilesRoot,
-            diagnostics);
+            diagnostics,
+            discoverRegistered);
         var canonical = CanonicalPath(databasePath);
         var exists = File.Exists(canonical);
         var supportedInstallations = installations
@@ -108,17 +115,171 @@ public static class RekordboxDiscovery
             error);
     }
 
-    private static IReadOnlyList<RekordboxInstallation> DiscoverInstallations(string programFilesRoot, List<string> diagnostics)
+    private static IReadOnlyList<RekordboxInstallation> DiscoverInstallations(
+        string programFilesRoot,
+        List<string> diagnostics,
+        bool discoverRegistered)
     {
         var found = new List<RekordboxInstallation>();
         ScanInstallRoot(Path.Combine(programFilesRoot, "Pioneer"), 6, found, diagnostics);
         ScanInstallRoot(Path.Combine(programFilesRoot, "rekordbox"), 7, found, diagnostics);
+
+        // Real installations may be under Program Files (x86), a customized
+        // installation root, or a versionless "rekordbox" directory. The
+        // Windows uninstall registry and App Paths identify those installations.
+        if (discoverRegistered && OperatingSystem.IsWindows())
+        {
+            var x86Root = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+            if (!string.IsNullOrWhiteSpace(x86Root) &&
+                !PathsEqual(x86Root, programFilesRoot))
+            {
+                ScanInstallRoot(Path.Combine(x86Root, "Pioneer"), 6, found, diagnostics);
+                ScanInstallRoot(Path.Combine(x86Root, "rekordbox"), 7, found, diagnostics);
+            }
+            DiscoverRegisteredInstallations(found, diagnostics);
+        }
+
         return found
             .GroupBy(x => CanonicalPath(x.DirectoryPath), StringComparer.OrdinalIgnoreCase)
             .Select(g => g.OrderByDescending(x => x.MajorVersion).First())
             .OrderBy(x => x.MajorVersion)
             .ThenBy(x => x.Version, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    private static void DiscoverRegisteredInstallations(
+        List<RekordboxInstallation> found,
+        List<string> diagnostics)
+    {
+        var originalCount = found.Count;
+        foreach (var hive in new[] { RegistryHive.LocalMachine, RegistryHive.CurrentUser })
+        foreach (var view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
+        {
+            try
+            {
+                using var root = RegistryKey.OpenBaseKey(hive, view);
+                using var uninstall = root.OpenSubKey(
+                    @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall");
+                if (uninstall is not null)
+                {
+                    foreach (var name in uninstall.GetSubKeyNames())
+                    {
+                        try
+                        {
+                            using var item = uninstall.OpenSubKey(name);
+                            if (item is null) continue;
+                            var installation = InspectRegisteredInstallation(
+                                item.GetValue("DisplayName") as string,
+                                item.GetValue("DisplayVersion") as string,
+                                item.GetValue("InstallLocation") as string,
+                                item.GetValue("DisplayIcon") as string);
+                            if (installation is not null)
+                                found.Add(installation);
+                        }
+                        catch (Exception ex) when (
+                            ex is IOException or UnauthorizedAccessException or
+                            SecurityException or ArgumentException)
+                        {
+                            // An inaccessible/invalid unrelated uninstall entry
+                            // cannot authorize an installation.
+                        }
+                    }
+                }
+
+                using var appPaths = root.OpenSubKey(
+                    @"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\rekordbox.exe");
+                if (appPaths is not null)
+                {
+                    var executable = appPaths.GetValue(null) as string;
+                    var installation = InspectRegisteredInstallation(
+                        "rekordbox", null, null, executable);
+                    if (installation is not null)
+                        found.Add(installation);
+                }
+            }
+            catch (Exception ex) when (
+                ex is IOException or UnauthorizedAccessException or
+                SecurityException or ArgumentException)
+            {
+                diagnostics.Add("Windows installation registry lookup was unavailable.");
+            }
+        }
+
+        diagnostics.Add(
+            $"Windows registry installation discovery: {found.Count - originalCount} candidate(s).");
+    }
+
+    // Unit-testable registration evidence. An uninstall/app-path entry alone is
+    // insufficient: the exact rekordbox executable must also exist on disk.
+    internal static RekordboxInstallation? InspectRegisteredInstallation(
+        string? displayName,
+        string? displayVersion,
+        string? installLocation,
+        string? displayIcon)
+    {
+        var name = displayName?.Trim();
+        if (string.IsNullOrWhiteSpace(name) ||
+            (!name.Equals("rekordbox", StringComparison.OrdinalIgnoreCase) &&
+             !name.StartsWith("rekordbox ", StringComparison.OrdinalIgnoreCase)))
+            return null;
+
+        var paths = new List<string>();
+        if (!string.IsNullOrWhiteSpace(installLocation))
+        {
+            var dir = installLocation.Trim().Trim('"');
+            paths.Add(Path.Combine(dir, "rekordbox.exe"));
+            paths.Add(Path.Combine(dir, "bin", "rekordbox.exe"));
+        }
+        if (!string.IsNullOrWhiteSpace(displayIcon))
+        {
+            var icon = displayIcon.Trim().Trim('"');
+            icon = Regex.Replace(icon, @",\s*-?\d+$", string.Empty);
+            icon = icon.Trim('"');
+            paths.Add(icon);
+        }
+
+        foreach (var path in paths)
+        {
+            try
+            {
+                var executable = Path.GetFullPath(path);
+                if (!string.Equals(Path.GetFileName(executable), "rekordbox.exe",
+                        StringComparison.OrdinalIgnoreCase) || !File.Exists(executable))
+                    continue;
+
+                var info = FileVersionInfo.GetVersionInfo(executable);
+                var version = GetRegisteredVersion(displayVersion)
+                    ?? GetRegisteredVersion(name)
+                    ?? GetRegisteredVersion(info.ProductVersion)
+                    ?? GetRegisteredVersion(info.FileVersion);
+                if (version is null)
+                    continue;
+                var major = version[0] - '0';
+                // Reject a registry registration that conflicts with the
+                // version actually embedded in the executable.
+                if (info.ProductMajorPart is 6 or 7 && info.ProductMajorPart != major)
+                    continue;
+                if (info.FileMajorPart is 6 or 7 && info.FileMajorPart != major)
+                    continue;
+                return new RekordboxInstallation(
+                    major, version, CanonicalPath(Path.GetDirectoryName(executable)!));
+            }
+            catch (Exception ex) when (
+                ex is IOException or UnauthorizedAccessException or
+                SecurityException or ArgumentException or
+                System.ComponentModel.Win32Exception)
+            {
+                // Invalid registration cannot authorize database access.
+            }
+        }
+        return null;
+    }
+
+    private static string? GetRegisteredVersion(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var match = Regex.Match(value, @"(?<!\d)(?<version>[67](?:\.\d+){0,3})(?!\d)");
+        return match.Success ? match.Groups["version"].Value : null;
     }
 
     private static void ScanInstallRoot(string root, int expectedMajor, List<RekordboxInstallation> found, List<string> diagnostics)

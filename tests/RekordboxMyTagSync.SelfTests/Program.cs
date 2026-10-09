@@ -145,6 +145,31 @@ try
     WriteRekordboxSettings(appRoot, dbDir);
     WriteRekordboxAgentOptions(appRoot, dbPath);
 
+    // Registered Windows installations can have a custom directory name/location.
+    // The real executable is mandatory; a registry display name alone is insufficient.
+    var registeredRoot = Path.Combine(temp, "CustomDJInstall");
+    Directory.CreateDirectory(registeredRoot);
+    File.WriteAllBytes(Path.Combine(registeredRoot, "rekordbox.exe"), new byte[] { 0x4d, 0x5a });
+    var registeredRb6 = RekordboxDiscovery.InspectRegisteredInstallation(
+        "rekordbox", "6.6.11", registeredRoot, null);
+    if (registeredRb6 is null || registeredRb6.MajorVersion != 6 ||
+        registeredRb6.Version != "6.6.11" ||
+        !string.Equals(registeredRb6.DirectoryPath, registeredRoot, StringComparison.OrdinalIgnoreCase))
+        throw new InvalidOperationException("Custom registered rekordbox 6 installation was not recognized.");
+    var registeredRb7 = RekordboxDiscovery.InspectRegisteredInstallation(
+        "rekordbox", "7.1.4", null, Path.Combine(registeredRoot, "rekordbox.exe") + ",0");
+    if (registeredRb7 is null || registeredRb7.MajorVersion != 7)
+        throw new InvalidOperationException("DisplayIcon-based registered rekordbox 7 installation was not recognized.");
+    if (RekordboxDiscovery.InspectRegisteredInstallation(
+        "rekordboxAgent", "6.6.11", registeredRoot, null) is not null)
+        throw new InvalidOperationException("Unrelated rekordboxAgent must not count as an installation.");
+    if (RekordboxDiscovery.InspectRegisteredInstallation(
+        "rekordbox", "6.6.11", Path.Combine(temp, "MissingInstall"), null) is not null)
+        throw new InvalidOperationException("Missing executable must not authorize a registered installation.");
+    if (RekordboxDiscovery.InspectRegisteredInstallation(
+        "rekordbox", "5.9.9", registeredRoot, null) is not null)
+        throw new InvalidOperationException("Unsupported rekordbox version must not count as qualified evidence.");
+
     var discovery = RekordboxDiscovery.Discover(new RekordboxDiscoveryOptions(programRoot, appRoot));
     if (discovery.Installations.Count != 2 || discovery.Installations[0].MajorVersion != 6 || discovery.Installations[1].MajorVersion != 7)
         throw new InvalidOperationException("rekordbox 6/7 installation discovery failed");
