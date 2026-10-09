@@ -45,15 +45,20 @@ jobs:
               echo "should_run=false" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            # Existing successful manual or automated FULL on this SHA
-            # is authoritative; retries may not silently replace it.
-            previous="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/full.yml/runs?branch=main&per_page=100" \
-              --jq "[.workflow_runs[] | select(.head_sha == \"$SOURCE_SHA\" and .conclusion == \"success\")] | length")"
-            if [[ "$previous" != "0" ]]; then
-              echo "Already qualified FULL for $SOURCE_SHA: skipping duplicate."
-              echo "should_run=false" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
+            # A workflow with a skipped qualification job still reports
+            # conclusion=success. Only a real, unexpired SHA-bound FULL
+            # qualification artifact can suppress a subsequent build.
+            previous_ids="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/full.yml/runs?branch=main&head_sha=$SOURCE_SHA&per_page=100" \
+              --jq '.workflow_runs[] | select(.conclusion == "success") | .id')"
+            for previous_id in $previous_ids; do
+              artifact_count="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$previous_id/artifacts?per_page=100" \
+                --jq "[.artifacts[] | select(.name == \"RekordboxMyTagSync-FULL-$SOURCE_SHA\" and .expired == false)] | length")"
+              if [[ "$artifact_count" != "0" ]]; then
+                echo "Real FULL artifact already exists for $SOURCE_SHA (run $previous_id); skipping duplicate."
+                echo "should_run=false" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            done
           fi
           echo "should_run=true" >> "$GITHUB_OUTPUT"
 
