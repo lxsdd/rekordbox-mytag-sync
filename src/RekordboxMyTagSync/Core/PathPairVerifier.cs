@@ -148,7 +148,8 @@ public static class PathPairVerifier
         IReadOnlyList<(string Source, string Target)> Pairs,
         int AmbiguousSourcePaths,
         int AmbiguousTargetPaths,
-        int ExcludedSubsongs);
+        int ExcludedSubsongs,
+        int RecoveredMixedSubsongPaths);
 
     internal static FilePairCollection CollectPairs(
         IReadOnlyList<BridgeTrack> bridge,
@@ -173,12 +174,16 @@ public static class PathPairVerifier
             .ToDictionary(x => x.Key, x => x.ToArray(), StringComparer.OrdinalIgnoreCase);
 
         var pairs = new List<(string Source, string Target)>();
+        var recoveredMixedSubsongPaths = 0;
         foreach (var group in sourceGroups)
         {
-            if (group.Value.Length != 1) continue;
-            var item = group.Value[0];
-            // Never apply file-level tags from a virtual cue/subsong identity.
-            if (item.Track.Subsong != 0) continue;
+            // A file can coexist with its virtual cue tracks in foobar.
+            // Only subsong 0 represents the whole *physical* file; virtual
+            // tracks are never converted into a rekordbox file ContentID.
+            // Multiple physical records for one destination stay excluded.
+            var physical = group.Value.Where(x => x.Track.Subsong == 0).ToArray();
+            if (physical.Length != 1) continue;
+            var item = physical[0];
             if (!Within(item.OriginalPath, sourceRoot)) continue;
             if (!destGroups.TryGetValue(group.Key, out var matches) || matches.Length != 1)
                 continue;
@@ -187,6 +192,8 @@ public static class PathPairVerifier
             if (string.Equals(item.OriginalPath, destination.Path, StringComparison.OrdinalIgnoreCase))
                 continue;
             pairs.Add((item.OriginalPath, destination.Path));
+            if (group.Value.Length > 1)
+                recoveredMixedSubsongPaths++;
         }
 
         var eligible = pairs.OrderBy(x => x.Source, StringComparer.OrdinalIgnoreCase)
@@ -196,7 +203,8 @@ public static class PathPairVerifier
             eligible,
             sourceGroups.Values.Count(x => x.Length > 1),
             destGroups.Values.Count(x => x.Length > 1),
-            sources.Count(x => x.Track.Subsong != 0));
+            sources.Count(x => x.Track.Subsong != 0),
+            recoveredMixedSubsongPaths);
     }
 
     private static byte[]? HashReadOnly(string path, long maxBytes)
