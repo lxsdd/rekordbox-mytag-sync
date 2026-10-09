@@ -24,7 +24,8 @@ public sealed record PhysicalIdentityReport(
     int AmbiguousTargetPaths,
     int ExcludedSubsongs,
     IReadOnlyList<string> Examples,
-    IReadOnlyList<VerifiedPhysicalPair>? VerifiedPairs = null)
+    IReadOnlyList<VerifiedPhysicalPair>? VerifiedPairs = null,
+    int RecoveredMixedSubsongPaths = 0)
 {
     // Pure evidence, NOT an approval of any database write or a persistent
     // assertion that files cannot change after the handles are closed.
@@ -139,7 +140,8 @@ public static class PhysicalFileIdentityVerifier
         return new PhysicalIdentityReport(
             mapping.Pairs.Count, identical, distinct, missing, unreadable, unsupported,
             mapping.AmbiguousSourcePaths, mapping.AmbiguousTargetPaths,
-            mapping.ExcludedSubsongs, examples, verified);
+            mapping.ExcludedSubsongs, examples, verified,
+            mapping.RecoveredMixedSubsongPaths);
     }
 
     private enum IdentityStatus
