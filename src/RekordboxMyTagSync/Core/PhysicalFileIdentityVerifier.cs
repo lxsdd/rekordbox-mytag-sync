@@ -120,9 +120,14 @@ public static class PhysicalFileIdentityVerifier
     private struct NativeFileInformation
     {
         public uint FileAttributes;
-        public long CreationTime;
-        public long LastAccessTime;
-        public long LastWriteTime;
+        // Win32 FILETIME is two DWORDs (4-byte alignment), not a
+        // C# Int64 whose default 8-byte alignment would shift the file ID.
+        public uint CreationTimeLow;
+        public uint CreationTimeHigh;
+        public uint LastAccessTimeLow;
+        public uint LastAccessTimeHigh;
+        public uint LastWriteTimeLow;
+        public uint LastWriteTimeHigh;
         public uint VolumeSerialNumber;
         public uint FileSizeHigh;
         public uint FileSizeLow;
