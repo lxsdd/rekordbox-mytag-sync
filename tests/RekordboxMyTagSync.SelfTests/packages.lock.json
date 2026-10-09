@@ -37,7 +37,7 @@
         "resolved": "3.0.2",
         "contentHash": "tnbRf0muOOSJK1RLCfyYK13jynFScgL4xMj7yC3oy8lrrGKXTKmOoWjfdV+cFfBRdppm4qST31hvp8ihgIgvMQ=="
       },
-      "rekordboxmytagsync": {
+      "rekordbox mytagsync": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Data.Sqlite.Core": "[10.0.12, )",
