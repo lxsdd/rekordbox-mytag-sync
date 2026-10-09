@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     private AppSettings _settings = new();
     private readonly List<string> _diagnosticEvents = new();
     private bool _operationBusy;
+    private bool _targetDiscoveryUpdatingSelection;
     private bool _sourceSafe;
     private bool _targetSafe;
     private bool _databaseAccessQualified;
@@ -39,7 +40,7 @@ public partial class MainWindow : Window
 
         MappingGrid.ItemsSource = _mappings;
         PathAliasGrid.ItemsSource = _aliases;
-        Loaded += (_, _) => LoadSettings();
+        Loaded += async (_, _) => await LoadSettingsAsync();
         SourceInitialized += (_, _) => WindowPlacementStore.Restore(this);
         Closing += (_, _) =>
         {
@@ -50,7 +51,7 @@ public partial class MainWindow : Window
         SaveSettingsButton.Click += (_, _) => SaveSettings();
         DiscoverSourceButton.Click += (_, _) => DiscoverSources();
         InspectSourceButton.Click += async (_, _) => await InspectSelectedSourceAsync();
-        DiscoverTargetButton.Click += (_, _) => DiscoverTargets();
+        DiscoverTargetButton.Click += async (_, _) => await DiscoverTargetsAsync();
         BrowseTargetButton.Click += (_, _) => BrowseTarget();
         ValidateDatabaseAccessButton.Click += async (_, _) => await ValidateDatabaseAccessAsync();
         AddMappingButton.Click += (_, _) => AddMapping();
@@ -75,6 +76,7 @@ public partial class MainWindow : Window
         };
         TargetCandidatesGrid.SelectionChanged += (_, _) =>
         {
+            if (_targetDiscoveryUpdatingSelection) return;
             if (TargetCandidatesGrid.SelectedItem is RekordboxLibraryCandidate target)
             {
                 TargetDatabaseTextBox.Text = target.DatabasePath;
@@ -104,7 +106,7 @@ public partial class MainWindow : Window
         UpdateWorkflowGate();
     }
 
-    private void LoadSettings()
+    private async Task LoadSettingsAsync()
     {
         SettingsPathTextBlock.Text = $"Settings: {_settingsPath}";
         try
@@ -123,7 +125,7 @@ public partial class MainWindow : Window
 
             AppendDiagnostic("Settings loaded.");
             DiscoverSources();
-            DiscoverTargets();
+            await DiscoverTargetsAsync();
             UpdateWorkflowGate();
         }
         catch (Exception ex)
@@ -290,35 +292,85 @@ public partial class MainWindow : Window
         }
     }
 
-    private void DiscoverTargets()
+    private async Task DiscoverTargetsAsync()
     {
+        if (_operationBusy) return;
+        DiscoverTargetButton.IsEnabled = false;
+        TargetDiscoveryStatusTextBlock.Text =
+            "Discover running — checking installed rekordbox versions and database locations…";
+        SetOperationStatus("Discovering rekordbox libraries — please wait…", busy: true);
+        AppendDiagnostic("rekordbox discovery started.");
+        await Dispatcher.Yield(DispatcherPriority.Background);
         try
         {
-            var result = RekordboxDiscovery.Discover();
-            TargetCandidatesGrid.ItemsSource = result.Libraries;
+            var result = await Task.Run(() => RekordboxDiscovery.Discover());
+            _targetDiscoveryUpdatingSelection = true;
+            try
+            {
+                TargetCandidatesGrid.ItemsSource = result.Libraries;
+            }
+            finally
+            {
+                _targetDiscoveryUpdatingSelection = false;
+            }
 
             var safe = result.Libraries.Where(x => x.Safe).ToArray();
             if (string.IsNullOrWhiteSpace(TargetDatabaseTextBox.Text) && safe.Length == 1)
                 TargetDatabaseTextBox.Text = safe[0].DatabasePath;
 
             var selectedPath = OptionalPath(TargetDatabaseTextBox.Text);
-            _targetSafe = selectedPath is not null &&
-                safe.Any(x => PathsEqual(x.DatabasePath, selectedPath));
+            var matched = selectedPath is null
+                ? null
+                : safe.SingleOrDefault(x => PathsEqual(x.DatabasePath, selectedPath));
+            _targetSafe = matched is not null;
 
-            AppendDiagnostic(
-                $"rekordbox discovery: {result.Installations.Count} installation(s), {result.Libraries.Count} library candidate(s), {safe.Length} safe.");
+            // A rediscovery of the identical, still-backed target must not
+            // silently revoke the SQLCipher/schema qualification just because
+            // WPF rebinds the candidate grid. A missing installation or
+            // changed target, however, must remain fail-closed.
+            if (_databaseAccessQualified &&
+                (matched is null || matched.UsedBy.Count == 0 ||
+                 _databaseSnapshot is null ||
+                 !PathsEqual(_databaseSnapshot.Identity.CanonicalPath, matched.DatabasePath)))
+            {
+                InvalidateDatabaseAccess("Selected database or installation evidence changed.");
+            }
+
+            var summary =
+                $"Discover completed at {DateTime.Now:HH:mm:ss}: " +
+                $"{result.Libraries.Count} database candidate(s), {safe.Length} safe, " +
+                $"{result.Installations.Count} rekordbox installation(s). " +
+                (_targetSafe
+                    ? $"Selected: {matched!.DatabasePath}. "
+                    : "No uniquely qualified target selected. ") +
+                (_databaseAccessQualified
+                    ? "Previously qualified read-only access remains valid."
+                    : "Use Validate access to inspect the selected database.") +
+                " No database changes made.";
+            TargetDiscoveryStatusTextBlock.Text = summary;
+            SetOperationStatus(summary);
+            AppendDiagnostic(summary);
             foreach (var diagnostic in result.Diagnostics)
                 AppendDiagnostic($"rekordbox: {diagnostic}");
 
-            if (safe.Length > 1 && string.IsNullOrWhiteSpace(TargetDatabaseTextBox.Text))
-                AppendDiagnostic("Target selection remains fail-closed because multiple safe libraries were discovered.");
-            UpdateWorkflowGate();
+            if (safe.Length > 1 && selectedPath is null)
+                AppendDiagnostic("Target selection remains fail-closed: multiple safe libraries.");
         }
         catch (Exception ex)
         {
-            _targetSafe = false;
-            TargetCandidatesGrid.ItemsSource = null;
+            TargetDiscoveryStatusTextBlock.Text = $"Discover failed: {ex.Message}";
+            SetOperationStatus($"Discover failed — {ex.Message}", error: true);
             AppendDiagnostic($"rekordbox discovery blocked: {ex.Message}");
+            // A transient registry discovery error must not claim a new
+            // candidate is qualified; never silently approve access.
+            _targetSafe = false;
+            InvalidateDatabaseAccess("Target rediscovery failed.");
+        }
+        finally
+        {
+            _operationBusy = false;
+            OperationProgressBar.Visibility = Visibility.Collapsed;
+            DiscoverTargetButton.IsEnabled = true;
             UpdateWorkflowGate();
         }
     }
