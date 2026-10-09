@@ -34,7 +34,7 @@ public static class VerifiedPreviewScopeSelfTest
             !scope.ExcludedTargets.Any(x => x.ContentId == "C2") ||
             !scope.ExcludedTargets.Any(x => x.ContentId == "C3") ||
             !scope.ExcludedTargets.Any(x => x.ContentId == "C2" &&
-                x.Message.StartsWith("AMBIGUOUS_SOURCE_PATH:", StringComparison.Ordinal)) ||
+                x.Message.StartsWith("FILE_IDENTITY_UNCONFIRMED:", StringComparison.Ordinal)) ||
             !scope.ExcludedTargets.Any(x => x.ContentId == "C3" &&
                 x.Message.StartsWith("NOT_IN_FOOBAR_SOURCE:", StringComparison.Ordinal)))
             throw new InvalidOperationException("Verified scope did not preserve unmatched/virtual entries as excluded.");
@@ -80,6 +80,14 @@ public static class VerifiedPreviewScopeSelfTest
         if (!virtualOnly.ExcludedTargets.Any(x => x.ContentId == "C4" &&
             x.Message.StartsWith("VIRTUAL_SUBSONG_ONLY:", StringComparison.Ordinal)))
             throw new InvalidOperationException("Virtual-only cue path was not safely excluded.");
+
+        var duplicateSource = VerifiedPreviewScope.Build(
+            b.Concat(new[] { b[1] }).ToArray(), t, alias,
+            new[] { new VerifiedPhysicalPair(one, first) });
+        if (!duplicateSource.ExcludedTargets.Any(x => x.ContentId == "C2" &&
+            x.Message.StartsWith("MULTIPLE_PHYSICAL_SOURCE:", StringComparison.Ordinal)))
+            throw new InvalidOperationException(
+                "Duplicate physical source paths were not distinguished from virtual subsongs.");
 
         var mismatched = false;
         try { _ = VerifiedPreviewScope.Build(b, t, alias, new[] { new VerifiedPhysicalPair(one, second) }); }
