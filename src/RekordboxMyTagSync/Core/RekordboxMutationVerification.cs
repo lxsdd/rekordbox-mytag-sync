@@ -151,7 +151,7 @@ internal static class RekordboxMutationVerification
             int? attribute) => string.Join("\0",
                 id,
                 name,
-                parentId ?? string.Empty,
+                RekordboxMyTagHierarchy.NormalizeForSnapshot(parentId) ?? string.Empty,
                 sequence?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty,
                 attribute?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty);
 
