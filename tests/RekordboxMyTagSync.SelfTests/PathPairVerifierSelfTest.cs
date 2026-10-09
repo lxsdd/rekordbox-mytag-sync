@@ -81,8 +81,9 @@ public static class PathPairVerifierSelfTest
         var excluded = PathPairVerifier.Verify(physicalAndVirtual, target, new PathAlias(left, right));
         if (excluded.AmbiguousSourcePaths != 1 ||
             excluded.ExcludedSubsongs != 2 ||
-            excluded.UniqueFilePairs != 3)
-            throw new InvalidOperationException("Physical plus virtual subsongs were collapsed into a unique file match.");
+            excluded.UniqueFilePairs != 4)
+            throw new InvalidOperationException(
+                "Unique file-level subsong-0 should be recognized beside virtual children, without adding virtual ContentIDs.");
 
         var rejected = false;
         try { _ = PathPairVerifier.Verify(bridge, target, new PathAlias(left, left)); }
