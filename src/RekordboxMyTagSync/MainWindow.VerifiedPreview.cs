@@ -140,6 +140,9 @@ public partial class MainWindow
             PreviewGrid.ItemsSource = result.preview.Details;
             var pathByContentId = database.Tracks.ToDictionary(
                 x => x.ContentId, x => x.Path, StringComparer.OrdinalIgnoreCase);
+            var qualifiedContentIds = result.scope.Targets
+                .Select(x => x.ContentId)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
             var rawDuplicates = (database.DuplicateMyTagLinks ??
                 Array.Empty<DuplicateMyTagLinkEvidence>())
                 .Select(x => new PreviewDetail(
@@ -163,7 +166,7 @@ public partial class MainWindow
                 $"Excluded rekordbox ContentIDs: {result.scope.ExcludedTargets.Count:N0}. " +
                 (reasonGroups.Length == 0 ? "None. " : string.Join(" · ", reasonGroups) + ". ") +
                 $"Existing duplicate MyTag link groups: {rawDuplicates.Length:N0} across the complete rekordbox DB, " +
-                $"{rawDuplicates.Count(x => includedIds.Contains(x.ContentId)):N0} in the physically matched preview scope. " +
+                $"{rawDuplicates.Count(x => qualifiedContentIds.Contains(x.ContentId)):N0} in the physically matched preview scope. " +
                 "Rows show original MyTagIDs and assignment-row IDs; NO automatic deletion. " +
                 "An existing duplicate tag link does not prove duplicate music tracks.";
             PreviewCountsTextBlock.Text =
