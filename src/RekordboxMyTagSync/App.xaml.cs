@@ -13,8 +13,22 @@ public partial class App : Application
                 string.Equals(arg, "--ui-smoke", StringComparison.OrdinalIgnoreCase)))
         {
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
-            RunUiSmoke();
-            Shutdown(0);
+            try
+            {
+                RunUiSmoke();
+                Shutdown(0);
+            }
+            catch (Exception exception)
+            {
+                // Windows GUI executables have no usable CI stderr stream.
+                // Write ONLY in explicit --ui-smoke mode and let the runner
+                // print the failure for targeted regression repairs.
+                System.IO.File.WriteAllText(
+                    System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+                        "RekordboxMyTagSync-ui-smoke-error.txt"),
+                    exception.ToString());
+                Shutdown(1);
+            }
             return;
         }
 
