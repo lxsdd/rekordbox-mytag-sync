@@ -151,6 +151,19 @@ public static class PhysicalExceptionInvestigator
         var updated = new List<PhysicalExceptionRow>(rows.Count);
         foreach (var entry in rows)
         {
+            using (var verify = connection.CreateCommand())
+            {
+                verify.CommandText = """
+                    SELECT FolderPath FROM djmdContent
+                    WHERE ID = $cid AND COALESCE(rb_local_deleted, 0) = 0;
+                    """;
+                verify.Parameters.AddWithValue("$cid", entry.ContentId);
+                var actualPath = verify.ExecuteScalar() as string;
+                if (string.IsNullOrWhiteSpace(actualPath) ||
+                    !WindowsPathMatcher.Equivalent(actualPath, entry.TargetPath))
+                    throw new InvalidDataException(
+                        "Target ContentID/path changed since validation; do not trust this investigation.");
+            }
             var counts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var (table, _) in DjRelations)
             {
