@@ -45,13 +45,33 @@ public sealed record VerifiedPreviewScope(
             includedTarget.Add(targetItems[0]);
         }
 
+        var sourceByMappedPath = bridge
+            .GroupBy(x => WindowsPathMatcher.Normalize(x.Path, new[] { alias }),
+                StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(x => x.Key, x => x.ToArray(), StringComparer.OrdinalIgnoreCase);
+
+        // Every excluded rekordbox ContentId gets its own explainable reason;
+        // virtual cuesheet tracks do not count as physical file matches.
         var excluded = target.Where(x => !contentIds.Contains(x.ContentId))
-            .Select(x => new PreviewDetail(
-                PreviewDetailKind.Unmatched, x.ContentId, x.Path, null,
-                destinations[WindowsPathMatcher.Normalize(x.Path)].Length > 1
-                    ? "Duplicate target path: physical identity not qualified."
-                    : "No unique physically verified source track."))
-            .OrderBy(x => x.Path, StringComparer.OrdinalIgnoreCase)
+            .Select(x =>
+            {
+                var normalized = WindowsPathMatcher.Normalize(x.Path);
+                string reason;
+                if (destinations[normalized].Length > 1)
+                    reason = "DUPLICATE_TARGET_PATH: multiple rekordbox ContentIds point to the same path.";
+                else if (!sourceByMappedPath.TryGetValue(normalized, out var candidates))
+                    reason = "NOT_IN_FOOBAR_SOURCE: no matching path in the inspected foobar bridge.";
+                else if (candidates.Length > 1)
+                    reason = "AMBIGUOUS_SOURCE_PATH: foobar has several subsong/file identities at this path.";
+                else if (candidates[0].Subsong != 0)
+                    reason = "VIRTUAL_SUBSONG_ONLY: foobar contains no physical subsong-0 entry at this path.";
+                else
+                    reason = "FILE_IDENTITY_UNCONFIRMED: candidate path exists but same physical file was not proven.";
+                return new PreviewDetail(
+                    PreviewDetailKind.Unmatched, x.ContentId, x.Path, null, reason);
+            })
+            .OrderBy(x => x.Message, StringComparer.Ordinal)
+            .ThenBy(x => x.Path, StringComparer.OrdinalIgnoreCase)
             .ThenBy(x => x.ContentId, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
