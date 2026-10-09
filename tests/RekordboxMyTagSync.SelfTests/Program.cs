@@ -91,6 +91,8 @@ AssertSequence("year localized date", MappingEngine.Apply(year, new[] { "12.04.1
 AssertSequence("year embedded", MappingEngine.Apply(year, new[] { "released 1998 remaster" }), "1998");
 AssertSequence("year no match", MappingEngine.Apply(year, new[] { "unknown" }));
 
+AutomaticMyTagMappingSelfTest.Run();
+
 var regex = new MappingRule("MOOD", "Mood", TransformKind.RegexReplace, Pattern: @"\s+", Replacement: "-");
 AssertSequence("regex replace", MappingEngine.Apply(regex, new[] { "Peak Time" }), "Peak-Time");
 
