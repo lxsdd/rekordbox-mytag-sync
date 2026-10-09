@@ -44,6 +44,7 @@ public partial class App : Application
                 "SaveSettingsButton",
                 "DiagnosticsTextBox",
                 "SourceInspectionStatusTextBlock",
+                "TargetDiscoveryStatusTextBlock",
                 "DatabaseAccessStatusTextBlock",
                 "OperationStatusTextBlock",
                 "OperationProgressBar"
