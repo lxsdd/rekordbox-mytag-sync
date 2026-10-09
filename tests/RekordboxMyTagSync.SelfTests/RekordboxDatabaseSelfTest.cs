@@ -66,6 +66,41 @@ public static class RekordboxDatabaseSelfTest
             preview.Counts.Removals != 0 || preview.Counts.Conflicts != 0 || preview.Counts.Unmatched != 0)
             throw new InvalidOperationException("encrypted database snapshot did not feed preview deterministically");
 
+        // Regression from the real rekordbox 6 master.db: top-level MyTag
+        // groups use the reserved literal "root", not always SQL NULL.
+        var rootedPath = Path.Combine(root, "root-parent.db");
+        CreateFixture(rootedPath, Key, DbVersion, trackOne, trackTwo,
+            compatibleSchema: true, rootSentinel: true);
+        var rootedHashBefore = HashFile(rootedPath);
+        var rootedTimestampBefore = File.GetLastWriteTimeUtc(rootedPath);
+        var rooted = RekordboxSqlCipherDatabase.ReadSnapshot(rootedPath, Key, policy);
+        if (!rooted.MyTagDefinitions.Where(x => x.Name is "Genre" or "Mood")
+                .All(x => x.ParentId is null))
+            throw new InvalidOperationException("root sentinel was not normalized for preview.");
+        AssertAssignment(rooted.Tracks.Single(x => x.ContentId == "C1"), "Genre", "House");
+        AssertAssignment(rooted.Tracks.Single(x => x.ContentId == "C1"), "Mood", "Euphoric");
+        if (!rootedHashBefore.SequenceEqual(HashFile(rootedPath)) ||
+            rootedTimestampBefore != File.GetLastWriteTimeUtc(rootedPath))
+            throw new InvalidOperationException("root sentinel read changed encrypted database bytes or timestamp.");
+
+        // The special case is ONLY the exact root sentinel, never a general
+        // missing-parent bypass.
+        var orphanPath = Path.Combine(root, "orphan-parent.db");
+        CreateFixture(orphanPath, Key, DbVersion, trackOne, trackTwo,
+            compatibleSchema: true, rootSentinel: true);
+        MutateEncryptedFixture(orphanPath, "UPDATE djmdMyTag SET ParentID='ghost' WHERE ID='G1';");
+        AssertFailsClosed(
+            () => RekordboxSqlCipherDatabase.ReadSnapshot(orphanPath, Key, policy),
+            "unknown MyTag parent was accepted");
+
+        var sentinelCollision = Path.Combine(root, "root-id-collision.db");
+        CreateFixture(sentinelCollision, Key, DbVersion, trackOne, trackTwo,
+            compatibleSchema: true, rootSentinel: true);
+        MutateEncryptedFixture(sentinelCollision, "UPDATE djmdMyTag SET ID='root' WHERE ID='G1';");
+        AssertFailsClosed(
+            () => RekordboxSqlCipherDatabase.ReadSnapshot(sentinelCollision, Key, policy),
+            "root parent sentinel was accepted as an active MyTag ID");
+
         AssertFailsClosed(
             () => RekordboxSqlCipherDatabase.ReadSnapshot(databasePath, "wrong-key", policy),
             "wrong SQLCipher key was accepted");
@@ -91,7 +126,8 @@ public static class RekordboxDatabaseSelfTest
         string dbVersion,
         string trackOne,
         string trackTwo,
-        bool compatibleSchema)
+        bool compatibleSchema,
+        bool rootSentinel = false)
     {
         if (File.Exists(path)) File.Delete(path);
         SQLitePCL.Batteries_V2.Init();
@@ -123,12 +159,29 @@ public static class RekordboxDatabaseSelfTest
             ("$registry", "localUpdateCount"), ("$value", 100L));
 
         if (!compatibleSchema) return;
-        InsertMyTag(connection, "G1", "Genre", null, 1);
+        InsertMyTag(connection, "G1", "Genre", rootSentinel ? "root" : null, 1);
         InsertMyTag(connection, "T1", "House", "G1", 1);
-        InsertMyTag(connection, "G2", "Mood", null, 2);
+        InsertMyTag(connection, "G2", "Mood", rootSentinel ? "root" : null, 2);
         InsertMyTag(connection, "T2", "Euphoric", "G2", 1);
         InsertSongMyTag(connection, "S1", "T1", "C1", 1);
         InsertSongMyTag(connection, "S2", "T2", "C1", 2);
+    }
+
+    private static void MutateEncryptedFixture(string path, string sql)
+    {
+        var uri = new Uri(Path.GetFullPath(path)).AbsoluteUri + "?cipher=sqlcipher&legacy=4";
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = uri,
+            Mode = SqliteOpenMode.ReadWrite,
+            Password = Key,
+            Pooling = false
+        }.ToString());
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        if (command.ExecuteNonQuery() != 1)
+            throw new InvalidOperationException("Encrypted MyTag hierarchy fixture mutation failed.");
     }
 
     private static void InsertMyTag(SqliteConnection connection, string id, string name, string? parentId, int seq)
