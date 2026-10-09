@@ -192,6 +192,7 @@ try
     PathMatcherSelfTest.Run(temp);
     PathMatchAdvisorSelfTest.Run(temp);
     PathPairVerifierSelfTest.Run(temp);
+    PhysicalFileIdentityVerifierSelfTest.Run(temp);
     PreviewSelfTest.Run(temp);
     RekordboxMutationPreflightSelfTest.Run(temp);
     RekordboxMutationVerificationSelfTest.Run(temp);
