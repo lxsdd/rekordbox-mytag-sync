@@ -8,6 +8,8 @@ namespace RekordboxMyTagSync;
 
 public partial class MainWindow
 {
+    private ReadOnlyIdentityCache? _cachedIdentityEvidence;
+
     private async Task BuildVerifiedPreviewAsync()
     {
         if (_operationBusy) return;
@@ -37,6 +39,7 @@ public partial class MainWindow
 
         var sourceSnapshot = _bridgeSnapshot;
         var database = _databaseSnapshot;
+        var availableCache = _cachedIdentityEvidence;
         var settingsFingerprint = JsonSerializer.Serialize(settings);
         var folder = settings.EffectiveBridgeDirectory
             ?? throw new InvalidDataException("Bridge directory is missing.");
@@ -44,6 +47,8 @@ public partial class MainWindow
         _identityCancellation = cancel;
         InvalidatePreview("Rebuilding verified read-only preview.");
         PreviewGrid.ItemsSource = null;
+        PreviewInvestigationGrid.ItemsSource = null;
+        PreviewInvestigationStatusTextBlock.Text = "Rechecking identity and resolving individual ContentId/MyTag exceptions…";
         PreviewRunStatusTextBlock.Text =
             "Auto-matching the libraries: refreshing stable source and checking all physical file identities…";
         SetOperationStatus("Verifying physical file identities for MyTag preview — read-only…", busy: true);
@@ -70,9 +75,29 @@ public partial class MainWindow
                         $"Found {proposed.Proposals.Count} proposed root mappings; an exactly unique mapping is required.");
                 var proposal = proposed.Proposals[0];
                 var root = new PathAlias(proposal.SourceRoot, proposal.TargetRoot);
-                var evidence = PhysicalFileIdentityVerifier.Verify(
-                    stable.Tracks, database.Tracks, root, cancel.Token, progress);
+                var reuse = availableCache is not null &&
+                    availableCache.IsValidFor(stable, database, root);
+                var bridgeFile = new FileInfo(Path.Combine(
+                    stable.DirectoryPath, BridgeSourceDiscovery.SnapshotFileName));
+                var initialLength = bridgeFile.Length;
+                var initialWriteTime = bridgeFile.LastWriteTimeUtc;
+                var evidence = reuse
+                    ? availableCache!.Report
+                    : PhysicalFileIdentityVerifier.Verify(
+                        stable.Tracks, database.Tracks, root, cancel.Token, progress);
                 cancel.Token.ThrowIfCancellationRequested();
+                bridgeFile.Refresh();
+                if (!bridgeFile.Exists || bridgeFile.Length != initialLength ||
+                    bridgeFile.LastWriteTimeUtc != initialWriteTime)
+                    throw new InvalidDataException(
+                        "Bridge export changed while checking physical file identity.");
+                // This is an observation cache for read-only previews only.
+                // Any changed database/source metadata causes fail-closed
+                // invalidation rather than silently reusing a stale map.
+                var observed = ReadOnlyIdentityCache.Capture(stable, database, root, evidence);
+                if (!observed.IsValidFor(stable, database, root))
+                    throw new InvalidDataException(
+                        "Database/source changed since validation; re-inspect and revalidate.");
                 if (evidence.VerifiedPairs is null ||
                     evidence.VerifiedPairs.Count != evidence.SamePhysicalFiles ||
                     evidence.SamePhysicalFiles == 0)
@@ -98,7 +123,7 @@ public partial class MainWindow
                     managed.Where(x => includedIds.Contains(x.ContentId)).ToArray(),
                     new[] { root },
                     database.MyTagDefinitions));
-                return (stable, evidence, scope, preview);
+                return (stable, evidence, scope, preview, observed, reuse);
             }, cancel.Token);
 
             cancel.Token.ThrowIfCancellationRequested();
@@ -111,8 +136,34 @@ public partial class MainWindow
                     "Source, target or settings changed during the verified preview.");
 
             _bridgeSnapshot = result.stable;
-            PreviewGrid.ItemsSource = result.preview.Details
-                .Concat(result.scope.ExcludedTargets).ToArray();
+            _cachedIdentityEvidence = result.observed;
+            PreviewGrid.ItemsSource = result.preview.Details;
+            var pathByContentId = database.Tracks.ToDictionary(
+                x => x.ContentId, x => x.Path, StringComparer.OrdinalIgnoreCase);
+            var rawDuplicates = (database.DuplicateMyTagLinks ??
+                Array.Empty<DuplicateMyTagLinkEvidence>())
+                .Select(x => new PreviewDetail(
+                    PreviewDetailKind.Conflict,
+                    x.ContentId,
+                    pathByContentId.GetValueOrDefault(x.ContentId),
+                    new MyTagAssignment(x.Group, x.Value),
+                    x.Reason +
+                    $" MyTagIDs=[{string.Join(", ", x.MyTagIds)}]; " +
+                    $"djmdSongMyTag row IDs=[{string.Join(", ", x.AssignmentRowIds)}]."))
+                .ToArray();
+            PreviewInvestigationGrid.ItemsSource = result.scope.ExcludedTargets
+                .Concat(rawDuplicates).ToArray();
+            var reasonGroups = result.scope.ExcludedTargets
+                .GroupBy(x => x.Message, StringComparer.Ordinal)
+                .OrderByDescending(x => x.Count())
+                .Select(x => $"{x.Key.Split(':')[0]} {x.Count():N0}")
+                .ToArray();
+            PreviewInvestigationStatusTextBlock.Text =
+                $"Excluded rekordbox ContentIDs: {result.scope.ExcludedTargets.Count:N0}. " +
+                (reasonGroups.Length == 0 ? "None. " : string.Join(" · ", reasonGroups) + ". ") +
+                $"Existing duplicate MyTag link groups: {rawDuplicates.Length:N0}. " +
+                "Rows show original MyTagIDs and assignment-row IDs; NO automatic deletion. " +
+                "An existing duplicate tag link does not prove duplicate music tracks.";
             PreviewCountsTextBlock.Text =
                 $"Add {result.preview.Counts.Additions} · Remove {result.preview.Counts.Removals} · " +
                 $"Correct {result.preview.Counts.AlreadyCorrect} · " +
@@ -120,7 +171,9 @@ public partial class MainWindow
                 $"Unmatched target {result.scope.ExcludedTargets.Count}";
             PreviewRunStatusTextBlock.Text =
                 $"Read-only verified MyTag preview: {result.scope.Targets.Count:N0} " +
-                $"file-level rekordbox ContentIDs confirmed as the same physical files; " +
+                $"file-level rekordbox ContentIDs confirmed as the same physical files " +
+                (result.reuse ? "(reused read-only same-session evidence; no file-ID rescan); " :
+                    "(fresh read-only file-ID scan); ") +
                 $"{result.scope.ExcludedTargets.Count:N0} rekordbox tracks excluded and listed below; " +
                 $"{result.evidence.ExcludedSubsongs:N0} virtual subsongs excluded; " +
                 $"{result.evidence.AmbiguousSourcePaths:N0} source and " +
