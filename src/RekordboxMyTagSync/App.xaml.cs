@@ -128,6 +128,14 @@ public partial class App : Application
                     $"columns={investigation.Columns.Count}, reasonColumn={investigation.Columns[0].Header}, " +
                     $"sortMember={investigation.Columns[0].SortMemberPath}, " +
                     $"idColumn={investigation.Columns[1].Header}.");
+            if (investigation.Columns[1] is not System.Windows.Controls.DataGridTextColumn pinnedId ||
+                pinnedId.CellStyle is null || pinnedId.HeaderStyle is null ||
+                !pinnedId.CellStyle.Setters.OfType<Setter>().Any(s =>
+                    s.Property == System.Windows.Controls.Control.BorderThicknessProperty &&
+                    s.Value is Thickness border && border.Right >= 2))
+                throw new InvalidOperationException(
+                    "Pinned Content ID column has no visible, theme-aware vertical boundary.");
+
             var display = InvestigationDisplayRow.FromPreview(
                 new PreviewDetail(PreviewDetailKind.Unmatched, "C1", @"R:\Music\Track.mp3", null,
                     "AMBIGUOUS_SOURCE_PATH: virtual source siblings"));
