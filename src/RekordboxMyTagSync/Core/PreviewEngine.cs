@@ -151,6 +151,16 @@ public static class PreviewEngine
 
         foreach (var bridge in normalizedBridge.OrderBy(x => x.Path, StringComparer.OrdinalIgnoreCase).ThenBy(x => x.Track.Subsong))
         {
+            // A virtual foobar subsong (e.g. embedded cuesheet track) is not
+            // interchangeable with a rekordbox file-level ContentID. Even a
+            // unique path must NEVER authorize its metadata for that ContentID.
+            if (bridge.Track.Subsong != 0)
+            {
+                details.Add(new PreviewDetail(
+                    PreviewDetailKind.Unmatched, null, bridge.Path, null,
+                    $"Virtual subsong {bridge.Track.Subsong} has no verified segment-level rekordbox identity."));
+                continue;
+            }
             if (ambiguousBridgePaths.Contains(bridge.Path) || ambiguousTargetPaths.Contains(bridge.Path)) continue;
             if (!targetsByPath.TryGetValue(bridge.Path, out var targetCandidates) || targetCandidates.Length != 1)
             {

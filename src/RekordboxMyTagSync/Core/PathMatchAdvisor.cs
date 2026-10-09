@@ -76,53 +76,64 @@ public static class PathMatchAdvisor
                 aliased++;
         }
 
+        // Infer consistent candidate roots only from at least THREE
+        // independent path components (category/artist/filename), not
+        // individual artist/filename pairs. A suffix is useful only when it
+        // is unique on both sides. This suggests a broad Z:\Music -> R:\
+        // mapping when justified, instead of dozens of artist-level aliases.
         var possibleSource = source
             .Where(x => !matched.Contains(x.Track) && x.Track.Subsong == 0)
-            .GroupBy(x => x.OriginalPath, StringComparer.OrdinalIgnoreCase)
+            .Where(x => sourceGroups[x.MappedPath].Length == 1)
+            .SelectMany(x => EnumerateSuffixes(x.OriginalPath)
+                .Select(s => (Item: x, s.Key, s.Root)))
+            .GroupBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
             .Where(x => x.Count() == 1)
-            .Select(x => x.Single())
-            .Select(x => (Item: x, Suffix: TrySuffix(x.OriginalPath)))
-            .Where(x => x.Suffix is not null)
-            .GroupBy(x => x.Suffix!.Value.Key, StringComparer.OrdinalIgnoreCase)
-            .Where(x => x.Count() == 1)
-            .ToDictionary(x => x.Key, x => x.Single().Item, StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(x => x.Key, x => x.Single(), StringComparer.OrdinalIgnoreCase);
 
         var possibleTarget = destination
-            .GroupBy(x => x.OriginalPath, StringComparer.OrdinalIgnoreCase)
+            .Where(x => targetGroups[x.MappedPath].Length == 1)
+            .SelectMany(x => EnumerateSuffixes(x.OriginalPath)
+                .Select(s => (Item: x, s.Key, s.Root)))
+            .GroupBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
             .Where(x => x.Count() == 1)
-            .Select(x => x.Single())
-            .Select(x => (Item: x, Suffix: TrySuffix(x.OriginalPath)))
-            .Where(x => x.Suffix is not null)
-            .GroupBy(x => x.Suffix!.Value.Key, StringComparer.OrdinalIgnoreCase)
-            .Where(x => x.Count() == 1)
-            .ToDictionary(x => x.Key, x => x.Single().Item, StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(x => x.Key, x => x.Single(), StringComparer.OrdinalIgnoreCase);
 
         var proposals = new List<(string Source, string Target, string ExampleSource, string ExampleTarget)>();
         foreach (var (suffix, item) in possibleSource)
         {
             if (!possibleTarget.TryGetValue(suffix, out var match) ||
-                string.Equals(item.MappedPath, match.MappedPath, StringComparison.OrdinalIgnoreCase))
+                string.Equals(item.Item.MappedPath, match.Item.MappedPath, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(item.Root, match.Root, StringComparison.OrdinalIgnoreCase))
                 continue;
-            var sourceSuffix = TrySuffix(item.OriginalPath)!.Value;
-            var targetSuffix = TrySuffix(match.OriginalPath)!.Value;
-            if (string.Equals(sourceSuffix.Root, targetSuffix.Root, StringComparison.OrdinalIgnoreCase))
-                continue;
-            proposals.Add((sourceSuffix.Root, targetSuffix.Root, item.Track.Path, match.Track.Path));
+            proposals.Add((item.Root, match.Root, item.Item.Track.Path, match.Item.Track.Path));
         }
 
         var raw = proposals
             .GroupBy(x => (x.Source, x.Target), RootPairComparer.Instance)
-            .Select(g => new PathAliasProposal(
-                g.Key.Source, g.Key.Target, g.Count(),
-                g.OrderBy(x => x.ExampleSource, StringComparer.OrdinalIgnoreCase).First().ExampleSource,
-                g.OrderBy(x => x.ExampleSource, StringComparer.OrdinalIgnoreCase).First().ExampleTarget))
+            .Select(g =>
+            {
+                var evidence = g.GroupBy(x => x.ExampleSource, StringComparer.OrdinalIgnoreCase)
+                    .Select(x => x.First())
+                    .OrderBy(x => x.ExampleSource, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+                return new PathAliasProposal(
+                    g.Key.Source, g.Key.Target, evidence.Length,
+                    evidence[0].ExampleSource, evidence[0].ExampleTarget);
+            })
             .Where(x => x.UniqueSuffixPairs >= 3)
             .ToArray();
 
-        // Conflicting root suggestions are actively suppressed, not ranked.
+        // Never resolve competing root mappings by picking a "winner".
+        // A parent mapping already supported by at least as many distinct
+        // paths supersedes its nested subfolder mapping for presentation.
         var unique = raw
             .Where(x => raw.Count(y => string.Equals(x.SourceRoot, y.SourceRoot, StringComparison.OrdinalIgnoreCase)) == 1)
             .Where(x => raw.Count(y => string.Equals(x.TargetRoot, y.TargetRoot, StringComparison.OrdinalIgnoreCase)) == 1)
+            .Where(x => !raw.Any(y =>
+                !ReferenceEquals(x, y) &&
+                IsNested(x.SourceRoot, y.SourceRoot) &&
+                IsNested(x.TargetRoot, y.TargetRoot) &&
+                y.UniqueSuffixPairs >= x.UniqueSuffixPairs))
             .OrderByDescending(x => x.UniqueSuffixPairs)
             .ThenBy(x => x.SourceRoot, StringComparer.OrdinalIgnoreCase)
             .Take(30)
@@ -137,17 +148,30 @@ public static class PathMatchAdvisor
             unique);
     }
 
-    private static (string Key, string Root)? TrySuffix(string path)
+    private static IEnumerable<(string Key, string Root)> EnumerateSuffixes(string path)
     {
-        var parent = Path.GetDirectoryName(path);
-        if (string.IsNullOrWhiteSpace(parent)) return null;
-        var root = Path.GetDirectoryName(parent);
-        if (string.IsNullOrWhiteSpace(root)) return null;
-        var folder = Path.GetFileName(parent.TrimEnd(Path.DirectorySeparatorChar));
-        var file = Path.GetFileName(path);
-        if (string.IsNullOrWhiteSpace(folder) || string.IsNullOrWhiteSpace(file)) return null;
-        return (folder + "\\" + file, root);
+        var volume = Path.GetPathRoot(path);
+        if (string.IsNullOrWhiteSpace(volume)) yield break;
+
+        var segments = path[volume.Length..]
+            .Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
+        // A name alone, or even artist/filename, is never enough to
+        // justify proposing a library-level root. Capped depth bounds work.
+        for (var depth = 3; depth <= Math.Min(6, segments.Length); depth++)
+        {
+            var suffix = string.Join("\\", segments.Skip(segments.Length - depth));
+            var prefix = segments.Take(segments.Length - depth).ToArray();
+            var baseRoot = prefix.Length == 0
+                ? volume
+                : Path.Combine(new[] { volume }.Concat(prefix).ToArray());
+            yield return (suffix, WindowsPathMatcher.Normalize(baseRoot));
+        }
     }
+
+    private static bool IsNested(string child, string parent) =>
+        child.Length > parent.Length &&
+        child.StartsWith(parent, StringComparison.OrdinalIgnoreCase) &&
+        (parent.EndsWith('\\') || child[parent.Length] == '\\');
 
     private sealed record Source(BridgeTrack Track, string OriginalPath, string MappedPath);
     private sealed record Destination(RekordboxTrackSnapshot Track, string OriginalPath, string MappedPath);
