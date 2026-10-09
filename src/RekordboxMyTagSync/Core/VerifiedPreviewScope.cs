@@ -58,7 +58,11 @@ public sealed record VerifiedPreviewScope(
                 var normalized = WindowsPathMatcher.Normalize(x.Path);
                 string reason;
                 if (destinations[normalized].Length > 1)
-                    reason = "DUPLICATE_TARGET_PATH: multiple rekordbox ContentIds point to the same path.";
+                    reason = "DUPLICATE_TARGET_PATH: ContentIds=[" +
+                        string.Join(", ", destinations[normalized]
+                            .Select(y => y.ContentId)
+                            .OrderBy(y => y, StringComparer.OrdinalIgnoreCase)) +
+                        "] point to the SAME path (not necessarily different audio files).";
                 else if (!sourceByMappedPath.TryGetValue(normalized, out var candidates))
                     reason = "NOT_IN_FOOBAR_SOURCE: no matching path in the inspected foobar bridge.";
                 else if (candidates.All(y => y.Subsong != 0))
