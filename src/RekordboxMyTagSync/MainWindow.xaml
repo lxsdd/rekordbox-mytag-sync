@@ -311,8 +311,8 @@
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
                     <StackPanel Orientation="Horizontal">
-                        <Button x:Name="BuildPreviewButton" Padding="16,7" Content="Build fresh preview"
-                                ToolTip="Compare the verified bridge and rekordbox tracks without writing files, settings or database rows. Every new preview invalidates the previous one."
+                        <Button x:Name="BuildPreviewButton" Padding="16,7" Content="Refresh verified preview"
+                                ToolTip="Recheck physical file IDs for the one-to-one foobar/rekordbox source-target scope. This uses the same fail-closed verification as Auto-match; path strings alone never authorize tagging or writes."
                                 ToolTipService.ShowOnDisabled="True"/>
                         <Button x:Name="BuildVerifiedPreviewButton"
                                 Margin="8,0,0,0"

@@ -211,6 +211,17 @@ public partial class App : Application
                 string.IsNullOrWhiteSpace(preview.ToolTip?.ToString()))
                 throw new InvalidOperationException(
                     "Production read-only preview action/tooltip is missing.");
+            // The legacy fresh-preview button must share the exact same
+            // physical file-ID gate as Auto-match. No path-only preview is
+            // allowed to leave a fresh/approved mutable state behind.
+            preview.RaiseEvent(new RoutedEventArgs(
+                System.Windows.Controls.Primitives.ButtonBase.ClickEvent, preview));
+            if (!window.PreviewRunStatusTextBlock.Text.Contains("Verified preview blocked:",
+                    StringComparison.OrdinalIgnoreCase) ||
+                !window.PreviewRunStatusTextBlock.Text.Contains("Inspect",
+                    StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    "Build fresh preview bypassed the production verified identity requirement.");
             if (window.FindName("BuildVerifiedPreviewButton") is not System.Windows.Controls.Button verified ||
                 string.IsNullOrWhiteSpace(verified.ToolTip?.ToString()))
                 throw new InvalidOperationException(

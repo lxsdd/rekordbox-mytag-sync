@@ -26,9 +26,10 @@ public partial class MainWindow
         try
         {
             settings = BuildSettingsFromUi();
-            if (settings.EffectivePathAliases.Count != 0)
+            if (settings.EffectivePathAliases.Count > 1)
                 throw new InvalidDataException(
-                    "Auto-match expects no configured aliases; review them before running.");
+                    "Multiple configured aliases are ambiguous for verified file-level preview. " +
+                    "Select a single explicit alias or remove them for automatic discovery.");
         }
         catch (Exception ex)
         {
@@ -68,13 +69,23 @@ public partial class MainWindow
             {
                 cancel.Token.ThrowIfCancellationRequested();
                 var stable = BridgeSourceDiscovery.ReadStable(folder);
-                var proposed = PathMatchAdvisor.Analyze(
-                    stable.Tracks, database.Tracks, settings.EffectivePathAliases);
-                if (proposed.Proposals.Count != 1)
-                    throw new InvalidDataException(
-                        $"Found {proposed.Proposals.Count} proposed root mappings; an exactly unique mapping is required.");
-                var proposal = proposed.Proposals[0];
-                var root = new PathAlias(proposal.SourceRoot, proposal.TargetRoot);
+                PathAlias root;
+                if (settings.EffectivePathAliases.Count == 1)
+                {
+                    // User-configured alias is a *hypothesis*, not evidence.
+                    // Verify every included physical pair through native file IDs.
+                    root = settings.EffectivePathAliases[0];
+                }
+                else
+                {
+                    var proposed = PathMatchAdvisor.Analyze(
+                        stable.Tracks, database.Tracks, settings.EffectivePathAliases);
+                    if (proposed.Proposals.Count != 1)
+                        throw new InvalidDataException(
+                            $"Found {proposed.Proposals.Count} root mapping candidates; exactly one is required.");
+                    var proposal = proposed.Proposals[0];
+                    root = new PathAlias(proposal.SourceRoot, proposal.TargetRoot);
+                }
                 var reuse = availableCache is not null &&
                     availableCache.IsValidFor(stable, database, root);
                 var bridgeFile = new FileInfo(Path.Combine(
@@ -213,7 +224,10 @@ public partial class MainWindow
                 $"Missing distinct existing MyTag definitions: {missingDefinitions.Count:N0}" +
                 (missingByGroup.Length == 0 ? ". " : " (" + string.Join(", ", missingByGroup) + "). ") +
                 "No definition was created and NO settings were saved. " +
-                "Root mapping is TEMPORARY; all results are proposals, Apply and Restore stay LOCKED.";
+                (settings.EffectivePathAliases.Count == 1
+                    ? "Configured root was validated ONLY through native file IDs; "
+                    : "Automatically suggested root is TEMPORARY; ") +
+                "all results are proposals, Apply and Restore stay LOCKED.";
             // Intentionally never assign _approvedPreview. A display-only
             // report is not an authorization to mutate a real database.
             SetOperationStatus("Verified MyTag preview completed — no data or settings changed.");
