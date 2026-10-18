@@ -106,6 +106,50 @@ public partial class App : Application
                         $"Production table '{name}' disables horizontal scrolling.");
             }
 
+            // Exercise the production column-width persistence against actual
+            // WPF DataGrid columns without touching user profile settings.
+            var widthsPath = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(), "MyTagSync-grid-smoke-" +
+                Guid.NewGuid().ToString("N") + ".json");
+            try
+            {
+                window.MappingGrid.Columns[0].Width =
+                    new System.Windows.Controls.DataGridLength(
+                        237, System.Windows.Controls.DataGridLengthUnitType.Pixel);
+                var originalGrids = new Dictionary<string, System.Windows.Controls.DataGrid>
+                {
+                    [window.MappingGrid.Name] = window.MappingGrid,
+                    [window.PreviewGrid.Name] = window.PreviewGrid
+                };
+                GridColumnWidthStore.Save(originalGrids, widthsPath);
+
+                var reopenedGridWindow = new MainWindow { Tag = "ui-smoke" };
+                try
+                {
+                    var reopenedGrids = new Dictionary<string, System.Windows.Controls.DataGrid>
+                    {
+                        [reopenedGridWindow.MappingGrid.Name] = reopenedGridWindow.MappingGrid,
+                        [reopenedGridWindow.PreviewGrid.Name] = reopenedGridWindow.PreviewGrid
+                    };
+                    GridColumnWidthStore.Restore(reopenedGrids, widthsPath);
+                    if (Math.Abs(reopenedGridWindow.MappingGrid.Columns[0].Width.Value - 237) > 0.5)
+                        throw new InvalidOperationException(
+                            "User-resized WPF DataGrid column width was not restored on reopening.");
+
+                    System.IO.File.WriteAllText(widthsPath, "{invalid-json");
+                    GridColumnWidthStore.Restore(reopenedGrids, widthsPath);
+                    if (Math.Abs(reopenedGridWindow.MappingGrid.Columns[0].Width.Value - 237) > 0.5)
+                        throw new InvalidOperationException(
+                            "Malformed optional column-width settings corrupted the current layout.");
+                }
+                finally { reopenedGridWindow.Close(); }
+            }
+            finally
+            {
+                if (System.IO.File.Exists(widthsPath))
+                    System.IO.File.Delete(widthsPath);
+            }
+
             var physicalTable = window.PhysicalExceptionsGrid;
             if (physicalTable.Columns.Count != 12 || physicalTable.FrozenColumnCount != 2 ||
                 physicalTable.Columns[0].Header?.ToString() != "Reason" ||
