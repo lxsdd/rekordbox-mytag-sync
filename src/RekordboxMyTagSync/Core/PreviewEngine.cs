@@ -146,6 +146,7 @@ public static class PreviewEngine
                 $"Multiple bridge (path, subsong) identities resolve to one target path: {string.Join(", ", identities)}."));
         }
 
+        var targetsByContentId = normalizedTargets.ToDictionary(x => x.ContentId, StringComparer.OrdinalIgnoreCase);
         var managedByContent = BuildManagedIndex(request.ManagedAssignments, normalizedTargets, details);
         var matchedContentIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -203,7 +204,7 @@ public static class PreviewEngine
         foreach (var pair in managedByContent)
         {
             if (matchedContentIds.Contains(pair.Key)) continue;
-            var target = normalizedTargets.FirstOrDefault(x => string.Equals(x.ContentId, pair.Key, StringComparison.OrdinalIgnoreCase));
+            targetsByContentId.TryGetValue(pair.Key, out var target);
             if (target is null) continue;
             foreach (var tag in pair.Value)
             {
@@ -367,7 +368,7 @@ public static class PreviewEngine
             .ToDictionary(x => x.Key, x => x.ToArray(), StringComparer.OrdinalIgnoreCase);
 
         var missing = new HashSet<MyTagAssignment>(new MyTagAssignmentComparer());
-        foreach (var detail in details.Where(x => x.Kind == PreviewDetailKind.Add && x.Tag is not null))
+        foreach (var detail in details.Where(x => x.Kind == PreviewDetailKind.Add && x.Tag is not null).ToArray())
         {
             var tag = detail.Tag!;
             if (!roots.TryGetValue(tag.Group.Trim(), out var parentMatches))
