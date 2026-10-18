@@ -11,6 +11,45 @@ public static class RekordboxMutationExecutorSelfTest
         QualifyDefinitionCreationEndToEnd(temp);
         QualifyDefinitionCreationRestoreAfterPostCommitFailure(temp);
         QualifyRestoreAfterPostCommitFailure(temp);
+        QualifyVerifiedRestoreRoundTrip(temp);
+    }
+
+    private static void QualifyVerifiedRestoreRoundTrip(string temp)
+    {
+        var root = Path.Combine(temp, "VerifiedRestoreRoundTrip");
+        var databasePath = Path.Combine(root, "master.db");
+        var trackOne = Path.Combine(temp, "VerifiedRestoreMusic", "One.mp3");
+        var trackTwo = Path.Combine(temp, "VerifiedRestoreMusic", "Two.mp3");
+        EncryptedMutationFixture.Create(databasePath, trackOne, trackTwo);
+        var policy = Policy();
+        var approved = RekordboxSqlCipherDatabase.ReadSnapshot(
+            databasePath, EncryptedMutationFixture.Key, policy);
+        var originalHash = RekordboxRollingBackup.ComputeFileSha256(databasePath);
+        var package = RekordboxRollingBackup.CreateOrReplace(
+            Path.Combine(root, "backup"), approved.Identity,
+            Sha256("verified-restore-round-trip"), "0.1.0-dev",
+            expectedDatabaseSha256: originalHash);
+
+        using (var connection = EncryptedMutationFixture.Open(databasePath))
+        {
+            ExecuteSql(connection, "UPDATE agentRegistry SET int_1=123 WHERE registry_id='localUpdateCount';");
+        }
+
+        var modifiedHash = RekordboxRollingBackup.ComputeFileSha256(databasePath);
+        if (string.Equals(originalHash, modifiedHash, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("verified restore fixture did not change database bytes");
+
+        _ = RekordboxRollingBackup.RestoreVerified(
+            package.PackagePath, databasePath, EncryptedMutationFixture.Key,
+            policy, approved.Identity);
+
+        var restoredHash = RekordboxRollingBackup.ComputeFileSha256(databasePath);
+        if (!string.Equals(originalHash, restoredHash, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("verified restore did not recover original encrypted bytes");
+        using var restored = EncryptedMutationFixture.Open(databasePath);
+        if (ScalarLong(restored,
+                "SELECT int_1 FROM agentRegistry WHERE registry_id='localUpdateCount';") != 100)
+            throw new InvalidOperationException("verified restore did not recover original SQLCipher state");
     }
 
     private static void QualifySuccessfulMutation(string temp)
