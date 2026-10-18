@@ -232,6 +232,13 @@ public static class RekordboxRollingBackup
             if (!string.Equals(restoredHash, inspection.Metadata.DatabaseSha256, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("Restored database SHA-256 does not match the validated backup package.");
 
+            // The archive extraction can take time. Recheck immediately before replacement
+            // so a target changed during extraction cannot silently be overwritten.
+            EnsureRekordboxClosed();
+            if (expectedTargetSha256 is not null &&
+                !string.Equals(ComputeFileSha256(targetPath), expectedTargetSha256, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Restore target changed while the backup image was being prepared.");
+
             File.Replace(tempPath, targetPath, destinationBackupFileName: null, ignoreMetadataErrors: false);
             if (!string.Equals(ComputeFileSha256(targetPath), inspection.Metadata.DatabaseSha256, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("Post-restore database SHA-256 verification failed.");
