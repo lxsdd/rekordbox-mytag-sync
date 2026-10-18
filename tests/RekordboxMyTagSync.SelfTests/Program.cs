@@ -93,6 +93,14 @@ AssertSequence("year no match", MappingEngine.Apply(year, new[] { "unknown" }));
 
 AutomaticMyTagMappingSelfTest.Run();
 
+var protectedProcesses = RekordboxProcessGuard.ProtectedProcessNames;
+if (!new[] { "rekordbox", "rekordboxAgent", "rbxport" }
+        .All(name => protectedProcesses.Contains(name, StringComparer.OrdinalIgnoreCase)) ||
+    protectedProcesses.Distinct(StringComparer.OrdinalIgnoreCase).Count() !=
+        protectedProcesses.Count)
+    throw new InvalidOperationException(
+        "Shared rekordbox/rbxport database process guard is incomplete or ambiguous.");
+
 var regex = new MappingRule("MOOD", "Mood", TransformKind.RegexReplace, Pattern: @"\s+", Replacement: "-");
 AssertSequence("regex replace", MappingEngine.Apply(regex, new[] { "Peak Time" }), "Peak-Time");
 
