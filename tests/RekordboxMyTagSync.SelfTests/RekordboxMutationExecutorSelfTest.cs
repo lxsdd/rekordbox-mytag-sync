@@ -39,6 +39,23 @@ public static class RekordboxMutationExecutorSelfTest
         if (string.Equals(originalHash, modifiedHash, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("verified restore fixture did not change database bytes");
 
+        var rejectedWrongKey = false;
+        try
+        {
+            _ = RekordboxRollingBackup.RestoreVerified(
+                package.PackagePath, databasePath, "invalid-test-key",
+                policy, approved.Identity);
+        }
+        catch (Exception)
+        {
+            rejectedWrongKey = true;
+        }
+        if (!rejectedWrongKey)
+            throw new InvalidOperationException("verified restore accepted an invalid SQLCipher key");
+        if (!string.Equals(modifiedHash, RekordboxRollingBackup.ComputeFileSha256(databasePath),
+                StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("rejected verified restore changed database bytes");
+
         _ = RekordboxRollingBackup.RestoreVerified(
             package.PackagePath, databasePath, EncryptedMutationFixture.Key,
             policy, approved.Identity);
