@@ -48,13 +48,16 @@ public static class RekordboxRollingBackup
         string backupRoot,
         RekordboxDatabaseIdentity identity,
         string mappingHashSha256,
-        string toolVersion)
+        string toolVersion,
+        string? expectedDatabaseSha256 = null)
     {
         ArgumentNullException.ThrowIfNull(identity);
         ArgumentException.ThrowIfNullOrWhiteSpace(mappingHashSha256);
         ArgumentException.ThrowIfNullOrWhiteSpace(toolVersion);
         ValidateIdentity(identity);
         ValidateSha256(mappingHashSha256, nameof(mappingHashSha256));
+        if (expectedDatabaseSha256 is not null)
+            ValidateSha256(expectedDatabaseSha256, nameof(expectedDatabaseSha256));
         EnsureRekordboxClosed();
 
         var sourcePath = Canonical(identity.CanonicalPath);
@@ -98,6 +101,13 @@ public static class RekordboxRollingBackup
                     }
                     databaseHash = Convert.ToHexString(hasher.GetHashAndReset()).ToLowerInvariant();
                 }
+
+                // Metadata and timestamps alone do not bind the copied image to
+                // the database bytes qualified before this pre-write backup.
+                if (expectedDatabaseSha256 is not null &&
+                    !string.Equals(databaseHash, expectedDatabaseSha256, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException(
+                        "rekordbox database content changed after approved snapshot; the previous rolling backup is preserved.");
 
                 var copiedSourceInfo = new FileInfo(sourcePath);
                 if (copiedLength != sourceInfo.Length ||
@@ -265,7 +275,7 @@ public static class RekordboxRollingBackup
     private static string Canonical(string path) =>
         Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
-    private static string ComputeFileSha256(string path)
+    internal static string ComputeFileSha256(string path)
     {
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, FileOptions.SequentialScan);
         return ComputeSha256(stream);
