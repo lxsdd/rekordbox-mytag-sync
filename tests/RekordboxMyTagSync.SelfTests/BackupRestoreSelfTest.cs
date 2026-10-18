@@ -114,6 +114,17 @@ internal static class BackupRestoreSelfTest
         if (!string.Equals(Hash(File.ReadAllBytes(dbPath)), targetBeforeRejectedRestore, StringComparison.Ordinal))
             throw new InvalidOperationException("rejected restore modified the target database");
 
+        // Even a legacy caller without an approved hash must not overwrite a
+        // target whose metadata has changed since the identity was captured.
+        var drifted = bytesC.Concat(new byte[] { 0x42 }).ToArray();
+        File.WriteAllBytes(dbPath, drifted);
+        AssertInvalid(() => RekordboxRollingBackup.Restore(replaced.PackagePath, identityC),
+            "restore accepted a target with changed size and stale identity");
+        if (!File.ReadAllBytes(dbPath).SequenceEqual(drifted))
+            throw new InvalidOperationException("metadata-rejected restore modified target bytes");
+        File.WriteAllBytes(dbPath, bytesC);
+        File.SetLastWriteTimeUtc(dbPath, identityC.LastWriteUtc);
+
         var wrongDbId = identityC with { DbId = "DB-OTHER" };
         AssertInvalid(() => RekordboxRollingBackup.Inspect(replaced.PackagePath, wrongDbId), "backup DBID mismatch did not fail closed");
 
