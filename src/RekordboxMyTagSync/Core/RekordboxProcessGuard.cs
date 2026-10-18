@@ -4,7 +4,13 @@ namespace RekordboxMyTagSync.Core;
 
 public static class RekordboxProcessGuard
 {
-    private static readonly string[] RekordboxProcessNames = ["rekordbox"];
+    // Both applications can write the same SQLCipher master.db. The rekordbox
+    // agent can also mutate/synchronize the library after its UI has exited.
+    // Do not rely on a single GUI executable being closed.
+    private static readonly string[] RekordboxProcessNames =
+        ["rekordbox", "rekordboxAgent", "rbxport"];
+
+    public static IReadOnlyList<string> ProtectedProcessNames => RekordboxProcessNames;
 
     public static bool IsRunning()
     {
