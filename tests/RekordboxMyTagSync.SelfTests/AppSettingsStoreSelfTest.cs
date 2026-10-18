@@ -14,8 +14,25 @@ public static class AppSettingsStoreSelfTest
         if (empty.BridgeSnapshotPath is not null ||
             empty.RekordboxDatabasePath is not null ||
             empty.EffectivePathAliases.Count != 0 ||
-            empty.EffectiveMappings.Count != 0)
-            throw new InvalidOperationException("missing settings file did not yield empty defaults");
+            empty.EffectiveMappings.Count != 2 ||
+            empty.EffectiveMappings[0] != new MappingRule("DATE", "Year", TransformKind.StrictYearFromDate) ||
+            empty.EffectiveMappings[1] != new MappingRule("GENRE", "Genre", TransformKind.Direct))
+            throw new InvalidOperationException("missing settings file did not yield safe DATE/GENRE defaults");
+
+        var initial = AppSettingsStore.ValidateAndNormalize(new AppSettings());
+        AppSettingsStore.SaveAtomic(path, initial);
+        var initialLoaded = AppSettingsStore.Load(path);
+        if (!initialLoaded.EffectiveMappings.SequenceEqual(AppSettings.InitialMappings))
+            throw new InvalidOperationException("first save did not persist initial mapping defaults");
+        if (MappingEngine.Apply(initialLoaded.EffectiveMappings[0], new[] { "remastered in 2021" }).Count != 0 ||
+            !MappingEngine.Apply(initialLoaded.EffectiveMappings[0], new[] { "2021-04-16" }).SequenceEqual(new[] { "2021" }))
+            throw new InvalidOperationException("default DATE to Year mapping is not strict");
+
+        // Explicitly removing all mappings is allowed and must never resurrect
+        // auto-defaults after saving or reopening settings.
+        AppSettingsStore.SaveAtomic(path, new AppSettings(Mappings: Array.Empty<MappingRule>()));
+        if (AppSettingsStore.Load(path).EffectiveMappings.Count != 0)
+            throw new InvalidOperationException("explicitly empty mappings were silently reintroduced");
 
         var source = Path.Combine(root, "bridge", "digital-items.tsv.gz");
         var target = Path.Combine(root, "rekordbox", "master.db");
