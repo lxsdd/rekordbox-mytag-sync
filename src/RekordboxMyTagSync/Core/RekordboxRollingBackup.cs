@@ -70,18 +70,10 @@ public static class RekordboxRollingBackup
 
         try
         {
-            var databaseHash = ComputeFileSha256(sourcePath);
-            var metadata = new RekordboxBackupMetadata(
-                CurrentSchemaVersion,
-                identity.DbId.Trim(),
-                identity.DbVersion.Trim(),
-                sourcePath,
-                databaseHash,
-                toolVersion.Trim(),
-                mappingHashSha256.ToLowerInvariant(),
-                sourceInfo.Length,
-                DateTime.UtcNow);
-
+            // Hash exactly the bytes that are written into the backup package.
+            // A separate pre-copy hash could describe a different database image.
+            string databaseHash;
+            long copiedLength = 0;
             using (var packageStream = new FileStream(
                        tempPath,
                        FileMode.CreateNew,
@@ -94,7 +86,36 @@ public static class RekordboxRollingBackup
                 var dbEntry = archive.CreateEntry(DatabaseEntryName, CompressionLevel.NoCompression);
                 using (var input = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, FileOptions.SequentialScan))
                 using (var output = dbEntry.Open())
-                    input.CopyTo(output);
+                using (var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA256))
+                {
+                    var buffer = new byte[64 * 1024];
+                    int read;
+                    while ((read = input.Read(buffer, 0, buffer.Length)) != 0)
+                    {
+                        hasher.AppendData(buffer, 0, read);
+                        output.Write(buffer, 0, read);
+                        copiedLength = checked(copiedLength + read);
+                    }
+                    databaseHash = Convert.ToHexString(hasher.GetHashAndReset()).ToLowerInvariant();
+                }
+
+                var copiedSourceInfo = new FileInfo(sourcePath);
+                if (copiedLength != sourceInfo.Length ||
+                    copiedSourceInfo.Length != sourceInfo.Length ||
+                    copiedSourceInfo.LastWriteTimeUtc != sourceInfo.LastWriteTimeUtc)
+                    throw new InvalidOperationException(
+                        "rekordbox database changed during backup creation; the previous rolling backup is preserved.");
+
+                var metadata = new RekordboxBackupMetadata(
+                    CurrentSchemaVersion,
+                    identity.DbId.Trim(),
+                    identity.DbVersion.Trim(),
+                    sourcePath,
+                    databaseHash,
+                    toolVersion.Trim(),
+                    mappingHashSha256.ToLowerInvariant(),
+                    copiedLength,
+                    DateTime.UtcNow);
 
                 var metadataEntry = archive.CreateEntry(MetadataEntryName, CompressionLevel.Optimal);
                 using var metadataStream = metadataEntry.Open();
