@@ -36,7 +36,7 @@ internal static class RekordboxMutationExecutor
         ArgumentException.ThrowIfNullOrWhiteSpace(mappingHashSha256);
         ArgumentException.ThrowIfNullOrWhiteSpace(toolVersion);
 
-        var initialSnapshot = RekordboxSqlCipherDatabase.ReadSnapshot(databasePath, key, policy);
+        var (initialSnapshot, approvedDatabaseHash) = ReadVerifiedSnapshot(databasePath, key, policy);
         var initialProvenance = ProvenanceStore.Load(provenancePath, initialSnapshot.Identity);
         var initialPreflight = RekordboxMutationPreflight.Recheck(
             approvedPreview,
@@ -61,12 +61,13 @@ internal static class RekordboxMutationExecutor
             backupRoot,
             initialSnapshot.Identity,
             mappingHashSha256,
-            toolVersion);
+            toolVersion,
+            expectedDatabaseSha256: approvedDatabaseHash);
 
         // The backup identity check proves the database bytes/metadata still match the approved snapshot.
         // Re-evaluate source, mapping, provenance and database state once more after backup creation and
         // immediately before opening the read-write mutation session.
-        var before = RekordboxSqlCipherDatabase.ReadSnapshot(databasePath, key, policy);
+        var (before, _) = ReadVerifiedSnapshot(databasePath, key, policy, approvedDatabaseHash);
         var provenance = ProvenanceStore.Load(provenancePath, before.Identity);
         var preflight = RekordboxMutationPreflight.Recheck(
             approvedPreview,
@@ -187,6 +188,33 @@ internal static class RekordboxMutationExecutor
 
             throw;
         }
+    }
+
+    private static (RekordboxDatabaseSnapshot Snapshot, string DatabaseSha256) ReadVerifiedSnapshot(
+        string databasePath,
+        string key,
+        RekordboxDatabaseReadPolicy policy,
+        string? expectedDatabaseSha256 = null)
+    {
+        var beforeHash = RekordboxRollingBackup.ComputeFileSha256(databasePath);
+        if (expectedDatabaseSha256 is not null &&
+            !string.Equals(beforeHash, expectedDatabaseSha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "rekordbox database bytes changed since approved snapshot; mutation is blocked.");
+
+        var snapshot = RekordboxSqlCipherDatabase.ReadSnapshot(databasePath, key, policy);
+        var afterHash = RekordboxRollingBackup.ComputeFileSha256(databasePath);
+        if (!string.Equals(beforeHash, afterHash, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "rekordbox database bytes changed while reading the mutation snapshot; mutation is blocked.");
+
+        var file = new FileInfo(databasePath);
+        if (file.Length != snapshot.Identity.FileLength ||
+            file.LastWriteTimeUtc != snapshot.Identity.LastWriteUtc)
+            throw new InvalidOperationException(
+                "rekordbox database metadata changed while reading the mutation snapshot; mutation is blocked.");
+
+        return (snapshot, afterHash);
     }
 
     private static bool SameDatabase(
