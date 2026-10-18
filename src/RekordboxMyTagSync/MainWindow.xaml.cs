@@ -1050,11 +1050,14 @@ public partial class MainWindow : Window
                 restoreProvenancePath,
                 currentIdentity);
 
-            RekordboxRollingBackup.Restore(
+            var policy = _databaseAccess.Policy;
+            _ = RekordboxRollingBackup.RestoreVerified(
                 inspection.PackagePath,
+                databasePath,
+                key,
+                policy,
                 currentIdentity);
 
-            var policy = _databaseAccess.Policy;
             var restoredSnapshot = RekordboxSqlCipherDatabase.ReadSnapshot(
                 databasePath,
                 key,
