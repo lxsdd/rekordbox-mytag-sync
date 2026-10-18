@@ -140,7 +140,7 @@ internal static class RekordboxMutationExecutor
 
             try
             {
-                RekordboxRollingBackup.Restore(backup.PackagePath, before.Identity);
+                RestoreVerifiedPostCommitImage(backup.PackagePath, databasePath, key, policy, before.Identity);
             }
             catch (Exception restoreError)
             {
@@ -176,7 +176,7 @@ internal static class RekordboxMutationExecutor
         {
             try
             {
-                RekordboxRollingBackup.Restore(backup.PackagePath, before.Identity);
+                RestoreVerifiedPostCommitImage(backup.PackagePath, databasePath, key, policy, before.Identity);
             }
             catch (Exception restoreError)
             {
@@ -188,6 +188,25 @@ internal static class RekordboxMutationExecutor
 
             throw;
         }
+    }
+
+    // A successful mutation changes the target's length/timestamp. The pre-write
+    // identity must never be reused as the identity of the post-commit target.
+    // Reopen the current SQLCipher image, verify its library identity and bind
+    // the exact bytes to the rollback before replacing them.
+    private static void RestoreVerifiedPostCommitImage(
+        string packagePath,
+        string databasePath,
+        string key,
+        RekordboxDatabaseReadPolicy policy,
+        RekordboxDatabaseIdentity approvedIdentity)
+    {
+        var (current, currentSha256) = ReadVerifiedSnapshot(databasePath, key, policy);
+        if (!SameDatabase(current.Identity, approvedIdentity))
+            throw new InvalidOperationException(
+                "Automatic rollback refused: current SQLCipher library identity differs from the approved database.");
+        _ = RekordboxRollingBackup.Restore(
+            packagePath, current.Identity, expectedTargetSha256: currentSha256);
     }
 
     private static (RekordboxDatabaseSnapshot Snapshot, string DatabaseSha256) ReadVerifiedSnapshot(
