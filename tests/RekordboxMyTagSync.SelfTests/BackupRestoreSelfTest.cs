@@ -19,7 +19,8 @@ internal static class BackupRestoreSelfTest
 
         var identityA = Identity(dbPath, "DB-ROLLING-1", "7.0.0");
         var mappingHash = Hash("mapping-v1");
-        var first = RekordboxRollingBackup.CreateOrReplace(backupRoot, identityA, mappingHash, "0.1.0-dev");
+        var first = RekordboxRollingBackup.CreateOrReplace(
+            backupRoot, identityA, mappingHash, "0.1.0-dev", expectedDatabaseSha256: Hash(bytesA));
         if (!File.Exists(first.PackagePath)) throw new InvalidOperationException("rolling backup package was not created");
         if (Directory.EnumerateFiles(backupRoot, "*.rbbackup").Count() != 1)
             throw new InvalidOperationException("rolling backup created more than one package for one database");
@@ -31,7 +32,20 @@ internal static class BackupRestoreSelfTest
 
         File.WriteAllBytes(dbPath, bytesB);
         var identityB = Identity(dbPath, identityA.DbId, identityA.DbVersion);
-        _ = RekordboxRollingBackup.Restore(first.PackagePath, identityB);
+        // An approved target hash must detect same-size changes before restore.
+        var rejectedTargetHash = Hash(bytesB);
+        var tamperedTarget = bytesB.ToArray();
+        tamperedTarget[0] ^= 0x01;
+        File.WriteAllBytes(dbPath, tamperedTarget);
+        File.SetLastWriteTimeUtc(dbPath, identityB.LastWriteUtc);
+        AssertInvalid(
+            () => RekordboxRollingBackup.Restore(first.PackagePath, identityB, rejectedTargetHash),
+            "restore accepted target bytes that differ from the approved image");
+        if (!File.ReadAllBytes(dbPath).SequenceEqual(tamperedTarget))
+            throw new InvalidOperationException("rejected restore modified target bytes");
+        File.WriteAllBytes(dbPath, bytesB);
+        File.SetLastWriteTimeUtc(dbPath, identityB.LastWriteUtc);
+        _ = RekordboxRollingBackup.Restore(first.PackagePath, identityB, rejectedTargetHash);
         if (!File.ReadAllBytes(dbPath).SequenceEqual(bytesA))
             throw new InvalidOperationException("restore did not atomically restore the validated database payload");
 
@@ -46,6 +60,71 @@ internal static class BackupRestoreSelfTest
             throw new InvalidOperationException("rolling backup replacement retained history");
         if (!string.Equals(replaced.Metadata.DatabaseSha256, Hash(bytesC), StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("rolling backup was not replaced with the latest pre-write image");
+
+        // A stale approved snapshot must not replace the last known-good rolling
+        // package, even when the changed database has exactly the same byte length.
+        var packageBeforeRejectedBackup = Hash(File.ReadAllBytes(replaced.PackagePath));
+        var changedSameLength = bytesC.ToArray();
+        changedSameLength[0] ^= 0x01;
+        File.WriteAllBytes(dbPath, changedSameLength);
+        File.SetLastWriteTimeUtc(dbPath, identityC.LastWriteUtc.AddSeconds(5));
+        AssertInvalid(
+            () => RekordboxRollingBackup.CreateOrReplace(
+                backupRoot, identityC, Hash("stale-mapping"), "0.1.0-dev"),
+            "stale approved database identity did not block rolling replacement");
+        if (!string.Equals(Hash(File.ReadAllBytes(replaced.PackagePath)), packageBeforeRejectedBackup, StringComparison.Ordinal))
+            throw new InvalidOperationException("rejected backup attempt damaged the previous rolling package");
+        File.WriteAllBytes(dbPath, bytesC);
+
+        // Reject changed bytes even when file size and last-write timestamp are preserved.
+        File.SetLastWriteTimeUtc(dbPath, identityC.LastWriteUtc);
+        var modifiedBytes = bytesC.ToArray();
+        modifiedBytes[^1] ^= 0x01;
+        File.WriteAllBytes(dbPath, modifiedBytes);
+        File.SetLastWriteTimeUtc(dbPath, identityC.LastWriteUtc);
+        var sameMetadata = Identity(dbPath, identityC.DbId, identityC.DbVersion);
+        if (sameMetadata.FileLength != identityC.FileLength ||
+            sameMetadata.LastWriteUtc != identityC.LastWriteUtc)
+            throw new InvalidOperationException("synthetic fixture did not preserve database metadata");
+        AssertInvalid(
+            () => RekordboxRollingBackup.CreateOrReplace(
+                backupRoot, identityC, Hash("same-metadata"), "0.1.0-dev",
+                expectedDatabaseSha256: Hash(bytesC)),
+            "same-size/same-mtime modified database passed approved SHA-256 check");
+        if (!string.Equals(Hash(File.ReadAllBytes(replaced.PackagePath)), packageBeforeRejectedBackup, StringComparison.Ordinal))
+            throw new InvalidOperationException("hash-rejected backup replaced the previous rolling package");
+        File.WriteAllBytes(dbPath, bytesC);
+        File.SetLastWriteTimeUtc(dbPath, identityC.LastWriteUtc);
+
+        // A damaged archive must fail inspection and restore before changing
+        // the target database, even if its metadata still looks valid.
+        var tampered = Path.Combine(root, "tampered.rbbackup");
+        File.Copy(replaced.PackagePath, tampered);
+        using (var stream = new FileStream(tampered, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Update))
+        {
+            archive.GetEntry("master.db")!.Delete();
+            using var damagedEntry = archive.CreateEntry("master.db", CompressionLevel.NoCompression).Open();
+            damagedEntry.Write(bytesA);
+        }
+        var targetBeforeRejectedRestore = Hash(File.ReadAllBytes(dbPath));
+        AssertInvalid(() => RekordboxRollingBackup.Inspect(tampered, identityC),
+            "modified archive bytes were not rejected by SHA-256 verification");
+        AssertInvalid(() => RekordboxRollingBackup.Restore(tampered, identityC),
+            "restore accepted an archive whose database bytes do not match metadata");
+        if (!string.Equals(Hash(File.ReadAllBytes(dbPath)), targetBeforeRejectedRestore, StringComparison.Ordinal))
+            throw new InvalidOperationException("rejected restore modified the target database");
+
+        // Even a legacy caller without an approved hash must not overwrite a
+        // target whose metadata has changed since the identity was captured.
+        var drifted = bytesC.Concat(new byte[] { 0x42 }).ToArray();
+        File.WriteAllBytes(dbPath, drifted);
+        AssertInvalid(() => RekordboxRollingBackup.Restore(replaced.PackagePath, identityC),
+            "restore accepted a target with changed size and stale identity");
+        if (!File.ReadAllBytes(dbPath).SequenceEqual(drifted))
+            throw new InvalidOperationException("metadata-rejected restore modified target bytes");
+        File.WriteAllBytes(dbPath, bytesC);
+        File.SetLastWriteTimeUtc(dbPath, identityC.LastWriteUtc);
 
         var wrongDbId = identityC with { DbId = "DB-OTHER" };
         AssertInvalid(() => RekordboxRollingBackup.Inspect(replaced.PackagePath, wrongDbId), "backup DBID mismatch did not fail closed");

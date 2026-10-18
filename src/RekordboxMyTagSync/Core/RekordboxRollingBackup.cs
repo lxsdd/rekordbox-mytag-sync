@@ -48,13 +48,16 @@ public static class RekordboxRollingBackup
         string backupRoot,
         RekordboxDatabaseIdentity identity,
         string mappingHashSha256,
-        string toolVersion)
+        string toolVersion,
+        string? expectedDatabaseSha256 = null)
     {
         ArgumentNullException.ThrowIfNull(identity);
         ArgumentException.ThrowIfNullOrWhiteSpace(mappingHashSha256);
         ArgumentException.ThrowIfNullOrWhiteSpace(toolVersion);
         ValidateIdentity(identity);
         ValidateSha256(mappingHashSha256, nameof(mappingHashSha256));
+        if (expectedDatabaseSha256 is not null)
+            ValidateSha256(expectedDatabaseSha256, nameof(expectedDatabaseSha256));
         EnsureRekordboxClosed();
 
         var sourcePath = Canonical(identity.CanonicalPath);
@@ -70,18 +73,10 @@ public static class RekordboxRollingBackup
 
         try
         {
-            var databaseHash = ComputeFileSha256(sourcePath);
-            var metadata = new RekordboxBackupMetadata(
-                CurrentSchemaVersion,
-                identity.DbId.Trim(),
-                identity.DbVersion.Trim(),
-                sourcePath,
-                databaseHash,
-                toolVersion.Trim(),
-                mappingHashSha256.ToLowerInvariant(),
-                sourceInfo.Length,
-                DateTime.UtcNow);
-
+            // Hash exactly the bytes that are written into the backup package.
+            // A separate pre-copy hash could describe a different database image.
+            string databaseHash;
+            long copiedLength = 0;
             using (var packageStream = new FileStream(
                        tempPath,
                        FileMode.CreateNew,
@@ -94,7 +89,43 @@ public static class RekordboxRollingBackup
                 var dbEntry = archive.CreateEntry(DatabaseEntryName, CompressionLevel.NoCompression);
                 using (var input = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, FileOptions.SequentialScan))
                 using (var output = dbEntry.Open())
-                    input.CopyTo(output);
+                using (var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA256))
+                {
+                    var buffer = new byte[64 * 1024];
+                    int read;
+                    while ((read = input.Read(buffer, 0, buffer.Length)) != 0)
+                    {
+                        hasher.AppendData(buffer, 0, read);
+                        output.Write(buffer, 0, read);
+                        copiedLength = checked(copiedLength + read);
+                    }
+                    databaseHash = Convert.ToHexString(hasher.GetHashAndReset()).ToLowerInvariant();
+                }
+
+                // Metadata and timestamps alone do not bind the copied image to
+                // the database bytes qualified before this pre-write backup.
+                if (expectedDatabaseSha256 is not null &&
+                    !string.Equals(databaseHash, expectedDatabaseSha256, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException(
+                        "rekordbox database content changed after approved snapshot; the previous rolling backup is preserved.");
+
+                var copiedSourceInfo = new FileInfo(sourcePath);
+                if (copiedLength != sourceInfo.Length ||
+                    copiedSourceInfo.Length != sourceInfo.Length ||
+                    copiedSourceInfo.LastWriteTimeUtc != sourceInfo.LastWriteTimeUtc)
+                    throw new InvalidOperationException(
+                        "rekordbox database changed during backup creation; the previous rolling backup is preserved.");
+
+                var metadata = new RekordboxBackupMetadata(
+                    CurrentSchemaVersion,
+                    identity.DbId.Trim(),
+                    identity.DbVersion.Trim(),
+                    sourcePath,
+                    databaseHash,
+                    toolVersion.Trim(),
+                    mappingHashSha256.ToLowerInvariant(),
+                    copiedLength,
+                    DateTime.UtcNow);
 
                 var metadataEntry = archive.CreateEntry(MetadataEntryName, CompressionLevel.Optimal);
                 using var metadataStream = metadataEntry.Open();
@@ -159,15 +190,24 @@ public static class RekordboxRollingBackup
 
     public static RekordboxBackupInspection Restore(
         string packagePath,
-        RekordboxDatabaseIdentity currentIdentity)
+        RekordboxDatabaseIdentity currentIdentity,
+        string? expectedTargetSha256 = null)
     {
         ArgumentNullException.ThrowIfNull(currentIdentity);
         ValidateIdentity(currentIdentity);
+        if (expectedTargetSha256 is not null)
+            ValidateSha256(expectedTargetSha256, nameof(expectedTargetSha256));
         EnsureRekordboxClosed();
         var inspection = Inspect(packagePath, currentIdentity);
         var targetPath = Canonical(currentIdentity.CanonicalPath);
         if (!File.Exists(targetPath))
             throw new FileNotFoundException("Restore target master.db does not exist; restore is blocked fail-closed.", targetPath);
+
+        // Bind a caller-approved target image to the actual bytes before restoring.
+        // A matching path, DBID label or file timestamp is not sufficient.
+        if (expectedTargetSha256 is not null &&
+            !string.Equals(ComputeFileSha256(targetPath), expectedTargetSha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Restore target bytes differ from the approved database image.");
 
         var targetDirectory = Path.GetDirectoryName(targetPath)!;
         var tempPath = Path.Combine(targetDirectory, Path.GetFileName(targetPath) + ".restore-" + Guid.NewGuid().ToString("N") + ".tmp");
@@ -191,6 +231,20 @@ public static class RekordboxRollingBackup
             var restoredHash = ComputeFileSha256(tempPath);
             if (!string.Equals(restoredHash, inspection.Metadata.DatabaseSha256, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("Restored database SHA-256 does not match the validated backup package.");
+
+            // Revalidate the current file metadata, even for callers without a hash.
+            // This detects replacement of the target since the approved identity was captured.
+            var targetInfo = new FileInfo(targetPath);
+            if (targetInfo.Length != currentIdentity.FileLength ||
+                targetInfo.LastWriteTimeUtc != currentIdentity.LastWriteUtc)
+                throw new InvalidOperationException("Restore target metadata differs from the approved database identity.");
+
+            // The archive extraction can take time. Recheck immediately before replacement
+            // so a target changed during extraction cannot silently be overwritten.
+            EnsureRekordboxClosed();
+            if (expectedTargetSha256 is not null &&
+                !string.Equals(ComputeFileSha256(targetPath), expectedTargetSha256, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Restore target changed while the backup image was being prepared.");
 
             File.Replace(tempPath, targetPath, destinationBackupFileName: null, ignoreMetadataErrors: false);
             if (!string.Equals(ComputeFileSha256(targetPath), inspection.Metadata.DatabaseSha256, StringComparison.OrdinalIgnoreCase))
@@ -244,7 +298,7 @@ public static class RekordboxRollingBackup
     private static string Canonical(string path) =>
         Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
-    private static string ComputeFileSha256(string path)
+    internal static string ComputeFileSha256(string path)
     {
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, FileOptions.SequentialScan);
         return ComputeSha256(stream);
