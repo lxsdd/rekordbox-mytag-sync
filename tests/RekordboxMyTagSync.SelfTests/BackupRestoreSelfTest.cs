@@ -19,7 +19,8 @@ internal static class BackupRestoreSelfTest
 
         var identityA = Identity(dbPath, "DB-ROLLING-1", "7.0.0");
         var mappingHash = Hash("mapping-v1");
-        var first = RekordboxRollingBackup.CreateOrReplace(backupRoot, identityA, mappingHash, "0.1.0-dev");
+        var first = RekordboxRollingBackup.CreateOrReplace(
+            backupRoot, identityA, mappingHash, "0.1.0-dev", expectedDatabaseSha256: Hash(bytesA));
         if (!File.Exists(first.PackagePath)) throw new InvalidOperationException("rolling backup package was not created");
         if (Directory.EnumerateFiles(backupRoot, "*.rbbackup").Count() != 1)
             throw new InvalidOperationException("rolling backup created more than one package for one database");
@@ -61,6 +62,26 @@ internal static class BackupRestoreSelfTest
         if (!string.Equals(Hash(File.ReadAllBytes(replaced.PackagePath)), packageBeforeRejectedBackup, StringComparison.Ordinal))
             throw new InvalidOperationException("rejected backup attempt damaged the previous rolling package");
         File.WriteAllBytes(dbPath, bytesC);
+
+        // Reject changed bytes even when file size and last-write timestamp are preserved.
+        File.SetLastWriteTimeUtc(dbPath, identityC.LastWriteUtc);
+        var modifiedBytes = bytesC.ToArray();
+        modifiedBytes[^1] ^= 0x01;
+        File.WriteAllBytes(dbPath, modifiedBytes);
+        File.SetLastWriteTimeUtc(dbPath, identityC.LastWriteUtc);
+        var sameMetadata = Identity(dbPath, identityC.DbId, identityC.DbVersion);
+        if (sameMetadata.FileLength != identityC.FileLength ||
+            sameMetadata.LastWriteUtc != identityC.LastWriteUtc)
+            throw new InvalidOperationException("synthetic fixture did not preserve database metadata");
+        AssertInvalid(
+            () => RekordboxRollingBackup.CreateOrReplace(
+                backupRoot, identityC, Hash("same-metadata"), "0.1.0-dev",
+                expectedDatabaseSha256: Hash(bytesC)),
+            "same-size/same-mtime modified database passed approved SHA-256 check");
+        if (!string.Equals(Hash(File.ReadAllBytes(replaced.PackagePath)), packageBeforeRejectedBackup, StringComparison.Ordinal))
+            throw new InvalidOperationException("hash-rejected backup replaced the previous rolling package");
+        File.WriteAllBytes(dbPath, bytesC);
+        File.SetLastWriteTimeUtc(dbPath, identityC.LastWriteUtc);
 
         // A damaged archive must fail inspection and restore before changing
         // the target database, even if its metadata still looks valid.
