@@ -32,7 +32,19 @@ internal static class BackupRestoreSelfTest
 
         File.WriteAllBytes(dbPath, bytesB);
         var identityB = Identity(dbPath, identityA.DbId, identityA.DbVersion);
-        _ = RekordboxRollingBackup.Restore(first.PackagePath, identityB);
+        // An approved target hash must detect same-size changes before restore.
+        var rejectedTargetHash = Hash(bytesB);
+        var tamperedTarget = bytesB.ToArray();
+        tamperedTarget[0] ^= 0x01;
+        File.WriteAllBytes(dbPath, tamperedTarget);
+        File.SetLastWriteTimeUtc(dbPath, identityB.LastWriteUtc);
+        AssertInvalid(
+            () => RekordboxRollingBackup.Restore(first.PackagePath, identityB, rejectedTargetHash),
+            "restore accepted target bytes that differ from the approved image");
+        if (!File.ReadAllBytes(dbPath).SequenceEqual(tamperedTarget))
+            throw new InvalidOperationException("rejected restore modified target bytes");
+        File.WriteAllBytes(dbPath, bytesB);
+        _ = RekordboxRollingBackup.Restore(first.PackagePath, identityB, rejectedTargetHash);
         if (!File.ReadAllBytes(dbPath).SequenceEqual(bytesA))
             throw new InvalidOperationException("restore did not atomically restore the validated database payload");
 
