@@ -44,6 +44,7 @@ internal static class BackupRestoreSelfTest
         if (!File.ReadAllBytes(dbPath).SequenceEqual(tamperedTarget))
             throw new InvalidOperationException("rejected restore modified target bytes");
         File.WriteAllBytes(dbPath, bytesB);
+        File.SetLastWriteTimeUtc(dbPath, identityB.LastWriteUtc);
         _ = RekordboxRollingBackup.Restore(first.PackagePath, identityB, rejectedTargetHash);
         if (!File.ReadAllBytes(dbPath).SequenceEqual(bytesA))
             throw new InvalidOperationException("restore did not atomically restore the validated database payload");
