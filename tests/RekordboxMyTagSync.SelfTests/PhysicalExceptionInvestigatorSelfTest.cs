@@ -95,7 +95,7 @@ public static class PhysicalExceptionInvestigatorSelfTest
         {
             var filename = $"Track{i:D5}.mp3";
             bridge.Add(new BridgeTrack(@"Z:\Music\Library\" + filename,
-                i < cueOnlyMainFiles ? 1 : 0, empty, empty));
+                i < cueOnlyMainFiles ? 1u : 0u, empty, empty));
             target.Add(new RekordboxTrackSnapshot("N" + i,
                 @"R:\Library\" + filename, []));
         }
