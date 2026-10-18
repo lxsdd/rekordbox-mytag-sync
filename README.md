@@ -15,3 +15,5 @@ rekordbox 6/7 installations and active library paths are discovered automaticall
 GitHub Actions is the build authority. FAST CI qualifies normal commits using locked dependencies. FULL candidate qualification performs deterministic self-tests, public-repository hygiene/history checks, dependency/vulnerability/license audits, live compatibility-source availability checks, WPF UI smoke, repeated deterministic publish/package verification, and produces one immutable self-contained Windows candidate with Source SHA and Artifact SHA-256.
 
 Release promotion reuses and verifies that exact FULL artifact without rebuilding it. No final tag/release is permitted before the exact candidate has passed the required live rekordbox/RX3 acceptance.
+
+Preview safety: ambiguous MyTag group/value definitions produce a fail-closed Conflict rather than mutating a collection during enumeration. Managed provenance lookups use a ContentID index for large libraries; unmatched external/manual MyTag assignments remain untouched. These changes require exact-HEAD FAST and FULL qualification before promotion.
