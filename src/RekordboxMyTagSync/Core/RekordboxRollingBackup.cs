@@ -206,6 +206,10 @@ public static class RekordboxRollingBackup
         var secondHash = ComputeFileSha256(databasePath);
         if (!string.Equals(firstHash, secondHash, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Restore database changed during SQLCipher verification.");
+        var verifiedFile = new FileInfo(databasePath);
+        if (verifiedFile.Length != snapshot.Identity.FileLength ||
+            verifiedFile.LastWriteTimeUtc != snapshot.Identity.LastWriteUtc)
+            throw new InvalidOperationException("Restore database metadata changed during SQLCipher verification.");
         var live = snapshot.Identity;
         if (!string.Equals(live.DbId, approvedIdentity.DbId, StringComparison.Ordinal) ||
             !string.Equals(live.DbVersion, approvedIdentity.DbVersion, StringComparison.Ordinal) ||
