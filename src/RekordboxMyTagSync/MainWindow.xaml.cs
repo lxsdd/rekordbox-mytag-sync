@@ -54,20 +54,28 @@ public partial class MainWindow : Window
         // shared with DJ Library. Scrollbar visibility alone does not route
         // two-finger horizontal gestures in WPF DataGrid controls.
         HorizontalScrollSupport.Enable(this);
-        foreach (var grid in new[]
+        var persistentGrids = new[]
         {
             SourceCandidatesGrid, PathAliasGrid, TargetCandidatesGrid,
             PathProposalsGrid, MappingGrid, PreviewGrid, PreviewInvestigationGrid,
             PhysicalExceptionsGrid
-        })
+        }.ToDictionary(grid => grid.Name, grid => grid, StringComparer.Ordinal);
+        foreach (var grid in persistentGrids.Values)
             HorizontalScrollSupport.Enable(grid);
         Loaded += async (_, _) => await LoadSettingsAsync();
-        SourceInitialized += (_, _) => WindowPlacementStore.Restore(this);
+        SourceInitialized += (_, _) =>
+        {
+            WindowPlacementStore.Restore(this);
+            GridColumnWidthStore.Restore(persistentGrids);
+        };
         Closing += (_, _) =>
         {
             _identityCancellation?.Cancel();
             if (!Equals(Tag, "ui-smoke"))
+            {
                 WindowPlacementStore.Save(this);
+                GridColumnWidthStore.Save(persistentGrids);
+            }
         };
 
         SaveSettingsButton.Click += (_, _) => SaveSettings();
