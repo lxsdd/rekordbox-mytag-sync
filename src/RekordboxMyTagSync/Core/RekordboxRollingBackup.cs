@@ -199,8 +199,9 @@ public static class RekordboxRollingBackup
     {
         ArgumentNullException.ThrowIfNull(approvedIdentity);
         ArgumentNullException.ThrowIfNull(policy);
-        if (!policy.RequireRekordboxClosed)
-            throw new InvalidOperationException("Verified restore requires the closed-rekordbox read policy.");
+        // The restore itself enforces the closed-process gate independently of
+        // read policy; synthetic fixtures may deliberately use an unlocked read policy.
+        EnsureRekordboxClosed();
         var firstHash = ComputeFileSha256(databasePath);
         var snapshot = RekordboxSqlCipherDatabase.ReadSnapshot(databasePath, key, policy);
         var secondHash = ComputeFileSha256(databasePath);
