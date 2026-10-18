@@ -6,6 +6,7 @@ public static class PhysicalExceptionInvestigatorSelfTest
 {
     public static void Run(string temp)
     {
+        QualifyLargeLibraryWithVirtualCueOnlyFiles();
         var empty = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
         var bridge = new[]
         {
@@ -81,5 +82,55 @@ public static class PhysicalExceptionInvestigatorSelfTest
         catch (InvalidDataException) { wrongId = true; }
         if (!wrongId)
             throw new InvalidOperationException("Stale/nonexistent rekordbox ContentID was accepted.");
+    }
+
+    private static void QualifyLargeLibraryWithVirtualCueOnlyFiles()
+    {
+        const int normalTracks = 52776;
+        const int cueOnlyMainFiles = 670;
+        var empty = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+        var bridge = new List<BridgeTrack>(normalTracks + 3);
+        var target = new List<RekordboxTrackSnapshot>(normalTracks + 8);
+        for (var i = 0; i < normalTracks; i++)
+        {
+            var filename = $"Track{i:D5}.mp3";
+            bridge.Add(new BridgeTrack(@"Z:\Music\Library\" + filename,
+                i < cueOnlyMainFiles ? 1u : 0u, empty, empty));
+            target.Add(new RekordboxTrackSnapshot("N" + i,
+                @"R:\Library\" + filename, []));
+        }
+
+        for (var group = 1; group <= 3; group++)
+        {
+            var name = $"Duplicate{group}.mp3";
+            bridge.Add(new BridgeTrack(@"Z:\Music\Library\" + name, 0, empty, empty));
+            target.Add(new RekordboxTrackSnapshot($"D{group}a", @"R:\Library\" + name, []));
+            target.Add(new RekordboxTrackSnapshot($"D{group}b", @"R:\Library\" + name, []));
+        }
+        target.Add(new RekordboxTrackSnapshot("M1", @"R:\Library\Absent1.mp3", []));
+        target.Add(new RekordboxTrackSnapshot("M2", @"R:\Library\Absent2.mp3", []));
+
+        if (target.Count != 52784)
+            throw new InvalidOperationException("Large library test has an incorrect rekordbox track count");
+
+        var cases = PhysicalExceptionInvestigator.Identify(
+            bridge, target, new PathAlias(@"Z:\Music", @"R:\"));
+        if (cases.Count != 8 ||
+            cases.Count(x => x.Reason == "SAME_REKORDBOX_PATH") != 6 ||
+            cases.Count(x => x.Reason == "MISSING_FROM_BRIDGE_EXPORT") != 2 ||
+            cases.Any(x => x.ContentId.StartsWith("N", StringComparison.Ordinal)) ||
+            cases.Where(x => x.Reason == "SAME_REKORDBOX_PATH")
+                .GroupBy(x => x.TargetPath, StringComparer.OrdinalIgnoreCase)
+                .Any(g => g.Count() != 2))
+            throw new InvalidOperationException(
+                "Large library exception investigation misclassified duplicates, absent bridge paths, or 670 cue-only main files");
+
+        // The 670 cue-only foobar records reference real file-level rekordbox
+        // rows, not imported virtual cue ContentIDs or absent audio files.
+        var cueOnlyTarget = target.Take(cueOnlyMainFiles).ToArray();
+        var cueOnlySource = bridge.Take(cueOnlyMainFiles).ToArray();
+        if (PhysicalExceptionInvestigator.Identify(
+                cueOnlySource, cueOnlyTarget, new PathAlias(@"Z:\Music", @"R:\")).Count != 0)
+            throw new InvalidOperationException("Virtual cue-only bridge paths were treated as missing rekordbox audio files");
     }
 }

@@ -52,18 +52,33 @@ public static class PhysicalExceptionInvestigator
                 WindowsPathMatcher.Normalize(t.Path, new[] { root }),
                 StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.ToArray(), StringComparer.OrdinalIgnoreCase);
-        var byFilename = bridge
-            .GroupBy(t => Path.GetFileName(WindowsPathMatcher.Normalize(t.Path)),
-                StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.Select(t => WindowsPathMatcher.Normalize(t.Path))
-                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
-                StringComparer.OrdinalIgnoreCase);
-        var result = new List<PhysicalExceptionRow>();
-        foreach (var (path, entries) in byTarget)
+        // Do not build a filename index for the entire 50k+ bridge export:
+        // only the tiny set of exceptional target paths needs filename hints.
+        // The path index above still includes virtual-only cue siblings so a
+        // rekordbox main file is not reported missing from the bridge.
+        var exceptional = byTarget
+            .Where(p => p.Value.Length > 1 || !byBridge.ContainsKey(p.Key))
+            .ToArray();
+        if (exceptional.Length == 0)
+            return Array.Empty<PhysicalExceptionRow>();
+        var namesToInspect = exceptional
+            .Where(p => !byBridge.ContainsKey(p.Key))
+            .Select(p => Path.GetFileName(p.Key))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var byFilename = namesToInspect.Count == 0
+            ? new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+            : bridge
+                .Where(t => namesToInspect.Contains(
+                    Path.GetFileName(WindowsPathMatcher.Normalize(t.Path))))
+                .GroupBy(t => Path.GetFileName(WindowsPathMatcher.Normalize(t.Path)),
+                    StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.Select(t => WindowsPathMatcher.Normalize(t.Path))
+                    .Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+                    StringComparer.OrdinalIgnoreCase);
+        var result = new List<PhysicalExceptionRow>(exceptional.Sum(p => p.Value.Length));
+        foreach (var (path, entries) in exceptional)
         {
             var duplicate = entries.Length > 1;
-            var missing = !byBridge.ContainsKey(path);
-            if (!duplicate && !missing) continue;
 
             var otherIds = duplicate
                 ? string.Join(", ", entries.Select(t => t.ContentId))
