@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Controls;
 
 namespace RekordboxMyTagSync.Core;
 
@@ -90,4 +91,98 @@ public static class WindowPlacementStore
             if (File.Exists(temporary)) File.Delete(temporary);
         }
     }
+}
+
+ 
+/// <summary>
+/// Per-user, presentation-only WPF DataGrid column widths. Stable grid names
+/// and column counts protect against accidentally replaying a stale layout
+/// after a future UI schema change. Never writes any rekordbox/foobar data.
+/// </summary>
+public static class GridColumnWidthStore
+{
+    private const double MinColumnWidth = 32;
+    private const double MaxColumnWidth = 4096;
+
+    public static string DefaultPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "RekordboxMyTagSync", "column-widths.json");
+
+    public static void Restore(
+        IReadOnlyDictionary<string, DataGrid> grids, string? path = null)
+    {
+        ArgumentNullException.ThrowIfNull(grids);
+        var saved = Read(path ?? DefaultPath);
+        foreach (var (name, grid) in grids)
+        {
+            if (!saved.TryGetValue(name, out var widths) || widths is null ||
+                widths.Length != grid.Columns.Count ||
+                widths.Any(width => !Valid(width)))
+                continue;
+
+            for (var i = 0; i < widths.Length; i++)
+                grid.Columns[i].Width = new DataGridLength(
+                    widths[i], DataGridLengthUnitType.Pixel);
+        }
+    }
+
+    public static void Save(
+        IReadOnlyDictionary<string, DataGrid> grids, string? path = null)
+    {
+        ArgumentNullException.ThrowIfNull(grids);
+        path ??= DefaultPath;
+        var widthsByGrid = Read(path);
+        foreach (var (name, grid) in grids)
+        {
+            if (grid.Columns.Count == 0) continue;
+            var widths = grid.Columns.Select(column =>
+                column.Width.IsAbsolute ? column.Width.Value : column.ActualWidth)
+                .ToArray();
+            // An unvisited tab may not have been measured. Preserve its older
+            // persisted widths instead of overwriting them with zeroes.
+            if (widths.Any(width => !Valid(width))) continue;
+            widthsByGrid[name] = widths;
+        }
+
+        var json = JsonSerializer.Serialize(widthsByGrid);
+        if (File.Exists(path) &&
+            string.Equals(File.ReadAllText(path), json, StringComparison.Ordinal))
+            return;
+
+        var parent = Path.GetDirectoryName(Path.GetFullPath(path))
+            ?? throw new InvalidDataException("Column layout file has no directory.");
+        Directory.CreateDirectory(parent);
+        var temporary = path + ".tmp-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            File.WriteAllText(temporary, json);
+            if (File.Exists(path)) File.Replace(temporary, path, null);
+            else File.Move(temporary, path);
+        }
+        finally
+        {
+            if (File.Exists(temporary)) File.Delete(temporary);
+        }
+    }
+
+    private static Dictionary<string, double[]> Read(string path)
+    {
+        var empty = new Dictionary<string, double[]>(StringComparer.Ordinal);
+        try
+        {
+            if (!File.Exists(path) || new FileInfo(path).Length > 128 * 1024)
+                return empty;
+            return JsonSerializer.Deserialize<Dictionary<string, double[]>>(
+                File.ReadAllText(path)) ?? empty;
+        }
+        catch (Exception ex) when (
+            ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            // Optional presentation state must never prevent application use.
+            return empty;
+        }
+    }
+
+    private static bool Valid(double width) =>
+        double.IsFinite(width) && width >= MinColumnWidth && width <= MaxColumnWidth;
 }
