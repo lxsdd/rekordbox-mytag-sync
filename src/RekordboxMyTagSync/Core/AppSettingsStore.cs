@@ -13,11 +13,20 @@ public sealed record AppSettings(
     IReadOnlyList<string>? KnownBridgeDirectories = null,
     IReadOnlyList<string>? SupportedDbVersions = null) // Legacy schema-v1 input; ignored for runtime qualification.
 {
+    // These are read-only starting suggestions, not a write authorization.
+    // A persisted, explicitly empty mapping list remains empty.
+    public static IReadOnlyList<MappingRule> InitialMappings { get; } =
+        Array.AsReadOnly(new[]
+        {
+            new MappingRule("DATE", "Year", TransformKind.StrictYearFromDate),
+            new MappingRule("GENRE", "Genre", TransformKind.Direct)
+        });
+
     public IReadOnlyList<PathAlias> EffectivePathAliases =>
         PathAliases ?? Array.Empty<PathAlias>();
 
     public IReadOnlyList<MappingRule> EffectiveMappings =>
-        Mappings ?? Array.Empty<MappingRule>();
+        Mappings ?? InitialMappings;
 
     public IReadOnlyList<string> EffectiveKnownBridgeDirectories =>
         KnownBridgeDirectories ?? Array.Empty<string>();
@@ -157,7 +166,7 @@ public static class AppSettingsStore
         if (aliases.Length != 0)
             _ = WindowsPathMatcher.Normalize(aliases[0].SourceRoot, aliases);
 
-        var mappings = (settings.Mappings ?? Array.Empty<MappingRule>())
+        var mappings = (settings.Mappings ?? AppSettings.InitialMappings)
             .Select(ValidateMapping)
             .ToArray();
 
