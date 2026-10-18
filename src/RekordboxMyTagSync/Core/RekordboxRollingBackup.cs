@@ -190,15 +190,24 @@ public static class RekordboxRollingBackup
 
     public static RekordboxBackupInspection Restore(
         string packagePath,
-        RekordboxDatabaseIdentity currentIdentity)
+        RekordboxDatabaseIdentity currentIdentity,
+        string? expectedTargetSha256 = null)
     {
         ArgumentNullException.ThrowIfNull(currentIdentity);
         ValidateIdentity(currentIdentity);
+        if (expectedTargetSha256 is not null)
+            ValidateSha256(expectedTargetSha256, nameof(expectedTargetSha256));
         EnsureRekordboxClosed();
         var inspection = Inspect(packagePath, currentIdentity);
         var targetPath = Canonical(currentIdentity.CanonicalPath);
         if (!File.Exists(targetPath))
             throw new FileNotFoundException("Restore target master.db does not exist; restore is blocked fail-closed.", targetPath);
+
+        // Bind a caller-approved target image to the actual bytes before restoring.
+        // A matching path, DBID label or file timestamp is not sufficient.
+        if (expectedTargetSha256 is not null &&
+            !string.Equals(ComputeFileSha256(targetPath), expectedTargetSha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Restore target bytes differ from the approved database image.");
 
         var targetDirectory = Path.GetDirectoryName(targetPath)!;
         var tempPath = Path.Combine(targetDirectory, Path.GetFileName(targetPath) + ".restore-" + Guid.NewGuid().ToString("N") + ".tmp");
