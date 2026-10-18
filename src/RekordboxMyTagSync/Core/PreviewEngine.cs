@@ -133,6 +133,9 @@ public static class PreviewEngine
         }
 
         var bridgeByPath = normalizedBridge
+            // Virtual CUE subsongs are diagnostic-only: they must not make an
+            // otherwise unique physical (subsong 0) source path ambiguous.
+            .Where(x => x.Track.Subsong == 0)
             .GroupBy(x => x.Path, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.ToArray(), StringComparer.OrdinalIgnoreCase);
         var ambiguousBridgePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
