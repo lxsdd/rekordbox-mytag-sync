@@ -17,6 +17,20 @@ internal static class BackupRestoreSelfTest
         var bytesC = Encoding.UTF8.GetBytes("synthetic-sqlcipher-fixture-C-new-prewrite-state");
         File.WriteAllBytes(dbPath, bytesA);
 
+        // The production restore entry point must reject non-encrypted fixtures
+        // and must never overwrite the target on SQLCipher qualification failure.
+        var fixtureBefore = Hash(File.ReadAllBytes(dbPath));
+        AssertInvalid(
+            () => RekordboxRollingBackup.RestoreVerified(
+                Path.Combine(backupRoot, "nonexistent.rbbackup"),
+                dbPath,
+                "synthetic-test-key",
+                RekordboxDatabaseReadPolicy.SchemaQualifiedRuntime(),
+                Identity(dbPath, "DB-ROLLING-1", "7.0.0")),
+            "verified restore accepted a plaintext fixture as SQLCipher");
+        if (!string.Equals(Hash(File.ReadAllBytes(dbPath)), fixtureBefore, StringComparison.Ordinal))
+            throw new InvalidOperationException("failed SQLCipher restore verification changed target bytes");
+
         var identityA = Identity(dbPath, "DB-ROLLING-1", "7.0.0");
         var mappingHash = Hash("mapping-v1");
         var first = RekordboxRollingBackup.CreateOrReplace(

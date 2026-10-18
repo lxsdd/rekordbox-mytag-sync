@@ -201,12 +201,8 @@ internal static class RekordboxMutationExecutor
         RekordboxDatabaseReadPolicy policy,
         RekordboxDatabaseIdentity approvedIdentity)
     {
-        var (current, currentSha256) = ReadVerifiedSnapshot(databasePath, key, policy);
-        if (!SameDatabase(current.Identity, approvedIdentity))
-            throw new InvalidOperationException(
-                "Automatic rollback refused: current SQLCipher library identity differs from the approved database.");
-        _ = RekordboxRollingBackup.Restore(
-            packagePath, current.Identity, expectedTargetSha256: currentSha256);
+        _ = RekordboxRollingBackup.RestoreVerified(
+            packagePath, databasePath, key, policy, approvedIdentity);
     }
 
     private static (RekordboxDatabaseSnapshot Snapshot, string DatabaseSha256) ReadVerifiedSnapshot(

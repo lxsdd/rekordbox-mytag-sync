@@ -188,6 +188,38 @@ public static class RekordboxRollingBackup
         return new RekordboxBackupInspection(canonicalPackagePath, metadata);
     }
 
+    // Production callers must use this overload: a freshly decrypted SQLCipher
+    // snapshot and a stable file hash are required before any restore.
+    public static RekordboxBackupInspection RestoreVerified(
+        string packagePath,
+        string databasePath,
+        string key,
+        RekordboxDatabaseReadPolicy policy,
+        RekordboxDatabaseIdentity approvedIdentity)
+    {
+        ArgumentNullException.ThrowIfNull(approvedIdentity);
+        ArgumentNullException.ThrowIfNull(policy);
+        // The restore itself enforces the closed-process gate independently of
+        // read policy; synthetic fixtures may deliberately use an unlocked read policy.
+        EnsureRekordboxClosed();
+        var firstHash = ComputeFileSha256(databasePath);
+        var snapshot = RekordboxSqlCipherDatabase.ReadSnapshot(databasePath, key, policy);
+        var secondHash = ComputeFileSha256(databasePath);
+        if (!string.Equals(firstHash, secondHash, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Restore database changed during SQLCipher verification.");
+        var verifiedFile = new FileInfo(databasePath);
+        if (verifiedFile.Length != snapshot.Identity.FileLength ||
+            verifiedFile.LastWriteTimeUtc != snapshot.Identity.LastWriteUtc)
+            throw new InvalidOperationException("Restore database metadata changed during SQLCipher verification.");
+        var live = snapshot.Identity;
+        if (!string.Equals(live.DbId, approvedIdentity.DbId, StringComparison.Ordinal) ||
+            !string.Equals(live.DbVersion, approvedIdentity.DbVersion, StringComparison.Ordinal) ||
+            !string.Equals(live.SqliteCipherVersion, approvedIdentity.SqliteCipherVersion, StringComparison.Ordinal) ||
+            !string.Equals(Canonical(live.CanonicalPath), Canonical(approvedIdentity.CanonicalPath), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Restore live SQLCipher identity differs from approved database.");
+        return Restore(packagePath, live, secondHash);
+    }
+
     public static RekordboxBackupInspection Restore(
         string packagePath,
         RekordboxDatabaseIdentity currentIdentity,
