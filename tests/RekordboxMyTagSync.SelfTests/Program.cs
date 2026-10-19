@@ -117,6 +117,30 @@ AssertSequence("ignore empty before prefix", MappingEngine.Apply(prefixed, new[]
 var joined = new MappingRule("STYLE", "Style", PerValue: false);
 AssertSequence("joined multivalue", MappingEngine.Apply(joined, new[] { "Deep", "House" }), "Deep; House");
 
+// Source-value filters are evaluated per original value, before join/replace/prefix.
+// Filtering to zero values never synthesizes an empty tag, even with IgnoreEmpty=false.
+var includeFilter = new MappingRule("GENRE", "Genre", FilterPattern: @"^(Deep|Tech)");
+AssertSequence("filter includes only matching values",
+    MappingEngine.Apply(includeFilter, new[] { "Deep House", "Trance", "Techno" }),
+    "Deep House", "Techno");
+AssertSequence("filter rejects all without creating an empty MyTag",
+    MappingEngine.Apply(includeFilter with { IgnoreEmpty = false }, new[] { "Trance" }));
+AssertSequence("filter excludes matching values",
+    MappingEngine.Apply(includeFilter with { FilterExclude = true },
+        new[] { "Deep House", "Trance", "Techno" }), "Trance");
+AssertSequence("filter before multivalue join",
+    MappingEngine.Apply(includeFilter with { PerValue = false },
+        new[] { "Deep House", "Trance", "Techno" }), "Deep House; Techno");
+var filteredFingerprint = PreviewEngine.Create(new PreviewRequest(
+    "db:source-filter", Array.Empty<BridgeTrack>(), new[] { includeFilter },
+    Array.Empty<RekordboxTrackSnapshot>(), Array.Empty<ManagedAssignment>())).FingerprintSha256;
+var excludedFingerprint = PreviewEngine.Create(new PreviewRequest(
+    "db:source-filter", Array.Empty<BridgeTrack>(),
+    new[] { includeFilter with { FilterExclude = true } },
+    Array.Empty<RekordboxTrackSnapshot>(), Array.Empty<ManagedAssignment>())).FingerprintSha256;
+if (filteredFingerprint == excludedFingerprint)
+    throw new InvalidOperationException("Changing source-value filter failed to invalidate preview fingerprint.");
+
 var temp = Path.Combine(Path.GetTempPath(), "rekordbox-mytag-sync-selftest-" + Guid.NewGuid().ToString("N"));
 try
 {

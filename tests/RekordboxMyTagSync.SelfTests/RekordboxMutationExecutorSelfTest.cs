@@ -13,6 +13,7 @@ public static class RekordboxMutationExecutorSelfTest
         QualifyRestoreAfterPostCommitFailure(temp);
         QualifyVerifiedRestoreRoundTrip(temp);
         QualifyExternalWholeSetEditorProvenanceDrift(temp);
+        QualifyFilteredMultivalueEncryptedApply(temp);
     }
 
     // Model a second SQLCipher client that replaces a track's whole MyTag set:
@@ -112,6 +113,179 @@ public static class RekordboxMutationExecutorSelfTest
         AssertHas(retained, "Genre", "House");
         AssertHas(retained, "Genre", "Techno");
         AssertMissing(retained, "Mood", "Euphoric");
+    }
+
+
+    // Complete synthetic SQLCipher Preview -> Apply -> rolling backup ->
+    // filter change -> stale-preview rejection -> Apply -> idempotent re-Apply.
+    private static void QualifyFilteredMultivalueEncryptedApply(string temp)
+    {
+        var root = Path.Combine(temp, "FilteredMultivalueExecutor");
+        var databasePath = Path.Combine(root, "master.db");
+        var trackOne = Path.Combine(temp, "FilteredMusic", "One.mp3");
+        var trackTwo = Path.Combine(temp, "FilteredMusic", "Two.mp3");
+        EncryptedMutationFixture.Create(databasePath, trackOne, trackTwo);
+        var policy = Policy();
+        var provenancePath = Path.Combine(root, "state", "provenance.json");
+        var backupRoot = Path.Combine(root, "backup");
+        var sources = new[]
+        {
+            BridgeWithGenres(trackOne, "House", "Techno"),
+            BridgeWithGenres(trackTwo, "Techno", "House")
+        };
+        var include = new[] { new MappingRule(
+            "GENRE", "Genre", FilterPattern: "^House$") };
+        var exclude = new[] { include[0] with { FilterExclude = true } };
+        var initial = RekordboxSqlCipherDatabase.ReadSnapshot(
+            databasePath, EncryptedMutationFixture.Key, policy);
+        var approved = PreviewEngine.Create(new PreviewRequest(
+            initial.Identity.PreviewIdentity, sources, include, initial.Tracks,
+            Array.Empty<ManagedAssignment>(),
+            MyTagDefinitions: initial.MyTagDefinitions));
+        AssertPreview(approved, additions: 1, removals: 0,
+            alreadyCorrect: 1, conflicts: 0, unmatched: 0);
+
+        var initialHash = RekordboxRollingBackup.ComputeFileSha256(databasePath);
+        var first = RekordboxMutationExecutor.Apply(
+            databasePath, EncryptedMutationFixture.Key, policy, approved,
+            sources, include, provenancePath, backupRoot,
+            Sha256("filter-include-House"), "0.1.0-dev");
+        if (first.ChangeCount != 1 || first.BackupPackagePath is null ||
+            !File.Exists(first.BackupPackagePath))
+            throw new InvalidOperationException(
+                "Filtered initial Apply must add one assignment and create a rolling backup.");
+        var afterFirst = RekordboxSqlCipherDatabase.ReadSnapshot(
+            databasePath, EncryptedMutationFixture.Key, policy);
+        var a1 = afterFirst.Tracks.Single(x => x.ContentId == "C1");
+        var b1 = afterFirst.Tracks.Single(x => x.ContentId == "C2");
+        AssertHas(a1, "Genre", "House");
+        AssertHas(a1, "Mood", "Euphoric");
+        AssertMissing(a1, "Genre", "Techno");
+        AssertHas(b1, "Genre", "Techno");
+        AssertHas(b1, "Genre", "House");
+        var ownedFirst = ProvenanceStore.Load(provenancePath, afterFirst.Identity);
+        if (ownedFirst.Assignments.Count != 1 ||
+            ownedFirst.Assignments[0].ContentId != "C2" ||
+            ownedFirst.Assignments[0].MyTagId != "T1")
+            throw new InvalidOperationException(
+                "Filter Apply adopted a pre-existing manual MyTag.");
+        var firstBackup = RekordboxRollingBackup.Inspect(
+            first.BackupPackagePath, initial.Identity);
+        if (!string.Equals(firstBackup.Metadata.DatabaseSha256, initialHash,
+                StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "First backup is not bound to the original encrypted database image.");
+
+        // Changing only filter inclusion must refuse old approval BEFORE
+        // touching master.db, provenance or the existing rolling backup.
+        var oldApproval = PreviewEngine.Create(new PreviewRequest(
+            afterFirst.Identity.PreviewIdentity, sources, include,
+            afterFirst.Tracks, ProvenanceStore.ToManagedAssignments(ownedFirst, afterFirst),
+            MyTagDefinitions: afterFirst.MyTagDefinitions));
+        AssertPreview(oldApproval, additions: 0, removals: 0,
+            alreadyCorrect: 2, conflicts: 0, unmatched: 0);
+        var dbHash = RekordboxRollingBackup.ComputeFileSha256(databasePath);
+        var provenanceHash = RekordboxRollingBackup.ComputeFileSha256(provenancePath);
+        var backupHash = RekordboxRollingBackup.ComputeFileSha256(first.BackupPackagePath);
+        var rejected = false;
+        try
+        {
+            _ = RekordboxMutationExecutor.Apply(
+                databasePath, EncryptedMutationFixture.Key, policy,
+                oldApproval, sources, exclude, provenancePath, backupRoot,
+                Sha256("filter-exclude-House"), "0.1.0-dev");
+        }
+        catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException)
+        {
+            rejected = true;
+        }
+        if (!rejected ||
+            !string.Equals(dbHash, RekordboxRollingBackup.ComputeFileSha256(databasePath),
+                StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(provenanceHash,
+                RekordboxRollingBackup.ComputeFileSha256(provenancePath),
+                StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(backupHash,
+                RekordboxRollingBackup.ComputeFileSha256(first.BackupPackagePath),
+                StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "Stale filter approval mutated DB, provenance or rolling backup.");
+
+        var updatedApproval = PreviewEngine.Create(new PreviewRequest(
+            afterFirst.Identity.PreviewIdentity, sources, exclude,
+            afterFirst.Tracks, ProvenanceStore.ToManagedAssignments(ownedFirst, afterFirst),
+            MyTagDefinitions: afterFirst.MyTagDefinitions));
+        if (updatedApproval.FingerprintSha256 == oldApproval.FingerprintSha256)
+            throw new InvalidOperationException(
+                "Filter toggle did not invalidate the Preview fingerprint.");
+        AssertPreview(updatedApproval, additions: 1, removals: 1,
+            alreadyCorrect: 1, conflicts: 0, unmatched: 0);
+        var second = RekordboxMutationExecutor.Apply(
+            databasePath, EncryptedMutationFixture.Key, policy,
+            updatedApproval, sources, exclude, provenancePath, backupRoot,
+            Sha256("filter-exclude-House"), "0.1.0-dev");
+        if (second.ChangeCount != 2 ||
+            second.BackupPackagePath != first.BackupPackagePath)
+            throw new InvalidOperationException(
+                "Filter change failed to make two tool-owned changes with one rolling backup.");
+        var secondBackup = RekordboxRollingBackup.Inspect(
+            second.BackupPackagePath!, afterFirst.Identity);
+        if (!string.Equals(secondBackup.Metadata.DatabaseSha256, dbHash,
+                StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "Second rolling backup does not match the previous encrypted image.");
+        var afterSecond = RekordboxSqlCipherDatabase.ReadSnapshot(
+            databasePath, EncryptedMutationFixture.Key, policy);
+        var a2 = afterSecond.Tracks.Single(x => x.ContentId == "C1");
+        var b2 = afterSecond.Tracks.Single(x => x.ContentId == "C2");
+        AssertHas(a2, "Genre", "House"); // original manual tag
+        AssertHas(a2, "Mood", "Euphoric"); // unrelated original manual tag
+        AssertHas(a2, "Genre", "Techno"); // newly tool-owned
+        AssertHas(b2, "Genre", "Techno"); // original manual tag
+        AssertMissing(b2, "Genre", "House"); // only old tool-owned link
+        var ownedSecond = ProvenanceStore.Load(provenancePath, afterSecond.Identity);
+        if (ownedSecond.Assignments.Count != 1 ||
+            ownedSecond.Assignments[0].ContentId != "C1" ||
+            ownedSecond.Assignments[0].MyTagId != "T2" ||
+            ownedSecond.Assignments[0].Value != "Techno")
+            throw new InvalidOperationException(
+                "Changed filter did not retain minimal tool-owned provenance.");
+
+        var repeatPreview = PreviewEngine.Create(new PreviewRequest(
+            afterSecond.Identity.PreviewIdentity, sources, exclude,
+            afterSecond.Tracks,
+            ProvenanceStore.ToManagedAssignments(ownedSecond, afterSecond),
+            MyTagDefinitions: afterSecond.MyTagDefinitions));
+        AssertPreview(repeatPreview, additions: 0, removals: 0,
+            alreadyCorrect: 2, conflicts: 0, unmatched: 0);
+        var dbFinal = RekordboxRollingBackup.ComputeFileSha256(databasePath);
+        var provenanceFinal = RekordboxRollingBackup.ComputeFileSha256(provenancePath);
+        var backupFinal = RekordboxRollingBackup.ComputeFileSha256(second.BackupPackagePath!);
+        var repeat = RekordboxMutationExecutor.Apply(
+            databasePath, EncryptedMutationFixture.Key, policy,
+            repeatPreview, sources, exclude, provenancePath, backupRoot,
+            Sha256("filter-exclude-House"), "0.1.0-dev");
+        if (repeat.ChangeCount != 0 || repeat.BackupPackagePath is not null ||
+            !string.Equals(dbFinal, RekordboxRollingBackup.ComputeFileSha256(databasePath),
+                StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(provenanceFinal,
+                RekordboxRollingBackup.ComputeFileSha256(provenancePath),
+                StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(backupFinal,
+                RekordboxRollingBackup.ComputeFileSha256(second.BackupPackagePath!),
+                StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "Idempotent Apply altered encrypted DB, provenance or rolling backup.");
+
+        var malformed = PreviewEngine.Create(new PreviewRequest(
+            afterSecond.Identity.PreviewIdentity, sources,
+            new[] { exclude[0] with { FilterPattern = "(" } },
+            afterSecond.Tracks,
+            ProvenanceStore.ToManagedAssignments(ownedSecond, afterSecond),
+            MyTagDefinitions: afterSecond.MyTagDefinitions));
+        if (malformed.IsValid || malformed.Counts.Conflicts != 2)
+            throw new InvalidOperationException(
+                "Malformed regex failed to produce conflicts for both physical ContentIDs.");
     }
 
     private static void QualifyVerifiedRestoreRoundTrip(string temp)
@@ -640,6 +814,16 @@ public static class RekordboxMutationExecutorSelfTest
         new(
             new HashSet<string>(StringComparer.Ordinal) { EncryptedMutationFixture.DbVersion },
             RequireRekordboxClosed: false);
+
+    private static BridgeTrack BridgeWithGenres(string path, params string[] genres) =>
+        new(
+            path,
+            0,
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["GENRE"] = genres
+            },
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase));
 
     private static BridgeTrack Bridge(string path, string genre) =>
         new(

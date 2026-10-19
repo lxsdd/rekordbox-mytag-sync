@@ -106,6 +106,95 @@ public partial class App : Application
                         $"Production table '{name}' disables horizontal scrolling.");
             }
 
+            // The source-value regex filter must be an editable production
+            // mapping column, not just a core API option hidden from users.
+            var filterColumn = window.MappingGrid.Columns
+                .OfType<System.Windows.Controls.DataGridTextColumn>()
+                .FirstOrDefault(c => string.Equals(c.Header?.ToString(),
+                    "Source filter (regex)", StringComparison.Ordinal));
+            if (filterColumn?.Binding is not System.Windows.Data.Binding filterBinding ||
+                filterBinding.Path?.Path != "FilterPattern")
+                throw new InvalidOperationException(
+                    "Production WPF mapping grid is missing the source filter editor.");
+            var excludeColumn = window.MappingGrid.Columns
+                .OfType<System.Windows.Controls.DataGridCheckBoxColumn>()
+                .FirstOrDefault(c => string.Equals(c.Header?.ToString(),
+                    "Exclude matches", StringComparison.Ordinal));
+            if (excludeColumn?.Binding is not System.Windows.Data.Binding excludeBinding ||
+                excludeBinding.Path?.Path != "FilterExclude")
+                throw new InvalidOperationException(
+                    "Production WPF mapping grid is missing the source filter exclusion toggle.");
+
+
+            // Exercise the ACTUAL production MappingRow and WPF binding paths:
+            // edit both controls, persist/reload settings, verify preview drift.
+            var row = new MainWindow.MappingRow
+            {
+                SourceField = "GENRE",
+                TargetMyTag = "Genre",
+                FilterPattern = "^House$",
+                FilterExclude = false
+            };
+            var originalRule = row.ToRule();
+            var regexEditor = new System.Windows.Controls.TextBox { DataContext = row };
+            System.Windows.Data.BindingOperations.SetBinding(
+                regexEditor, System.Windows.Controls.TextBox.TextProperty,
+                new System.Windows.Data.Binding(filterBinding.Path.Path)
+                {
+                    Mode = System.Windows.Data.BindingMode.TwoWay,
+                    UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.Explicit
+                });
+            regexEditor.Text = "^Techno$";
+            regexEditor.GetBindingExpression(
+                System.Windows.Controls.TextBox.TextProperty)!.UpdateSource();
+            var excludeEditor = new System.Windows.Controls.CheckBox { DataContext = row };
+            System.Windows.Data.BindingOperations.SetBinding(
+                excludeEditor,
+                System.Windows.Controls.Primitives.ToggleButton.IsCheckedProperty,
+                new System.Windows.Data.Binding(excludeBinding.Path.Path)
+                {
+                    Mode = System.Windows.Data.BindingMode.TwoWay,
+                    UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.Explicit
+                });
+            excludeEditor.IsChecked = true;
+            excludeEditor.GetBindingExpression(
+                System.Windows.Controls.Primitives.ToggleButton.IsCheckedProperty)!.UpdateSource();
+            if (row.FilterPattern != "^Techno$" || !row.FilterExclude)
+                throw new InvalidOperationException(
+                    "WPF filter editors did not update the production mapping row.");
+
+            var filterSettingsPath = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(), "MyTagSync-filter-smoke-" +
+                Guid.NewGuid().ToString("N") + ".json");
+            try
+            {
+                AppSettingsStore.SaveAtomic(filterSettingsPath,
+                    new AppSettings(Mappings: new[] { row.ToRule() }));
+                var restoredRule = AppSettingsStore.Load(filterSettingsPath)
+                    .EffectiveMappings.Single();
+                if (restoredRule.FilterPattern != "^Techno$" || !restoredRule.FilterExclude ||
+                    !MappingEngine.Apply(restoredRule, new[] { "House", "Techno" })
+                        .SequenceEqual(new[] { "House" }))
+                    throw new InvalidOperationException(
+                        "WPF filter edits failed persistence/reload or multivalue evaluation.");
+                var originalPreview = PreviewEngine.Create(new PreviewRequest(
+                    "wpf-filter-fixture", Array.Empty<BridgeTrack>(),
+                    new[] { originalRule }, Array.Empty<RekordboxTrackSnapshot>(),
+                    Array.Empty<ManagedAssignment>()));
+                var changedPreview = PreviewEngine.Create(new PreviewRequest(
+                    "wpf-filter-fixture", Array.Empty<BridgeTrack>(),
+                    new[] { restoredRule }, Array.Empty<RekordboxTrackSnapshot>(),
+                    Array.Empty<ManagedAssignment>()));
+                if (originalPreview.FingerprintSha256 == changedPreview.FingerprintSha256)
+                    throw new InvalidOperationException(
+                        "WPF filter edit and reload failed to invalidate prior Preview.");
+            }
+            finally
+            {
+                if (System.IO.File.Exists(filterSettingsPath))
+                    System.IO.File.Delete(filterSettingsPath);
+            }
+
             // Exercise the production column-width persistence against actual
             // WPF DataGrid columns without touching user profile settings.
             var widthsPath = System.IO.Path.Combine(
