@@ -1111,7 +1111,8 @@ public partial class MainWindow : Window
                 databasePath,
                 key,
                 policy,
-                currentIdentity);
+                currentIdentity,
+                _qualifiedRestoreImageSha256);
 
             var restoredSnapshot = RekordboxSqlCipherDatabase.ReadSnapshot(
                 databasePath,

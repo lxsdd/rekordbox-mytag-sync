@@ -330,9 +330,28 @@ public static class RekordboxMutationExecutorSelfTest
                 StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("rejected verified restore changed database bytes");
 
+        // Even a DIFFERENT otherwise valid rolling package must fail when
+        // its preimage does not equal the locally authorized SQLCipher backup.
+        var staleApprovalRejected = false;
+        try
+        {
+            _ = RekordboxRollingBackup.RestoreVerified(
+                package.PackagePath, databasePath, EncryptedMutationFixture.Key,
+                policy, approved.Identity, Sha256("foreign-rotated-backup-image"));
+        }
+        catch (InvalidOperationException)
+        {
+            staleApprovalRejected = true;
+        }
+        if (!staleApprovalRejected ||
+            !string.Equals(modifiedHash, RekordboxRollingBackup.ComputeFileSha256(databasePath),
+                StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "Restore allowed a rolling backup other than the human-approved image.");
+
         _ = RekordboxRollingBackup.RestoreVerified(
             package.PackagePath, databasePath, EncryptedMutationFixture.Key,
-            policy, approved.Identity);
+            policy, approved.Identity, originalHash);
 
         var restoredHash = RekordboxRollingBackup.ComputeFileSha256(databasePath);
         if (!string.Equals(originalHash, restoredHash, StringComparison.OrdinalIgnoreCase))

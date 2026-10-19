@@ -91,3 +91,13 @@ nothing is uploaded. Typed confirmation is explicit user authorization at the
 local device, NOT authorization for this development process to touch any real
 master.db. Synthetic encrypted SQLCipher positive/negative confirmation
 regressions and actual WPF controls are exercised in FAST/FULL.
+
+Pinned Restore preimage: the SQLCipher RestoreVerified executor receives
+the exact SHA-256 of the rolling backup image the local user explicitly
+confirmed. Inspection, temporary extraction and final replacement must match
+that approved image; even a subsequently valid rotation of the SAME single
+backup slot cannot be adopted silently. An encrypted SQLCipher positive
+Restore and negative wrong-preimage E2E prove byte preservation on rejection;
+the production WPF handler passes the scoped approval into the executor
+rather than relying only on a preflight UI check. This introduces no
+unsolicited writes and no additional retained backup history.
