@@ -425,6 +425,11 @@
                                                 Padding="12,7"
                                                 Content="Inspect physical exceptions (read-only)"
                                                 ToolTip="Inspect only the duplicate rekordbox file paths and missing foobar-path matches, including existing track/playlist/cue/beatgrid/MyTag links. No full 40,000-track file-ID rescan and no database changes."/>
+                                        <Button x:Name="ExportPhysicalExceptionsButton"
+                                                Margin="8,0,0,0" Padding="12,7"
+                                                Content="Export inspected CSV…"
+                                                IsEnabled="False"
+                                                ToolTip="Save a fresh exception report locally. Contains private paths and ContentIDs; never upload publicly. No master.db or audio writes."/>
                                         <TextBlock x:Name="PhysicalExceptionsStatusTextBlock"
                                                    Margin="12,0,0,0"
                                                    VerticalAlignment="Center"

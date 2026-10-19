@@ -394,6 +394,15 @@ public partial class App : Application
                     System.Windows.Controls.Button inspectEight ||
                 string.IsNullOrWhiteSpace(inspectEight.ToolTip?.ToString()))
                 throw new InvalidOperationException("Targeted physical exception button has no explanation.");
+            if (window.FindName("ExportPhysicalExceptionsButton") is not
+                    System.Windows.Controls.Button exportEight ||
+                exportEight.IsEnabled ||
+                string.IsNullOrWhiteSpace(exportEight.ToolTip?.ToString()) ||
+                typeof(MainWindow).GetMethod("ExportPhysicalExceptionsAsync",
+                    System.Reflection.BindingFlags.NonPublic |
+                    System.Reflection.BindingFlags.Instance) is null)
+                throw new InvalidOperationException(
+                    "WPF CSV export must exist but stay disabled before inspection.");
             inspectEight.RaiseEvent(new RoutedEventArgs(
                 System.Windows.Controls.Primitives.ButtonBase.ClickEvent, inspectEight));
             if (!window.PhysicalExceptionsStatusTextBlock.Text.Contains("Blocked",

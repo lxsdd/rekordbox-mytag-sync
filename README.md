@@ -75,3 +75,5 @@ still fail closed. Synthetic encrypted SQLCipher Preview→Apply→rolling
 backup→provenance→idempotence now starts with YEAR-only V3 values; producer
 priority/empty fallback fixtures and real WPF smoke run in FAST/FULL. Technical
 file-info fields remain unspoofable, and live Apply/Restore remain locked.
+
+Local physical exception CSV export: after a fresh read-only inspection, the Physical exceptions tab saves the 13 evidence fields for exceptional ContentIDs to a user-selected UTF-8 CSV. It contains personal file paths/ContentIDs; never post it publicly. Source/target/mapping changes revoke the report; export checks bridge publication, DB file metadata and rekordbox/rbxport process state. Spreadsheet formula prefixes are neutralized. Only the selected CSV is written atomically; master.db, tags, CUE, media, backups and provenance remain untouched. FAST/FULL retain synthetic encrypted SQLCipher exception tests and real WPF smoke.
