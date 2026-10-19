@@ -21,6 +21,30 @@ public static class BridgeAtomicContractSelfTest
         var songTwo = Path.Combine(root, "music", "Two.mp3");
 
         EncryptedMutationFixture.Create(dbPath, songOne, songTwo);
+        // These are EXISTING definition rows on a purely synthetic encrypted
+        // fixture, using the same proven djmdMyTag columns and usn values as
+        // EncryptedMutationFixture.Create. No guessed schema alteration or
+        // automatic definition creation is needed for the V3 mapping test.
+        using (var connection = EncryptedMutationFixture.Open(dbPath))
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = """
+                INSERT INTO djmdMyTag(
+                    ID, UUID, Seq, Name, Attribute, ParentID,
+                    rb_data_status, rb_local_data_status, rb_local_deleted,
+                    rb_local_synced, usn, rb_local_usn, created_at, updated_at)
+                VALUES
+                    ('G3','uuid-G3',3,'Year',0,NULL,0,0,0,0,1,1,
+                        '2026-10-19 00:00:00.000 +00:00','2026-10-19 00:00:00.000 +00:00'),
+                    ('T4','uuid-T4',1,'2001',0,'G3',0,0,0,0,1,1,
+                        '2026-10-19 00:00:00.000 +00:00','2026-10-19 00:00:00.000 +00:00'),
+                    ('T5','uuid-T5',2,'2002',0,'G3',0,0,0,0,1,1,
+                        '2026-10-19 00:00:00.000 +00:00','2026-10-19 00:00:00.000 +00:00');
+                """;
+            if (cmd.ExecuteNonQuery() != 3)
+                throw new InvalidOperationException(
+                    "Synthetic Year MyTag definitions were not initialized.");
+        }
         WritePublication(bridgeRoot, stateSchema: 3, payloadSchema: 3, songOne, songTwo);
         var candidate = BridgeSourceDiscovery.Inspect(bridgeRoot, selected: true);
         if (!candidate.Safe || !candidate.Selected ||
@@ -42,7 +66,7 @@ public static class BridgeAtomicContractSelfTest
                 "Atomic V3 bridge read lost foobar Core multivalues.");
 
         // Full real Preview -> encrypted SQLCipher Apply on a synthetic
-        // database, including missing Year MyTag definition creation.
+        // database with Year definitions explicitly present in the fixture.
         var policy = new RekordboxDatabaseReadPolicy(
             new HashSet<string>(StringComparer.Ordinal) {
                 EncryptedMutationFixture.DbVersion }, RequireRekordboxClosed: false);
@@ -59,12 +83,8 @@ public static class BridgeAtomicContractSelfTest
             before.Tracks, Array.Empty<ManagedAssignment>(),
             MyTagDefinitions: before.MyTagDefinitions));
         if (!preview.IsValid || preview.Counts.Conflicts != 0 ||
-            preview.Counts.Unmatched != 0 || preview.Counts.Additions < 3 ||
-            preview.MissingDefinitions is null ||
-            !preview.MissingDefinitions.Any(x => x.Group == "Year" &&
-                x.Value == "2001") ||
-            !preview.MissingDefinitions.Any(x => x.Group == "Year" &&
-                x.Value == "2002"))
+            preview.Counts.Unmatched != 0 || preview.Counts.Additions != 3 ||
+            (preview.MissingDefinitions?.Count ?? 0) != 0)
             throw new InvalidOperationException(
                 "V3 Core multivalues did not produce safe GENRE/DATE Preview additions.");
         if (preimage != RekordboxRollingBackup.ComputeFileSha256(dbPath))
