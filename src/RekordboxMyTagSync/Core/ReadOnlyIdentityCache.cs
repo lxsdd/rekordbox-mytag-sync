@@ -15,14 +15,24 @@ public sealed record ReadOnlyIdentityCache(
     RekordboxDatabaseIdentity Database,
     string SourceRoot,
     string TargetRoot,
-    PhysicalIdentityReport Report)
+    PhysicalIdentityReport Report,
+    string AliasesSignature = "")
 {
     public static ReadOnlyIdentityCache Capture(
         BridgeSourceSnapshot bridge,
         RekordboxDatabaseSnapshot database,
         PathAlias root,
+        PhysicalIdentityReport report) =>
+        Capture(bridge, database, new[] { root }, report);
+
+    public static ReadOnlyIdentityCache Capture(
+        BridgeSourceSnapshot bridge,
+        RekordboxDatabaseSnapshot database,
+        IReadOnlyList<PathAlias> roots,
         PhysicalIdentityReport report)
     {
+        ArgumentNullException.ThrowIfNull(roots);
+        if (roots.Count == 0) throw new InvalidDataException("No identity-cache aliases.");
         if (report.VerifiedPairs is null ||
             report.VerifiedPairs.Count != report.SamePhysicalFiles ||
             report.EligiblePairs < report.SamePhysicalFiles ||
@@ -34,21 +44,28 @@ public sealed record ReadOnlyIdentityCache(
         return new ReadOnlyIdentityCache(
             bridge.State, bridge.DirectoryPath, blob.Length,
             blob.LastWriteTimeUtc, database.Identity,
-            WindowsPathMatcher.Normalize(root.SourceRoot),
-            WindowsPathMatcher.Normalize(root.TargetRoot),
-            report);
+            WindowsPathMatcher.Normalize(roots[0].SourceRoot),
+            WindowsPathMatcher.Normalize(roots[0].TargetRoot),
+            report, BuildAliasSignature(roots));
     }
 
     public bool IsValidFor(
         BridgeSourceSnapshot bridge,
         RekordboxDatabaseSnapshot database,
-        PathAlias root)
+        PathAlias root) => IsValidFor(bridge, database, new[] { root });
+
+    public bool IsValidFor(
+        BridgeSourceSnapshot bridge,
+        RekordboxDatabaseSnapshot database,
+        IReadOnlyList<PathAlias> roots)
     {
+        if (roots is null || roots.Count == 0) return false;
         if (!Equals(BridgeState, bridge.State) ||
             !Equals(Database, database.Identity) ||
             !string.Equals(BridgeDirectory, bridge.DirectoryPath, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(SourceRoot, WindowsPathMatcher.Normalize(root.SourceRoot), StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(TargetRoot, WindowsPathMatcher.Normalize(root.TargetRoot), StringComparison.OrdinalIgnoreCase))
+            !string.Equals(SourceRoot, WindowsPathMatcher.Normalize(roots[0].SourceRoot), StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(TargetRoot, WindowsPathMatcher.Normalize(roots[0].TargetRoot), StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(AliasesSignature, BuildAliasSignature(roots), StringComparison.Ordinal))
             return false;
 
         var blob = new FileInfo(Path.Combine(
@@ -61,4 +78,10 @@ public sealed record ReadOnlyIdentityCache(
             db.Length == database.Identity.FileLength &&
             db.LastWriteTimeUtc == database.Identity.LastWriteUtc;
     }
+
+    private static string BuildAliasSignature(IReadOnlyList<PathAlias> roots) =>
+        string.Join("\n", roots.Select(x =>
+                WindowsPathMatcher.Normalize(x.SourceRoot).ToUpperInvariant() + "\u0000" +
+                WindowsPathMatcher.Normalize(x.TargetRoot).ToUpperInvariant())
+            .OrderBy(x => x, StringComparer.Ordinal));
 }

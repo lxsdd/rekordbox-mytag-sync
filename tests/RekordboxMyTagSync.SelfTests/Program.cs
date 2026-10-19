@@ -233,6 +233,7 @@ try
     PathMatchAdvisorSelfTest.Run(temp);
     PathPairVerifierSelfTest.Run(temp);
     PhysicalFileIdentityVerifierSelfTest.Run(temp);
+    MultiRootVerifiedPreviewSelfTest.Run(temp);
     VerifiedPreviewScopeSelfTest.Run(temp);
     ReadOnlyDiagnosticsSelfTest.Run(temp);
     PhysicalExceptionInvestigatorSelfTest.Run(temp);

@@ -26,10 +26,8 @@ public partial class MainWindow
         try
         {
             settings = BuildSettingsFromUi();
-            if (settings.EffectivePathAliases.Count > 1)
-                throw new InvalidDataException(
-                    "Multiple configured aliases are ambiguous for verified file-level preview. " +
-                    "Select a single explicit alias or remove them for automatic discovery.");
+            // Each configured root is only a hypothesis; native FileIndex
+            // proof remains mandatory for every included file.
         }
         catch (Exception ex)
         {
@@ -69,12 +67,10 @@ public partial class MainWindow
             {
                 cancel.Token.ThrowIfCancellationRequested();
                 var stable = BridgeSourceDiscovery.ReadStable(folder);
-                PathAlias root;
-                if (settings.EffectivePathAliases.Count == 1)
+                PathAlias[] roots;
+                if (settings.EffectivePathAliases.Count > 0)
                 {
-                    // User-configured alias is a *hypothesis*, not evidence.
-                    // Verify every included physical pair through native file IDs.
-                    root = settings.EffectivePathAliases[0];
+                    roots = settings.EffectivePathAliases.ToArray();
                 }
                 else
                 {
@@ -84,10 +80,10 @@ public partial class MainWindow
                         throw new InvalidDataException(
                             $"Found {proposed.Proposals.Count} root mapping candidates; exactly one is required.");
                     var proposal = proposed.Proposals[0];
-                    root = new PathAlias(proposal.SourceRoot, proposal.TargetRoot);
+                    roots = [new PathAlias(proposal.SourceRoot, proposal.TargetRoot)];
                 }
                 var reuse = availableCache is not null &&
-                    availableCache.IsValidFor(stable, database, root);
+                    availableCache.IsValidFor(stable, database, roots);
                 var bridgeFile = new FileInfo(Path.Combine(
                     stable.DirectoryPath, BridgeSourceDiscovery.SnapshotFileName));
                 var initialLength = bridgeFile.Length;
@@ -95,7 +91,7 @@ public partial class MainWindow
                 var evidence = reuse
                     ? availableCache!.Report
                     : PhysicalFileIdentityVerifier.Verify(
-                        stable.Tracks, database.Tracks, root, cancel.Token, progress);
+                        stable.Tracks, database.Tracks, roots, cancel.Token, progress);
                 cancel.Token.ThrowIfCancellationRequested();
                 bridgeFile.Refresh();
                 if (!bridgeFile.Exists || bridgeFile.Length != initialLength ||
@@ -105,8 +101,8 @@ public partial class MainWindow
                 // This is an observation cache for read-only previews only.
                 // Any changed database/source metadata causes fail-closed
                 // invalidation rather than silently reusing a stale map.
-                var observed = ReadOnlyIdentityCache.Capture(stable, database, root, evidence);
-                if (!observed.IsValidFor(stable, database, root))
+                var observed = ReadOnlyIdentityCache.Capture(stable, database, roots, evidence);
+                if (!observed.IsValidFor(stable, database, roots))
                     throw new InvalidDataException(
                         "Database/source changed since validation; re-inspect and revalidate.");
                 if (evidence.VerifiedPairs is null ||
@@ -115,7 +111,7 @@ public partial class MainWindow
                     throw new InvalidDataException("No valid physical identity evidence available.");
 
                 var scope = VerifiedPreviewScope.Build(
-                    stable.Tracks, database.Tracks, root, evidence.VerifiedPairs);
+                    stable.Tracks, database.Tracks, roots, evidence.VerifiedPairs);
 
                 var stateFolder = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -140,7 +136,7 @@ public partial class MainWindow
                     effectiveMappings,
                     scope.Targets,
                     managed.Where(x => includedIds.Contains(x.ContentId)).ToArray(),
-                    new[] { root },
+                    roots,
                     database.MyTagDefinitions));
                 return (stable, evidence, scope, preview, observed, reuse, advice, effectiveMappings);
             }, cancel.Token);
@@ -224,8 +220,8 @@ public partial class MainWindow
                 $"Missing distinct existing MyTag definitions: {missingDefinitions.Count:N0}" +
                 (missingByGroup.Length == 0 ? ". " : " (" + string.Join(", ", missingByGroup) + "). ") +
                 "No definition was created and NO settings were saved. " +
-                (settings.EffectivePathAliases.Count == 1
-                    ? "Configured root was validated ONLY through native file IDs; "
+                (settings.EffectivePathAliases.Count > 0
+                    ? $"{settings.EffectivePathAliases.Count} configured roots were checked ONLY through native file IDs; "
                     : "Automatically suggested root is TEMPORARY; ") +
                 "all results are proposals, Apply and Restore stay LOCKED.";
             // Intentionally never assign _approvedPreview. A display-only

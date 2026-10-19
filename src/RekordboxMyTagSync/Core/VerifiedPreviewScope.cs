@@ -6,14 +6,25 @@ public sealed record VerifiedPreviewScope(
     IReadOnlyList<BridgeTrack> Sources,
     IReadOnlyList<RekordboxTrackSnapshot> Targets,
     IReadOnlyList<PreviewDetail> ExcludedTargets,
-    PathAlias TemporaryAlias)
+    PathAlias TemporaryAlias,
+    IReadOnlyList<PathAlias>? ConfiguredAliases = null)
 {
     public static VerifiedPreviewScope Build(
         IReadOnlyList<BridgeTrack> bridge,
         IReadOnlyList<RekordboxTrackSnapshot> target,
         PathAlias alias,
+        IReadOnlyList<VerifiedPhysicalPair> verified) =>
+        Build(bridge, target, new[] { alias }, verified);
+
+    public static VerifiedPreviewScope Build(
+        IReadOnlyList<BridgeTrack> bridge,
+        IReadOnlyList<RekordboxTrackSnapshot> target,
+        IReadOnlyList<PathAlias> aliases,
         IReadOnlyList<VerifiedPhysicalPair> verified)
     {
+        ArgumentNullException.ThrowIfNull(aliases);
+        if (aliases.Count == 0)
+            throw new InvalidDataException("Verified Preview requires at least one root.");
         ArgumentNullException.ThrowIfNull(bridge);
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(verified);
@@ -34,7 +45,7 @@ public sealed record VerifiedPreviewScope(
         {
             var left = WindowsPathMatcher.Normalize(item.SourcePath);
             var right = WindowsPathMatcher.Normalize(item.TargetPath);
-            if (!WindowsPathMatcher.Equivalent(left, right, new[] { alias }) ||
+            if (!WindowsPathMatcher.Equivalent(left, right, aliases) ||
                 !files.TryGetValue(left, out var sourceItems) || sourceItems.Length != 1 ||
                 !destinations.TryGetValue(right, out var targetItems) || targetItems.Length != 1 ||
                 !sourceKeys.Add(left) || !targetKeys.Add(right) ||
@@ -46,7 +57,7 @@ public sealed record VerifiedPreviewScope(
         }
 
         var sourceByMappedPath = bridge
-            .GroupBy(x => WindowsPathMatcher.Normalize(x.Path, new[] { alias }),
+            .GroupBy(x => WindowsPathMatcher.Normalize(x.Path, aliases),
                 StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.ToArray(), StringComparer.OrdinalIgnoreCase);
 
@@ -80,6 +91,7 @@ public sealed record VerifiedPreviewScope(
             .ThenBy(x => x.ContentId, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        return new VerifiedPreviewScope(includedSource, includedTarget, excluded, alias);
+        return new VerifiedPreviewScope(includedSource, includedTarget, excluded,
+            aliases[0], aliases.ToArray());
     }
 }
