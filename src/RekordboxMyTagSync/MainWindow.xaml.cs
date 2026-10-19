@@ -543,6 +543,10 @@ public partial class MainWindow : Window
         _backupAvailable = false;
         _backupMatchesTarget = false;
         _approvedPreview = null;
+        _approvedPhysicalAuthority = null;
+        _approvedPreviewMappings = null;
+        _configuredMappingsAtPreview = null;
+        _cachedIdentityEvidence = null;
         BackupPackageTextBox.Text = string.Empty;
         DatabaseAccessStatusTextBlock.Text =
             "Database access is not qualified for the current target/key/version state.";

@@ -10,6 +10,7 @@ public static class VerifiedMutationAuthoritySelfTest
     public static void Run(string temp)
     {
         if (!OperatingSystem.IsWindows()) return;
+        QualifySameMetadataEncryptedDatabaseDrift(temp);
 
         var root = Path.Combine(temp, "VerifiedApplyE2E");
         var sourceRoot = Path.Combine(root, "foobar");
@@ -183,6 +184,103 @@ public static class VerifiedMutationAuthoritySelfTest
         if (!invalidated || finalDbHash != RekordboxRollingBackup.ComputeFileSha256(db))
             throw new InvalidOperationException(
                 "Changed mapping did not invalidate physically scoped approval.");
+    }
+
+
+    // Simulate a concurrent SQLCipher editor that changes the database while
+    // retaining DBID, DBVersion, file length and exact LastWriteTimeUtc.
+    // Snapshot-only checks would not detect this; the preview SHA must.
+    private static void QualifySameMetadataEncryptedDatabaseDrift(string temp)
+    {
+        var root = Path.Combine(temp, "EncryptedSameMetadataDrift");
+        var sourceRoot = Path.Combine(root, "foobar");
+        var targetRoot = Path.Combine(root, "rekordbox");
+        Directory.CreateDirectory(sourceRoot);
+        Directory.CreateDirectory(targetRoot);
+        var sourceFile = Path.Combine(sourceRoot, "One.mp3");
+        var targetFile = Path.Combine(targetRoot, "One.mp3");
+        var anotherTarget = Path.Combine(targetRoot, "Two.mp3");
+        File.WriteAllText(sourceFile, "physical-matching-synthetic-audio");
+        Link(targetFile, sourceFile);
+        var databasePath = Path.Combine(root, "master.db");
+        EncryptedMutationFixture.Create(databasePath, targetFile, anotherTarget);
+        var policy = new RekordboxDatabaseReadPolicy(
+            new HashSet<string>(StringComparer.Ordinal) { EncryptedMutationFixture.DbVersion },
+            RequireRekordboxClosed: false);
+        var before = RekordboxSqlCipherDatabase.ReadSnapshot(
+            databasePath, EncryptedMutationFixture.Key, policy);
+        var bridge = new[] { new BridgeTrack(
+            sourceFile, 0,
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["GENRE"] = new[] { "Techno" }
+            },
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)) };
+        var aliases = new[] { new PathAlias(sourceRoot, targetRoot) };
+        var proof = PhysicalFileIdentityVerifier.Verify(
+            bridge, before.Tracks, aliases);
+        var authority = VerifiedMutationAuthority.CaptureReadOnly(
+            before, bridge, aliases, proof);
+        var scope = VerifiedPreviewScope.Build(
+            bridge, before.Tracks, aliases, proof.VerifiedPairs!);
+        var mapping = new[] { new MappingRule("GENRE", "Genre") };
+        var preview = PreviewEngine.Create(new PreviewRequest(
+            before.Identity.PreviewIdentity, scope.Sources, mapping,
+            scope.Targets, Array.Empty<ManagedAssignment>(), aliases,
+            before.MyTagDefinitions));
+        if (!preview.IsValid || preview.Counts.Additions != 1)
+            throw new InvalidOperationException(
+                "Encrypted same-metadata drift fixture did not create an actionable preview.");
+        var file = new FileInfo(databasePath);
+        var originalLength = file.Length;
+        var originalTimestamp = file.LastWriteTimeUtc;
+        using (var connection = EncryptedMutationFixture.Open(databasePath))
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                UPDATE agentRegistry
+                SET int_1=110 WHERE registry_id='localUpdateCount';
+                """;
+            if (command.ExecuteNonQuery() != 1)
+                throw new InvalidOperationException(
+                    "Synthetic SQLCipher concurrent editor did not change one update counter.");
+        }
+        File.SetLastWriteTimeUtc(databasePath, originalTimestamp);
+        file.Refresh();
+        if (file.Length != originalLength || file.LastWriteTimeUtc != originalTimestamp)
+            throw new InvalidOperationException(
+                "Same-length/same-timestamp adversarial fixture setup failed.");
+        var after = RekordboxSqlCipherDatabase.ReadSnapshot(
+            databasePath, EncryptedMutationFixture.Key, policy);
+        if (before.Identity.PreviewIdentity != after.Identity.PreviewIdentity)
+            throw new InvalidOperationException(
+                "Concurrent fixture changed visible database metadata unexpectedly.");
+        var changedSha = RekordboxRollingBackup.ComputeFileSha256(databasePath);
+        if (string.Equals(changedSha, authority.ApprovedDatabaseSha256,
+                StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "Concurrent encrypted fixture did not actually change bytes.");
+
+        var provenancePath = Path.Combine(root, "state", "owned.json");
+        var backupRoot = Path.Combine(root, "backup");
+        var blocked = false;
+        try
+        {
+            _ = RekordboxMutationExecutor.Apply(
+                databasePath, EncryptedMutationFixture.Key, policy,
+                preview, bridge, mapping, provenancePath, backupRoot,
+                Hash("unchanged-mapping"), "0.1.0-dev", aliases, authority);
+        }
+        catch (InvalidOperationException ex) when (
+            ex.Message.Contains("SHA-256", StringComparison.OrdinalIgnoreCase))
+        {
+            blocked = true;
+        }
+        if (!blocked || Directory.Exists(backupRoot) ||
+            File.Exists(provenancePath) ||
+            changedSha != RekordboxRollingBackup.ComputeFileSha256(databasePath))
+            throw new InvalidOperationException(
+                "Same-metadata SQLCipher drift was not blocked BEFORE provenance, backup or mutation.");
     }
 
     private static string Hash(string value) =>

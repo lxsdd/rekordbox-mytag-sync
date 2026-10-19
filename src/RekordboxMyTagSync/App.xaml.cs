@@ -202,6 +202,34 @@ public partial class App : Application
                 throw new InvalidOperationException(
                     "WPF read-only qualification unexpectedly enabled live Apply/Restore.");
 
+            // A changed target library must revoke all previously captured
+            // physical approval and effective-mapping state. Simulate this
+            // in WPF without opening any real rekordbox database.
+            var mappingApprovalField = typeof(MainWindow).GetField(
+                "_approvedPreviewMappings",
+                System.Reflection.BindingFlags.NonPublic |
+                System.Reflection.BindingFlags.Instance);
+            var physicalApprovalField = typeof(MainWindow).GetField(
+                "_approvedPhysicalAuthority",
+                System.Reflection.BindingFlags.NonPublic |
+                System.Reflection.BindingFlags.Instance);
+            var invalidateTarget = typeof(MainWindow).GetMethod(
+                "InvalidateDatabaseAccess",
+                System.Reflection.BindingFlags.NonPublic |
+                System.Reflection.BindingFlags.Instance);
+            if (mappingApprovalField is null || physicalApprovalField is null ||
+                invalidateTarget is null)
+                throw new InvalidOperationException(
+                    "Physical approval revocation hook is missing from WPF.");
+            mappingApprovalField.SetValue(window,
+                new[] { new MappingRule("GENRE", "Genre") });
+            invalidateTarget.Invoke(window, new object[] { "WPF smoke target changed." });
+            if (mappingApprovalField.GetValue(window) is not null ||
+                physicalApprovalField.GetValue(window) is not null ||
+                window.ApplyButton.IsEnabled || window.RestoreButton.IsEnabled)
+                throw new InvalidOperationException(
+                    "WPF target change did not revoke previously approved mapping/physical scope.");
+
             // Exercise the production column-width persistence against actual
             // WPF DataGrid columns without touching user profile settings.
             var widthsPath = System.IO.Path.Combine(

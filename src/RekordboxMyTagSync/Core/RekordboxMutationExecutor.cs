@@ -38,6 +38,10 @@ internal static class RekordboxMutationExecutor
         ArgumentException.ThrowIfNullOrWhiteSpace(toolVersion);
 
         var (initialSnapshot, approvedDatabaseHash) = ReadVerifiedSnapshot(databasePath, key, policy);
+        // The WPF-authorized preview is pinned to exact SQLCipher bytes.
+        // This happens BEFORE provenance, backup creation or any write,
+        // and catches same-length/same-timestamp external database edits.
+        physicalAuthority?.RequireApprovedDatabaseHash(approvedDatabaseHash);
         var initialProvenance = ProvenanceStore.Load(provenancePath, initialSnapshot.Identity);
         var initialPreflight = RekordboxMutationPreflight.Recheck(
             approvedPreview,
