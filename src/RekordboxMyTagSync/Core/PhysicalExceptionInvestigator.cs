@@ -19,6 +19,7 @@ public sealed record PhysicalExceptionRow(
     string BridgeEvidence,
     string PlaylistReferences,
     string CueReferences,
+    string BeatgridReferences,
     string MyTagReferences,
     string OtherDjReferences,
     string Conclusion);
@@ -30,6 +31,7 @@ public static class PhysicalExceptionInvestigator
     [
         ("djmdSongPlaylist", "Playlists"),
         ("djmdCue", "Cue points"),
+        ("djmdBeatGrid", "Beatgrid"),
         ("djmdSongMyTag", "MyTags"),
         ("djmdSongHotCueBanklist", "Hot-cue banks")
     ];
@@ -107,7 +109,7 @@ public static class PhysicalExceptionInvestigator
                 result.Add(new PhysicalExceptionRow(
                     duplicate ? "SAME_REKORDBOX_PATH" : "MISSING_FROM_BRIDGE_EXPORT",
                     t.ContentId, path, otherIds, expected, fileEvidence, sourceEvidence,
-                    NotAvailable, NotAvailable, NotAvailable, NotAvailable,
+                    NotAvailable, NotAvailable, NotAvailable, NotAvailable, NotAvailable,
                     duplicate
                         ? "Two rekordbox records point to one path. Compare DJ references; do not remove either automatically."
                         : "No matching path in this foobar export. Check file location / export freshness; not proof that the audio is missing."));
@@ -200,6 +202,7 @@ public static class PhysicalExceptionInvestigator
             {
                 PlaylistReferences = counts["djmdSongPlaylist"],
                 CueReferences = counts["djmdCue"],
+                BeatgridReferences = counts["djmdBeatGrid"],
                 MyTagReferences = counts["djmdSongMyTag"],
                 OtherDjReferences = counts["djmdSongHotCueBanklist"]
             });
