@@ -151,11 +151,15 @@ public partial class App : Application
             }
 
             var physicalTable = window.PhysicalExceptionsGrid;
-            if (physicalTable.Columns.Count != 12 || physicalTable.FrozenColumnCount != 2 ||
+            if (physicalTable.Columns.Count != 13 || physicalTable.FrozenColumnCount != 2 ||
                 physicalTable.Columns[0].Header?.ToString() != "Reason" ||
-                physicalTable.Columns[1].Header?.ToString() != "Content ID")
+                physicalTable.Columns[1].Header?.ToString() != "Content ID" ||
+                physicalTable.Columns[9].Header?.ToString() != "Beatgrid refs" ||
+                physicalTable.Columns[9] is not System.Windows.Controls.DataGridBoundColumn beatgridColumn ||
+                beatgridColumn.Binding is not System.Windows.Data.Binding beatgridBinding ||
+                beatgridBinding.Path?.Path != "BeatgridReferences")
                 throw new InvalidOperationException(
-                    "Targeted exception grid must preserve Reason/Content ID and all twelve evidence fields.");
+                    "Targeted exception grid must preserve Reason/Content ID and bind all thirteen evidence columns, including beatgrid.");
             if (window.FindName("InvestigatePhysicalExceptionsButton") is not
                     System.Windows.Controls.Button inspectEight ||
                 string.IsNullOrWhiteSpace(inspectEight.ToolTip?.ToString()))
