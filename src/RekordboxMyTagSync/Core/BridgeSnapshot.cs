@@ -49,14 +49,14 @@ public static class BridgeSnapshot
     {
         using var gzip = new GZipStream(compressed, CompressionMode.Decompress, leaveOpen: true);
         using var reader = new StreamReader(gzip);
-        var line = reader.ReadLine();
-        var actual = ValidateHeader(line);
+        var headerLine = reader.ReadLine();
+        var actual = ValidateHeader(headerLine);
         if (expectedSchemaVersion.HasValue && actual != expectedSchemaVersion.Value)
             throw new InvalidDataException(
                 "Bridge state schema_version=" + expectedSchemaVersion.Value +
                 " but digital-items.tsv.gz is schema v" + actual +
                 "; rejecting mixed snapshot generations.");
-        var header = line!.Split('\t');
+        var header = headerLine!.Split('\t');
 
         var tracks = new List<BridgeTrack>();
         var identities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
