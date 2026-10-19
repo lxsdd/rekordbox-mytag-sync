@@ -218,10 +218,7 @@ public static class BridgeAtomicContractSelfTest
         WritePublication(spoof, 3, 3, songOne, songTwo);
         RewriteFirstRowVectors(Path.Combine(
                 spoof, BridgeSourceDiscovery.SnapshotFileName),
-            "[{\\"name\\":\\"CODEC\\",\\"values\\":[\\"FAKE\\"]}," +
-            "{\\"name\\":\\"BITRATE\\",\\"values\\":[\\"1\\"]}," +
-            "{\\"name\\":\\"DURATION_SECONDS\\",\\"values\\":[\\"999\\"]}," +
-            "{\\"name\\":\\"GENRE\\",\\"values\\":[\\"House\\",\\"Techno\\"]}]");
+            "[{\"name\":\"CODEC\",\"values\":[\"FAKE\"]},{\"name\":\"BITRATE\",\"values\":[\"1\"]},{\"name\":\"DURATION_SECONDS\",\"values\":[\"999\"]},{\"name\":\"GENRE\",\"values\":[\"House\",\"Techno\"]}]");
         var technicalSnapshot = BridgeSourceDiscovery.ReadStable(spoof);
         var technicalTrack = technicalSnapshot.Tracks[0];
         if (!technicalTrack.GetFieldValues("codec").SequenceEqual(new[] { "MP3" }) ||
