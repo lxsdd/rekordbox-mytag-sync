@@ -255,6 +255,16 @@ try
         (Directory.Exists(Path.Combine(aliasDbDir, "backups")) &&
          Directory.EnumerateFiles(Path.Combine(aliasDbDir, "backups")).Count() != beforeHardlinkBackup))
         throw new InvalidOperationException("Hardlinked database generated a backup authority.");
+    var rejectedHardlinkRestore = false;
+    try
+    {
+        _ = RekordboxRollingBackup.Restore(
+            Path.Combine(aliasDbDir, "not-a-package.rbbackup"),
+            verifiedEncrypted.Identity);
+    }
+    catch (InvalidDataException) { rejectedHardlinkRestore = true; }
+    if (!rejectedHardlinkRestore)
+        throw new InvalidOperationException("Hardlinked database reached restore package processing.");
     File.Delete(hardlink);
 
     var manualTarget = RekordboxDiscovery.InspectManual(

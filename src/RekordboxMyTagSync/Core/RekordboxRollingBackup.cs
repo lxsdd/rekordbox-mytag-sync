@@ -200,6 +200,8 @@ public static class RekordboxRollingBackup
     {
         ArgumentNullException.ThrowIfNull(approvedIdentity);
         ArgumentNullException.ThrowIfNull(policy);
+        RekordboxDatabaseFileIdentity.RequireCanonicalPath(databasePath);
+        RekordboxDatabaseFileIdentity.RequireCanonicalPath(approvedIdentity.CanonicalPath);
         // The restore itself enforces the closed-process gate independently of
         // read policy; synthetic fixtures may deliberately use an unlocked read policy.
         EnsureRekordboxClosed();
@@ -228,6 +230,7 @@ public static class RekordboxRollingBackup
     {
         ArgumentNullException.ThrowIfNull(currentIdentity);
         ValidateIdentity(currentIdentity);
+        RekordboxDatabaseFileIdentity.RequireCanonicalPath(currentIdentity.CanonicalPath);
         if (expectedTargetSha256 is not null)
             ValidateSha256(expectedTargetSha256, nameof(expectedTargetSha256));
         EnsureRekordboxClosed();
