@@ -55,3 +55,11 @@ GitHub Actions is the build authority. FAST CI qualifies normal commits using lo
 Release promotion reuses and verifies that exact FULL artifact without rebuilding it. No final tag/release is permitted before the exact candidate has passed the required live rekordbox/RX3 acceptance.
 
 Preview safety: ambiguous MyTag group/value definitions produce a fail-closed Conflict rather than mutating a collection during enumeration. Managed provenance lookups use a ContentID index for large libraries; unmatched external/manual MyTag assignments remain untouched. These changes require exact-HEAD FAST and FULL qualification before promotion.
+
+Bridge V3 technical-field safety: foobar user-defined metadata named CODEC,
+BITRATE or DURATION_SECONDS is permitted in source vectors, but cannot
+overwrite technical codec/bitrate/duration Core columns obtained from the
+producer's file info and length. Synthetic positive/negative vector fixtures
+verify physical metadata retention and GENRE multivalue preservation alongside
+the encrypted V3 Preview→Apply→backup→provenance→idempotence regression and
+actual WPF UI smoke. This does not unlock live Apply/Restore.
