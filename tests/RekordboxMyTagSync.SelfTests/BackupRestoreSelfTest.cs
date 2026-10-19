@@ -75,6 +75,17 @@ internal static class BackupRestoreSelfTest
         if (!string.Equals(replaced.Metadata.DatabaseSha256, Hash(bytesC), StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("rolling backup was not replaced with the latest pre-write image");
 
+        // The one rolling slot is mutable: consent for A must NEVER mean
+        // implicit consent for the subsequently rotated, valid image C.
+        var beforeRejectedPreimage = Hash(File.ReadAllBytes(dbPath));
+        AssertInvalid(
+            () => RekordboxRollingBackup.Restore(
+                replaced.PackagePath, identityC,
+                approvedBackupDatabaseSha256: Hash(bytesA)),
+            "restore adopted a newly rotated backup instead of the approved preimage");
+        if (Hash(File.ReadAllBytes(dbPath)) != beforeRejectedPreimage)
+            throw new InvalidOperationException("wrong-preimage restore modified target database");
+
         // A stale approved snapshot must not replace the last known-good rolling
         // package, even when the changed database has exactly the same byte length.
         var packageBeforeRejectedBackup = Hash(File.ReadAllBytes(replaced.PackagePath));

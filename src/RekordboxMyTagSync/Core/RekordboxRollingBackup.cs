@@ -196,9 +196,12 @@ public static class RekordboxRollingBackup
         string databasePath,
         string key,
         RekordboxDatabaseReadPolicy policy,
-        RekordboxDatabaseIdentity approvedIdentity)
+        RekordboxDatabaseIdentity approvedIdentity,
+        string? approvedBackupDatabaseSha256 = null)
     {
         ArgumentNullException.ThrowIfNull(approvedIdentity);
+        if (approvedBackupDatabaseSha256 is not null)
+            ValidateSha256(approvedBackupDatabaseSha256, nameof(approvedBackupDatabaseSha256));
         ArgumentNullException.ThrowIfNull(policy);
         // The restore itself enforces the closed-process gate independently of
         // read policy; synthetic fixtures may deliberately use an unlocked read policy.
@@ -218,20 +221,31 @@ public static class RekordboxRollingBackup
             !string.Equals(live.SqliteCipherVersion, approvedIdentity.SqliteCipherVersion, StringComparison.Ordinal) ||
             !string.Equals(Canonical(live.CanonicalPath), Canonical(approvedIdentity.CanonicalPath), StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Restore live SQLCipher identity differs from approved database.");
-        return Restore(packagePath, live, secondHash);
+        return Restore(packagePath, live, secondHash, approvedBackupDatabaseSha256);
     }
 
     public static RekordboxBackupInspection Restore(
         string packagePath,
         RekordboxDatabaseIdentity currentIdentity,
-        string? expectedTargetSha256 = null)
+        string? expectedTargetSha256 = null,
+        string? approvedBackupDatabaseSha256 = null)
     {
         ArgumentNullException.ThrowIfNull(currentIdentity);
         ValidateIdentity(currentIdentity);
         if (expectedTargetSha256 is not null)
             ValidateSha256(expectedTargetSha256, nameof(expectedTargetSha256));
+        if (approvedBackupDatabaseSha256 is not null)
+            ValidateSha256(approvedBackupDatabaseSha256, nameof(approvedBackupDatabaseSha256));
         EnsureRekordboxClosed();
         var inspection = Inspect(packagePath, currentIdentity);
+        // Bind the package to the human-confirmed encrypted backup preimage.
+        // A rolling slot can be valid yet contain a DIFFERENT later prewrite
+        // image with the same DBID, path and metadata. Never adopt it silently.
+        if (approvedBackupDatabaseSha256 is not null &&
+            !string.Equals(inspection.Metadata.DatabaseSha256, approvedBackupDatabaseSha256,
+                StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "Rolling backup image differs from the explicitly approved Restore preimage.");
         var targetPath = Canonical(currentIdentity.CanonicalPath);
         if (!File.Exists(targetPath))
             throw new FileNotFoundException("Restore target master.db does not exist; restore is blocked fail-closed.", targetPath);
