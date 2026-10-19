@@ -1336,7 +1336,8 @@ public partial class MainWindow : Window
             };
     }
 
-    private sealed class MappingRow
+    // Shared within the production assembly for WPF binding/runtime smoke.
+    internal sealed class MappingRow
     {
         public string SourceField { get; set; } = string.Empty;
         public string TargetMyTag { get; set; } = string.Empty;
