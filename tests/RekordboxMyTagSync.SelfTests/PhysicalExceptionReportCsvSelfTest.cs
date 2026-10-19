@@ -16,7 +16,7 @@ public static class PhysicalExceptionReportCsvSelfTest
             @"Z:\Music\Duplicate.mp3", "Disk present", "One physical foobar row",
             "2", "0", "3", "1", "Not verifiable", "=1+1");
         var csv = PhysicalExceptionReportCsv.Render([row]);
-        if (!csv.StartsWith("\"Reason\",\"Content ID\",\"rekordbox path\"\r\n",
+        if (!csv.StartsWith("\"Reason\",\"Content ID\",\"rekordbox path\",",
                 StringComparison.Ordinal) ||
             !csv.Contains("\"42, 43\"", StringComparison.Ordinal) ||
             !csv.Contains("\"'=1+1\"", StringComparison.Ordinal))
