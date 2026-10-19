@@ -251,6 +251,20 @@ public partial class App : Application
                 throw new InvalidOperationException(
                     "WPF alias controls or whole-volume path resolution are inconsistent.");
 
+            var twoRoots = new[]
+            {
+                new PathAlias(@"Z:\Music", @"R:\Music"),
+                new PathAlias(@"S:\Archive", @"T:\Archive")
+            };
+            if (!WindowsPathMatcher.Equivalent(
+                    @"Z:\Music\Track.mp3", @"R:\Music\Track.mp3", twoRoots) ||
+                !WindowsPathMatcher.Equivalent(
+                    @"S:\Archive\Track.mp3", @"T:\Archive\Track.mp3", twoRoots) ||
+                WindowsPathMatcher.Equivalent(
+                    @"S:\Archive\Track.mp3", @"R:\Music\Track.mp3", twoRoots))
+                throw new InvalidOperationException(
+                    "WPF configured aliases must support independent roots without cross-matches.");
+
             var physicalTable = window.PhysicalExceptionsGrid;
             if (physicalTable.Columns.Count != 13 || physicalTable.FrozenColumnCount != 2 ||
                 physicalTable.Columns[0].Header?.ToString() != "Reason" ||

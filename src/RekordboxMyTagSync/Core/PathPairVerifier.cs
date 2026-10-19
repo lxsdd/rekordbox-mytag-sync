@@ -154,14 +154,30 @@ public static class PathPairVerifier
     internal static FilePairCollection CollectPairs(
         IReadOnlyList<BridgeTrack> bridge,
         IReadOnlyList<RekordboxTrackSnapshot> target,
-        PathAlias proposedRoot)
-    {
-        var sourceRoot = WindowsPathMatcher.Normalize(proposedRoot.SourceRoot);
-        var targetRoot = WindowsPathMatcher.Normalize(proposedRoot.TargetRoot);
-        if (string.Equals(sourceRoot, targetRoot, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("Proposed alias roots must differ.");
+        PathAlias proposedRoot) =>
+        CollectPairs(bridge, target, new[] { proposedRoot });
 
-        var aliases = new[] { new PathAlias(sourceRoot, targetRoot) };
+    internal static FilePairCollection CollectPairs(
+        IReadOnlyList<BridgeTrack> bridge,
+        IReadOnlyList<RekordboxTrackSnapshot> target,
+        IReadOnlyList<PathAlias> proposedRoots)
+    {
+        ArgumentNullException.ThrowIfNull(bridge);
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(proposedRoots);
+        if (proposedRoots.Count == 0)
+            throw new InvalidDataException("At least one root is required for physical file pairing.");
+        var aliases = proposedRoots.Select(root =>
+        {
+            if (root is null) throw new InvalidDataException("Physical path aliases contain a null root.");
+            var source = WindowsPathMatcher.Normalize(root.SourceRoot);
+            var destination = WindowsPathMatcher.Normalize(root.TargetRoot);
+            if (string.Equals(source, destination, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Proposed alias roots must differ.");
+            return new PathAlias(source, destination);
+        }).ToArray();
+        // Reject contradictory root definitions even with no source rows.
+        _ = WindowsPathMatcher.Normalize(aliases[0].SourceRoot, aliases);
         var sources = bridge.Select(t => new Source(
             t, WindowsPathMatcher.Normalize(t.Path),
             WindowsPathMatcher.Normalize(t.Path, aliases))).ToArray();
@@ -184,11 +200,16 @@ public static class PathPairVerifier
             var physical = group.Value.Where(x => x.Track.Subsong == 0).ToArray();
             if (physical.Length != 1) continue;
             var item = physical[0];
-            if (!Within(item.OriginalPath, sourceRoot)) continue;
             if (!destGroups.TryGetValue(group.Key, out var matches) || matches.Length != 1)
                 continue;
             var destination = matches[0];
-            if (!Within(destination.Path, targetRoot)) continue;
+            // Every candidate must be explained by one specific root, while
+            // uniqueness is checked across the ENTIRE alias set above.
+            if (!aliases.Any(alias =>
+                    Within(item.OriginalPath, alias.SourceRoot) &&
+                    Within(destination.Path, alias.TargetRoot) &&
+                    WindowsPathMatcher.Equivalent(item.OriginalPath, destination.Path, new[] { alias })))
+                continue;
             if (string.Equals(item.OriginalPath, destination.Path, StringComparison.OrdinalIgnoreCase))
                 continue;
             pairs.Add((item.OriginalPath, destination.Path));

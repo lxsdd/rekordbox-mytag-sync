@@ -46,15 +46,23 @@ public static class PhysicalFileIdentityVerifier
         PathAlias proposedRoot,
         CancellationToken cancellationToken = default,
         IProgress<PhysicalIdentityProgress>? progress = null)
+        => Verify(bridge, target, new[] { proposedRoot }, cancellationToken, progress);
+
+    public static PhysicalIdentityReport Verify(
+        IReadOnlyList<BridgeTrack> bridge,
+        IReadOnlyList<RekordboxTrackSnapshot> target,
+        IReadOnlyList<PathAlias> proposedRoots,
+        CancellationToken cancellationToken = default,
+        IProgress<PhysicalIdentityProgress>? progress = null)
     {
         ArgumentNullException.ThrowIfNull(bridge);
         ArgumentNullException.ThrowIfNull(target);
-        ArgumentNullException.ThrowIfNull(proposedRoot);
+        ArgumentNullException.ThrowIfNull(proposedRoots);
 
         if (!OperatingSystem.IsWindows())
             throw new PlatformNotSupportedException("Native file IDs can only be checked on Windows.");
 
-        var mapping = PathPairVerifier.CollectPairs(bridge, target, proposedRoot);
+        var mapping = PathPairVerifier.CollectPairs(bridge, target, proposedRoots);
         // File-ID lookups are latency-bound on mapped/network drives.
         // Four workers substantially reduce total wall time without
         // unbounded handles, random audio reads or persisted cache files.
