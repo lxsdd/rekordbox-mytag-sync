@@ -41,8 +41,13 @@ public static class EncryptedLibraryScalePreviewSelfTest
             i < TotalContentIds - MissingFromBridge
                 ? "Duplicate" + ((i - (TotalContentIds - MissingFromBridge - DuplicatePathContentIds)) / 2).ToString("D2") + ".mp3"
                 : "Track" + i.ToString("D6") + ".mp3";
+        // All six anomalous ContentIDs deliberately share THREE exact
+        // physical target paths; alternating root directories would
+        // incorrectly turn them into six distinct paths.
         string Destination(int i) =>
-            Path.Combine(targets[i % 2], Name(i));
+            Path.Combine(i >= TotalContentIds - MissingFromBridge - DuplicatePathContentIds &&
+                            i < TotalContentIds - MissingFromBridge
+                    ? targets[0] : targets[i % 2], Name(i));
         string Source(int i) =>
             Path.Combine(sources[i % 2], Name(i));
 
