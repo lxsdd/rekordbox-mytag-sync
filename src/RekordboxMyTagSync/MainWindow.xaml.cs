@@ -108,6 +108,7 @@ public partial class MainWindow : Window
         BuildPreviewButton.Click += async (_, _) => await BuildPreviewAsync();
         BuildVerifiedPreviewButton.Click += async (_, _) => await BuildVerifiedPreviewAsync();
         InvestigatePhysicalExceptionsButton.Click += async (_, _) => await InspectPhysicalExceptionsAsync();
+        ExportPhysicalExceptionsButton.Click += async (_, _) => await ExportPhysicalExceptionsAsync();
         CancelVerifiedPreviewButton.Click += (_, _) => _identityCancellation?.Cancel();
         ApplyButton.Click += (_, _) => ApplyApprovedPreview();
         RestoreButton.Click += (_, _) => RestoreRollingBackup();
@@ -549,6 +550,7 @@ public partial class MainWindow : Window
 
     private void InvalidateDatabaseAccess(string reason)
     {
+        RevokeExceptionReport();
         if (_databaseAccessQualified || _databaseSnapshot is not null)
             AppendDiagnostic(reason);
 
@@ -1219,6 +1221,7 @@ public partial class MainWindow : Window
 
     private void InvalidatePreview(string reason)
     {
+        RevokeExceptionReport();
         if (_previewExists || _approvedPreview is not null)
             AppendDiagnostic(reason);
 
@@ -1260,6 +1263,8 @@ public partial class MainWindow : Window
         BuildPreviewButton.IsEnabled = !_operationBusy && state.CanBuildPreview;
         BuildVerifiedPreviewButton.IsEnabled = !_operationBusy && state.CanBuildPreview;
         InvestigatePhysicalExceptionsButton.IsEnabled = !_operationBusy && state.CanBuildPreview;
+        ExportPhysicalExceptionsButton.IsEnabled = !_operationBusy &&
+            _reportRows is not null && state.CanBuildPreview;
         CancelVerifiedPreviewButton.IsEnabled = _operationBusy && _identityCancellation is not null;
         AnalyzePathsButton.IsEnabled = !_operationBusy;
         VerifyRootSampleButton.IsEnabled = !_operationBusy &&
