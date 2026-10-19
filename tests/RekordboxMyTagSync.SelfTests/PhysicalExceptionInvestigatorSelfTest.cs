@@ -48,6 +48,12 @@ public static class PhysicalExceptionInvestigatorSelfTest
                     ID TEXT PRIMARY KEY, ContentID TEXT, rb_local_deleted INTEGER DEFAULT 0);
                 CREATE TABLE djmdCue(
                     ID TEXT PRIMARY KEY, ContentID TEXT, rb_local_deleted INTEGER DEFAULT 0);
+                CREATE TABLE djmdBeatGrid(
+                    ID TEXT PRIMARY KEY, ContentID TEXT, rb_local_deleted INTEGER DEFAULT 0);
+                INSERT INTO djmdBeatGrid VALUES ('B1','C1',0);
+                INSERT INTO djmdBeatGrid VALUES ('B2','C1',0);
+                INSERT INTO djmdBeatGrid VALUES ('B3','C1',1);
+                INSERT INTO djmdBeatGrid VALUES ('B4','C2',0);
                 INSERT INTO djmdSongPlaylist VALUES ('P1','C1',0);
                 INSERT INTO djmdSongPlaylist VALUES ('P2','C1',0);
                 INSERT INTO djmdSongPlaylist VALUES ('P3','C2',1);
@@ -64,6 +70,7 @@ public static class PhysicalExceptionInvestigatorSelfTest
         var a = inspected.Single(x => x.ContentId == "C1");
         var b = inspected.Single(x => x.ContentId == "C2");
         if (a.PlaylistReferences != "2" || a.CueReferences != "1" ||
+            a.BeatgridReferences != "2" || b.BeatgridReferences != "1" ||
             b.PlaylistReferences != "0" || b.CueReferences != "2" ||
             a.MyTagReferences != "2" || b.MyTagReferences != "1" ||
             !a.OtherDjReferences.StartsWith("Not verifiable", StringComparison.Ordinal))
@@ -71,6 +78,24 @@ public static class PhysicalExceptionInvestigatorSelfTest
                 "Read-only exception audit omitted, invented or miscounted DJ references.");
         if (!before.AsSpan().SequenceEqual(SHA256.HashData(File.ReadAllBytes(db))))
             throw new InvalidOperationException("Exception investigation changed encrypted master.db fixture.");
+
+        // An unavailable optional beatgrid table must be reported as unknown,
+        // never zero, without modifying the encrypted source image.
+        var withoutBeatgrid = Path.Combine(temp, "no-beatgrid-exceptions-fixture.db");
+        EncryptedMutationFixture.Create(
+            withoutBeatgrid, @"R:\Singles\Duplicate.mp3", @"R:\Singles\Duplicate.mp3");
+        var beforeWithoutBeatgrid = SHA256.HashData(File.ReadAllBytes(withoutBeatgrid));
+        var noBeatgrid = PhysicalExceptionInvestigator.InspectReadOnly(
+            withoutBeatgrid, EncryptedMutationFixture.Key,
+            rows.Where(x => x.ContentId is "C1" or "C2").ToArray());
+        if (noBeatgrid.Any(x => !x.BeatgridReferences.StartsWith(
+                "Not verifiable", StringComparison.Ordinal)))
+            throw new InvalidOperationException(
+                "Missing beatgrid schema was misreported as zero references.");
+        if (!beforeWithoutBeatgrid.AsSpan().SequenceEqual(
+                SHA256.HashData(File.ReadAllBytes(withoutBeatgrid))))
+            throw new InvalidOperationException(
+                "Optional beatgrid probing changed the encrypted database.");
 
         var wrongId = false;
         try

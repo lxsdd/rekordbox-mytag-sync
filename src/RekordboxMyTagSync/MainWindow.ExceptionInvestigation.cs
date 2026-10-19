@@ -69,7 +69,7 @@ public partial class MainWindow
             var absent = result.Count(x => x.Reason == "MISSING_FROM_BRIDGE_EXPORT");
             PhysicalExceptionsStatusTextBlock.Text =
                 $"{result.Count} physical exception ContentIDs: {samePath} with duplicate rekordbox paths, " +
-                $"{absent} absent from foobar BRIDGE PATHS. Playlist/Cue/MyTag row counts are shown " +
+                $"{absent} absent from foobar BRIDGE PATHS. Playlist/Cue/Beatgrid/MyTag row counts are shown " +
                 "where directly queryable; unavailable data is NOT counted as zero. " +
                 "No music files, tag assignments, aliases or DB rows changed.";
             AppendDiagnostic(PhysicalExceptionsStatusTextBlock.Text);

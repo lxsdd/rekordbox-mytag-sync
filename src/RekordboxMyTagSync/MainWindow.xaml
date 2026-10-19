@@ -401,7 +401,7 @@
                                         <Button x:Name="InvestigatePhysicalExceptionsButton"
                                                 Padding="12,7"
                                                 Content="Inspect physical exceptions (read-only)"
-                                                ToolTip="Inspect only the duplicate rekordbox file paths and missing foobar-path matches, including existing track/playlist/cue/MyTag links. No full 40,000-track file-ID rescan and no database changes."/>
+                                                ToolTip="Inspect only the duplicate rekordbox file paths and missing foobar-path matches, including existing track/playlist/cue/beatgrid/MyTag links. No full 40,000-track file-ID rescan and no database changes."/>
                                         <TextBlock x:Name="PhysicalExceptionsStatusTextBlock"
                                                    Margin="12,0,0,0"
                                                    VerticalAlignment="Center"
@@ -426,6 +426,7 @@
                                         <DataGridTextColumn Header="Bridge snapshot" Binding="{Binding BridgeEvidence}" Width="510"/>
                                         <DataGridTextColumn Header="Playlist refs" Binding="{Binding PlaylistReferences}" Width="105"/>
                                         <DataGridTextColumn Header="Cue refs" Binding="{Binding CueReferences}" Width="90"/>
+                                        <DataGridTextColumn Header="Beatgrid refs" Binding="{Binding BeatgridReferences}" Width="115"/>
                                         <DataGridTextColumn Header="MyTag refs" Binding="{Binding MyTagReferences}" Width="105"/>
                                         <DataGridTextColumn Header="Hot-cue bank refs" Binding="{Binding OtherDjReferences}" Width="130"/>
                                         <DataGridTextColumn Header="Conclusion" Binding="{Binding Conclusion}" Width="620"/>
