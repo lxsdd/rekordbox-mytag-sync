@@ -35,6 +35,26 @@ public static class PhysicalExceptionReportCsv
         return output.ToString();
     }
 
+    // CSV evidence depends on the actual foobar (path, subsong) identities,
+    // not only bridge-state.tsv. A replaced compressed publication with the
+    // same state metadata must not authorize a stale diagnostic export.
+    public static void AssertBridgePathsUnchanged(
+        IReadOnlyList<BridgeTrack> inspected,
+        IReadOnlyList<BridgeTrack> current)
+    {
+        ArgumentNullException.ThrowIfNull(inspected);
+        ArgumentNullException.ThrowIfNull(current);
+        if (inspected.Count != current.Count)
+            throw new InvalidDataException("Bridge path count changed since exception inspection.");
+        for (var i = 0; i < inspected.Count; i++)
+        {
+            if (!string.Equals(inspected[i].Path, current[i].Path, StringComparison.Ordinal) ||
+                inspected[i].Subsong != current[i].Subsong)
+                throw new InvalidDataException(
+                    "Bridge physical/virtual path identity changed since exception inspection.");
+        }
+    }
+
     public static void WriteAtomic(string destination, IReadOnlyList<PhysicalExceptionRow> rows)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(destination);

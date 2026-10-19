@@ -14,6 +14,7 @@ public partial class MainWindow
     private RekordboxDatabaseSnapshot? _reportTarget;
     private RekordboxResolvedDatabaseAccess? _reportAccess;
     private string? _reportSettings;
+    private string? _reportDatabaseHash;
 
     private void RevokeExceptionReport()
     {
@@ -22,6 +23,7 @@ public partial class MainWindow
         _reportTarget = null;
         _reportAccess = null;
         _reportSettings = null;
+        _reportDatabaseHash = null;
         PhysicalExceptionsGrid.ItemsSource = null;
         ExportPhysicalExceptionsButton.IsEnabled = false;
     }
@@ -34,8 +36,10 @@ public partial class MainWindow
         var target = _reportTarget;
         var access = _reportAccess;
         var settings = _reportSettings;
+        var recordedDatabaseHash = _reportDatabaseHash;
         if (rows is null || source is null || target is null || access is null ||
-            settings is null || !_sourceSafe || !_targetSafe || !_databaseAccessQualified ||
+            settings is null || recordedDatabaseHash is null ||
+            !_sourceSafe || !_targetSafe || !_databaseAccessQualified ||
             RekordboxProcessGuard.IsRunning())
         {
             PhysicalExceptionsStatusTextBlock.Text = "Export blocked: inspect a safe Source and Target again.";
@@ -62,12 +66,21 @@ public partial class MainWindow
                 var stable = BridgeSourceDiscovery.ReadStable(source.DirectoryPath);
                 if (!Equals(stable.State, source.State))
                     throw new InvalidDataException("Bridge publication changed since inspection.");
+                PhysicalExceptionReportCsv.AssertBridgePathsUnchanged(
+                    source.Tracks, stable.Tracks);
                 var file = new FileInfo(target.Identity.CanonicalPath);
                 if (!file.Exists || file.Length != target.Identity.FileLength ||
                     file.LastWriteTimeUtc != target.Identity.LastWriteUtc)
                     throw new InvalidDataException("Database changed since inspection.");
+                if (!string.Equals(recordedDatabaseHash,
+                        RekordboxRollingBackup.ComputeFileSha256(file.FullName),
+                        StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException(
+                        "Encrypted database bytes changed since exception inspection.");
             });
-            if (!ReferenceEquals(rows, _reportRows) ||
+            if (!string.Equals(recordedDatabaseHash, _reportDatabaseHash,
+                    StringComparison.OrdinalIgnoreCase) ||
+                !ReferenceEquals(rows, _reportRows) ||
                 !ReferenceEquals(source, _bridgeSnapshot) ||
                 !ReferenceEquals(target, _databaseSnapshot) ||
                 !ReferenceEquals(access, _databaseAccess) ||
@@ -122,6 +135,8 @@ public partial class MainWindow
             {
                 if (RekordboxProcessGuard.IsRunning())
                     throw new InvalidOperationException("Close rekordbox before examining its database.");
+                var inspectedDbHash = RekordboxRollingBackup.ComputeFileSha256(
+                    db.Identity.CanonicalPath);
                 // Recheck stable bridge publication without inspecting 40k audio
                 // files. A newly exported foobar snapshot must not be mistaken
                 // for the previously selected source.
@@ -137,8 +152,15 @@ public partial class MainWindow
                 var proposal = analysis.Proposals[0];
                 var root = new PathAlias(proposal.SourceRoot, proposal.TargetRoot);
                 var cases = PhysicalExceptionInvestigator.Identify(stable.Tracks, db.Tracks, root);
-                return PhysicalExceptionInvestigator.InspectReadOnly(
+                var inspectedRows = PhysicalExceptionInvestigator.InspectReadOnly(
                     db.Identity.CanonicalPath, access.Key, cases);
+                if (!string.Equals(inspectedDbHash,
+                        RekordboxRollingBackup.ComputeFileSha256(
+                            db.Identity.CanonicalPath),
+                        StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException(
+                        "Database bytes changed during exception inspection.");
+                return (Rows: inspectedRows, DatabaseHash: inspectedDbHash);
             });
             if (!ReferenceEquals(source, _bridgeSnapshot) ||
                 !ReferenceEquals(db, _databaseSnapshot) ||
@@ -149,16 +171,17 @@ public partial class MainWindow
                 throw new InvalidDataException(
                     "Source, database or settings changed during exception investigation.");
 
-            PhysicalExceptionsGrid.ItemsSource = result;
-            _reportRows = result;
+            PhysicalExceptionsGrid.ItemsSource = result.Rows;
+            _reportRows = result.Rows;
+            _reportDatabaseHash = result.DatabaseHash;
             _reportSource = source;
             _reportTarget = db;
             _reportAccess = access;
             _reportSettings = fingerprint;
-            var samePath = result.Count(x => x.Reason == "SAME_REKORDBOX_PATH");
-            var absent = result.Count(x => x.Reason == "MISSING_FROM_BRIDGE_EXPORT");
+            var samePath = result.Rows.Count(x => x.Reason == "SAME_REKORDBOX_PATH");
+            var absent = result.Rows.Count(x => x.Reason == "MISSING_FROM_BRIDGE_EXPORT");
             PhysicalExceptionsStatusTextBlock.Text =
-                $"{result.Count} physical exception ContentIDs: {samePath} with duplicate rekordbox paths, " +
+                $"{result.Rows.Count} physical exception ContentIDs: {samePath} with duplicate rekordbox paths, " +
                 $"{absent} absent from foobar BRIDGE PATHS. Playlist/Cue/Beatgrid/MyTag row counts are shown " +
                 "where directly queryable; unavailable data is NOT counted as zero. " +
                 "No music files, tag assignments, aliases or DB rows changed.";

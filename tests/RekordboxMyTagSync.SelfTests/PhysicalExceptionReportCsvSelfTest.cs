@@ -39,5 +39,29 @@ public static class PhysicalExceptionReportCsvSelfTest
         try { _ = PhysicalExceptionReportCsv.Render(Enumerable.Repeat(row, 101).ToArray()); }
         catch (InvalidDataException) { rejected = true; }
         if (!rejected) throw new InvalidOperationException("Oversized CSV accepted.");
+        // The UI must refuse a replaced bridge publication with unchanged
+        // state metadata: count, path, and subsong are rechecked in full.
+        var empty = new Dictionary<string, IReadOnlyList<string>>(
+            StringComparer.OrdinalIgnoreCase);
+        var original = new[]
+        {
+            new BridgeTrack(@"Z:\Music\Main.mp3", 0, empty, empty),
+            new BridgeTrack(@"Z:\Music\Mix.mp3", 1, empty, empty)
+        };
+        PhysicalExceptionReportCsv.AssertBridgePathsUnchanged(original, original);
+        foreach (var changed in new IReadOnlyList<BridgeTrack>[]
+        {
+            [original[0]],
+            [original[0], original[1] with { Path = @"Z:\Music\Elsewhere.mp3" }],
+            [original[0], original[1] with { Subsong = 0 }]
+        })
+        {
+            rejected = false;
+            try { PhysicalExceptionReportCsv.AssertBridgePathsUnchanged(original, changed); }
+            catch (InvalidDataException) { rejected = true; }
+            if (!rejected)
+                throw new InvalidOperationException(
+                    "Replaced physical/virtual bridge path scope was accepted.");
+        }
     }
 }
