@@ -138,6 +138,72 @@ public static class PreviewSelfTest
         var ambiguousPlan = MyTagMutationPlanner.Create(request, preview, ambiguousDefinitions);
         AssertInvalidPlan(ambiguousPlan, "ambiguous same-name MyTag group did not fail closed");
 
+        // Ambiguous group and value definitions must return conflicts rather than
+        // modifying the detail list during its enumeration.
+        var ambiguousGroupPreview = PreviewEngine.Create(request with
+        {
+            MyTagDefinitions = ambiguousDefinitions
+        });
+        AssertInvalidConflict(ambiguousGroupPreview,
+            "ambiguous group definitions must fail closed without enumeration failure");
+        if (!ambiguousGroupPreview.Details.Any(x =>
+                x.Message.Contains("ambiguous", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("ambiguous group was not explained");
+
+        var ambiguousValueDefinitions = definitions.Concat(new[]
+        {
+            new RekordboxMyTagDefinition("V6", "Euphoric", "G2", 3, 0)
+        }).ToArray();
+        var ambiguousValuePreview = PreviewEngine.Create(request with
+        {
+            MyTagDefinitions = ambiguousValueDefinitions
+        });
+        AssertInvalidConflict(ambiguousValuePreview,
+            "ambiguous value definitions must fail closed without enumeration failure");
+
+        // An external whole-set editor can remove a previously tool-owned tag.
+        // Such provenance drift must block removal, never adopt a manual tag.
+        var externalReplacement = PreviewEngine.Create(request with
+        {
+            RekordboxTracks = new[]
+            {
+                targetOne with
+                {
+                    Assignments = new[]
+                    {
+                        new MyTagAssignment("Genre", "House"),
+                        new MyTagAssignment("Mood", "Manual")
+                    }
+                }
+            }
+        });
+        AssertInvalidConflict(externalReplacement,
+            "external replacement of tool-owned assignment must fail closed");
+        if (externalReplacement.Details.Any(x =>
+                x.Kind == PreviewDetailKind.Remove &&
+                string.Equals(x.Tag?.Value, "Manual", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("external/manual tag scheduled for deletion");
+
+        // Exercise the indexed unmatched-provenance path at library scale.
+        const int scale = 52784;
+        var largeTargets = Enumerable.Range(0, scale)
+            .Select(i => new RekordboxTrackSnapshot(
+                "S" + i.ToString("D6"),
+                Path.Combine(canonicalRoot, "Scale", i.ToString("D6") + ".mp3"),
+                new[] { new MyTagAssignment("Mood", "Manual") }))
+            .ToArray();
+        var largeManaged = Enumerable.Range(0, scale)
+            .Select(i => new ManagedAssignment(
+                "S" + i.ToString("D6"), new MyTagAssignment("Mood", "Manual")))
+            .ToArray();
+        var scalePreview = PreviewEngine.Create(new PreviewRequest(
+            "dbid:scale-fixture", Array.Empty<BridgeTrack>(),
+            Array.Empty<MappingRule>(), largeTargets, largeManaged));
+        if (!scalePreview.IsValid || scalePreview.Counts.Conflicts != 0 ||
+            scalePreview.Counts.Additions != 0 || scalePreview.Counts.Removals != 0)
+            throw new InvalidOperationException(
+                "indexed unmatched-provenance scale fixture failed");
+
         var idempotentRequest = request with
         {
             BridgeTracks = new[] { bridgeOne },
@@ -169,16 +235,36 @@ public static class PreviewSelfTest
         if (!string.Equals(preview.FingerprintSha256, reordered.FingerprintSha256, StringComparison.Ordinal))
             throw new InvalidOperationException("preview fingerprint changed under semantically irrelevant input ordering");
 
-        var duplicateBridge = Track(
+        // A virtual CUE sibling must never make its physical main file ambiguous.
+        var virtualCueSibling = Track(
             Path.Combine(canonicalRoot, "Artist", "One.mp3"),
             1,
             bridgeOne.Core,
             bridgeOne.Extra);
-        var duplicateBridgePreview = PreviewEngine.Create(request with
+        var physicalAndVirtual = PreviewEngine.Create(request with
         {
-            BridgeTracks = new[] { bridgeOne, duplicateBridge }
+            BridgeTracks = new[] { bridgeOne, virtualCueSibling }
         });
-        AssertInvalidConflict(duplicateBridgePreview, "bridge path/subsong collapse did not fail closed");
+        if (!physicalAndVirtual.IsValid)
+            throw new InvalidOperationException("virtual CUE sibling blocked the physical main file");
+        AssertCounts(physicalAndVirtual, additions: 1, removals: 1, already: 1,
+            conflicts: 0, unmatched: 1);
+        AssertDetail(physicalAndVirtual, PreviewDetailKind.Add, "C1", "Mood", "Euphoric");
+        if (!physicalAndVirtual.Details.Any(x => x.Kind == PreviewDetailKind.Unmatched &&
+                x.Message.Contains("Virtual subsong 1", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("virtual CUE sibling was not reported as excluded");
+
+        // Two physical bridge entries for the same canonical path remain unsafe.
+        var competingPhysical = bridgeOne with { Path = targetOne.Path };
+        var duplicatePhysicalPreview = PreviewEngine.Create(request with
+        {
+            BridgeTracks = new[] { bridgeOne, competingPhysical }
+        });
+        AssertInvalidConflict(duplicatePhysicalPreview,
+            "two competing physical bridge entries did not fail closed");
+        if (duplicatePhysicalPreview.Details.Any(x =>
+                x.Kind == PreviewDetailKind.Add || x.Kind == PreviewDetailKind.Remove))
+            throw new InvalidOperationException("ambiguous physical sources scheduled a MyTag write");
 
         var duplicateTargetPreview = PreviewEngine.Create(request with
         {

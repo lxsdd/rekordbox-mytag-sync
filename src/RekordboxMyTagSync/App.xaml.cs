@@ -205,6 +205,48 @@ public partial class App : Application
                 throw new InvalidOperationException(
                     "Investigation reason code / ContentId display regression.");
 
+            // Exercise the production PreviewEngine conflict model through the
+            // actual Preview DataGrid (not the separate excluded-track table).
+            // This synthetic case previously threw while appending a conflict
+            // during enumeration of the Add detail.
+            var syntheticPath = @"R:\\Music\\PreviewAmbiguous.mp3";
+            var syntheticCore = new Dictionary<string, IReadOnlyList<string>>(
+                StringComparer.OrdinalIgnoreCase);
+            var syntheticExtra = new Dictionary<string, IReadOnlyList<string>>(
+                StringComparer.OrdinalIgnoreCase)
+            {
+                ["MOOD"] = new[] { "Bright" }
+            };
+            var ambiguousPreview = PreviewEngine.Create(new PreviewRequest(
+                "dbid:ui-smoke-ambiguous",
+                new[] { new BridgeTrack(syntheticPath, 0, syntheticCore, syntheticExtra) },
+                new[] { new MappingRule("MOOD", "Mood") },
+                new[] { new RekordboxTrackSnapshot("C-ui", syntheticPath,
+                    Array.Empty<MyTagAssignment>()) },
+                Array.Empty<ManagedAssignment>(),
+                MyTagDefinitions: new[]
+                {
+                    new RekordboxMyTagDefinition("G1", "Mood", null, 0, 0),
+                    new RekordboxMyTagDefinition("G2", "Mood", null, 1, 0)
+                }));
+            if (ambiguousPreview.IsValid || ambiguousPreview.Counts.Conflicts != 1)
+                throw new InvalidOperationException(
+                    "Ambiguous MyTag definitions did not produce one fail-closed preview conflict.");
+            window.PreviewGrid.ItemsSource = ambiguousPreview.Details;
+            var previewConflict = window.PreviewGrid.Items
+                .OfType<PreviewDetail>()
+                .SingleOrDefault(x => x.Kind == PreviewDetailKind.Conflict);
+            if (previewConflict?.ContentId != "C-ui" ||
+                !previewConflict.Message.Contains("ambiguous", StringComparison.OrdinalIgnoreCase) ||
+                window.PreviewGrid.Columns.Count != 5 ||
+                window.PreviewGrid.Columns[4] is not
+                    System.Windows.Controls.DataGridTextColumn messageColumn ||
+                messageColumn.Binding is not System.Windows.Data.Binding messageBinding ||
+                messageBinding.Path?.Path != nameof(PreviewDetail.Message))
+                throw new InvalidOperationException(
+                    "The real WPF Preview grid does not expose the fail-closed MyTag conflict.");
+            window.PreviewGrid.ItemsSource = null;
+
             var proposals = window.PathProposalsGrid;
             if (proposals.Columns.Count != 6 ||
                 proposals.Columns[4].MinWidth < 500 ||
