@@ -89,8 +89,80 @@ public static class BridgeSnapshot
                 extra = normalized;
             }
 
+            if (header.Length == 26)
+                ProjectCoreMetadataVectors(cols[25], core);
+
             tracks.Add(new BridgeTrack(cols[0], subsong, core, extra));
         }
         return tracks;
+    }
+
+    // Bridge schema V3 contains the original foobar field vectors. Core
+    // columns remain scalar backwards-compatibility projections; take their
+    // real multiple values from metadata_vectors_json instead. Non-Core
+    // metadata ALWAYS comes from canonical extra_metadata_json and must not
+    // be duplicated in another model or used to override core fields.
+    private static void ProjectCoreMetadataVectors(
+        string json, Dictionary<string, IReadOnlyList<string>> core)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            throw new InvalidDataException("Bridge schema-v3 metadata vectors are empty.");
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+                throw new InvalidDataException(
+                    "Bridge schema-v3 metadata vectors must be an array.");
+
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var field in document.RootElement.EnumerateArray())
+            {
+                if (field.ValueKind != JsonValueKind.Object ||
+                    !field.TryGetProperty("name", out var nameNode) ||
+                    nameNode.ValueKind != JsonValueKind.String ||
+                    !field.TryGetProperty("values", out var valuesNode) ||
+                    valuesNode.ValueKind != JsonValueKind.Array)
+                    throw new InvalidDataException(
+                        "Bridge schema-v3 metadata vector entry is invalid.");
+                var name = nameNode.GetString();
+                if (string.IsNullOrWhiteSpace(name) || !names.Add(name))
+                    throw new InvalidDataException(
+                        "Bridge schema-v3 has an empty or duplicate metadata vector field name.");
+
+                var values = new List<string>();
+                foreach (var element in valuesNode.EnumerateArray())
+                {
+                    if (element.ValueKind != JsonValueKind.String)
+                        throw new InvalidDataException(
+                            "Bridge schema-v3 vector has a non-string value.");
+                    var value = element.GetString()!;
+                    if (!string.IsNullOrEmpty(value)) values.Add(value);
+                }
+
+                // The producer uses foobar tag names whereas V1 Core header
+                // columns are snake_case. Some foobar synonyms are mapped
+                // onto their canonical existing Core column only.
+                var key = name.ToUpperInvariant() switch
+                {
+                    "ORIGINAL TITLE" => "original_title",
+                    "REMIXED BY" => "remixed_by",
+                    "ALBUM ARTIST" => "album_artist",
+                    "TRACKNUMBER" or "TRACK" => "track_number",
+                    "TOTALTRACKS" or "TRACKTOTAL" => "total_tracks",
+                    "DISCNUMBER" or "DISC" => "disc_number",
+                    "TOTALDISCS" or "DISCTOTAL" => "total_discs",
+                    "CATALOGNUMBER" or "CATALOG NUMBER" or "CATALOG" => "catalog_number",
+                    _ => name
+                };
+                if (core.ContainsKey(key))
+                    core[key] = values.ToArray();
+            }
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidDataException(
+                "Bridge schema-v3 metadata vectors contain invalid JSON.", ex);
+        }
     }
 }

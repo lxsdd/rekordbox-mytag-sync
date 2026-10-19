@@ -6,6 +6,8 @@ Windows cross-version compatibility: FULL now also tests the exact source SHA on
 
 Safety: bridge/audio/tag inputs are read-only; every write requires a fresh preview and closed rekordbox; exactly one validated rolling pre-write backup is kept per distinct rekordbox DBID; writes are transactional, idempotent and duplicate-free; manual My Tags are never blindly removed; only assignments recorded in tool provenance may be removed as stale; unsupported or ambiguous database states fail closed.
 
+Bridge V3 compatibility: full foobar Core multivalues (notably GENRE, DATE, ARTIST) are read from the producer's metadata_vectors_json while legacy 24/25-column V1/V2 records retain their original scalar behaviour. Non-Core metadata remains sourced exclusively from canonical extra_metadata_json; no redundant tag model or media writes are introduced. Malformed vectors, duplicate names ignoring case, and non-string vector values are rejected before preview. Positive tests verify GENRE→Genre and DATE→Year preserve every source value. This is read-only metadata parsing and never authorizes master.db mutation.
+
 Configurable mapping filters: each foobar tag mapping can optionally include a time-bounded
 source-value regex filter. Matching source values are included by default; "Exclude matches"
 inverts the selection. Filtering is performed on each original value before optional

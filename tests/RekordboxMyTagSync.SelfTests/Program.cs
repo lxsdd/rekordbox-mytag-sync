@@ -52,7 +52,7 @@ static string WriteBridgeV3Fixture(string directory)
         @"Z:\Music\Singles\V3.mp3", "0", "Artist", "", "Title", "", "", "Album", "Artist", "1", "1", "1", "1",
         "2001-01-01", "Techno", "Peak", "132", "Label", "CAT003", "280", "GBABC7654321", "MP3", "320", "abcdef0123456789",
         "{\"MOOD\":[\"Driving\"]}",
-        "[{\"name\":\"MOOD\",\"values\":[\"Driving\",\"Driving\"]}]"
+        "[{\"name\":\"GENRE\",\"values\":[\"Techno\",\"House\"]},{\"name\":\"DATE\",\"values\":[\"2001-01-01\",\"2002-02-02\"]},{\"name\":\"ARTIST\",\"values\":[\"Artist\",\"Featured Artist\"]},{\"name\":\"MOOD\",\"values\":[\"Driving\",\"Driving\"]}]"
     };
     using var file = File.Create(path);
     using var gzip = new GZipStream(file, CompressionLevel.SmallestSize);
@@ -158,9 +158,50 @@ try
     var v3 = BridgeSnapshot.Read(WriteBridgeV3Fixture(temp));
     if (v3.Count != 1 || v3[0].Path != @"Z:\Music\Singles\V3.mp3")
         throw new InvalidOperationException("bridge v3 read failed");
-    AssertSequence("bridge v3 core genre", v3[0].GetFieldValues("GENRE"), "Techno");
+    AssertSequence("bridge v3 true Core genre multivalue", v3[0].GetFieldValues("GENRE"), "Techno", "House");
+    AssertSequence("bridge v3 true Core date multivalue", v3[0].GetFieldValues("DATE"), "2001-01-01", "2002-02-02");
+    AssertSequence("bridge v3 true Core artist multivalue", v3[0].GetFieldValues("ARTIST"), "Artist", "Featured Artist");
     AssertSequence("bridge v3 extra metadata remains canonical source", v3[0].GetFieldValues("MOOD"), "Driving");
-    AssertSequence("bridge v3 metadata vectors are intentionally not projected", v3[0].GetFieldValues("metadata_vectors_json"));
+    AssertSequence("bridge v3 metadata vectors are not duplicated as a user tag", v3[0].GetFieldValues("metadata_vectors_json"));
+    AssertSequence("bridge v3 GENRE maps both individual MyTags",
+        MappingEngine.Apply(new MappingRule("GENRE", "Genre"), v3[0].GetFieldValues("GENRE")), "Techno", "House");
+    AssertSequence("bridge v3 DATE-to-Year maps both release years",
+        MappingEngine.Apply(new MappingRule("DATE", "Year", TransformKind.YearFromDate),
+            v3[0].GetFieldValues("DATE")), "2001", "2002");
+
+    // Reject malformed and ambiguous V3 vectors before Preview/Apply can be approved.
+    foreach (var malformedVector in new[]
+    {
+        "", "{}", "[{\"name\":\"GENRE\",\"values\":\"House\"}]",
+        "[{\"name\":\"GENRE\",\"values\":[42]}]",
+        "[{\"name\":\"GENRE\",\"values\":[\"House\"]},{\"name\":\"genre\",\"values\":[\"Techno\"]}]"
+    })
+    {
+        var malformedPath = WriteBridgeV3Fixture(temp);
+        using (var input = File.OpenRead(malformedPath))
+        using (var gzip = new GZipStream(input, CompressionMode.Decompress))
+        using (var reader = new StreamReader(gzip))
+        {
+            var header = reader.ReadLine()!;
+            var row = reader.ReadLine()!;
+            var modified = row[..(row.LastIndexOf('\t') + 1)] + malformedVector;
+            var badPath = Path.Combine(temp, "invalid-v3-" +
+                Guid.NewGuid().ToString("N") + ".tsv.gz");
+            using (var output = File.Create(badPath))
+            using (var zipped = new GZipStream(output, CompressionLevel.SmallestSize))
+            using (var writer = new StreamWriter(zipped, new UTF8Encoding(false)))
+            {
+                writer.WriteLine(header);
+                writer.WriteLine(modified);
+            }
+            var rejected = false;
+            try { _ = BridgeSnapshot.Read(badPath); }
+            catch (InvalidDataException) { rejected = true; }
+            if (!rejected)
+                throw new InvalidOperationException(
+                    "Malformed or ambiguous bridge V3 vectors were accepted.");
+        }
+    }
 
     var duplicateCore = WriteBridgeFixture(temp, true, "{\"GENRE\":[\"Techno\"]}");
     var rejectedCoreDuplicate = false;
