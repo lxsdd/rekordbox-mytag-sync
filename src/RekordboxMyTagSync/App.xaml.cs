@@ -195,6 +195,13 @@ public partial class App : Application
                     System.IO.File.Delete(filterSettingsPath);
             }
 
+            // The production UI can retain only a typed, physically scoped
+            // preview and MUST remain incapable of writing to real master.db
+            // until the user separately approves a hardware write test.
+            if (window.ApplyButton.IsEnabled || window.RestoreButton.IsEnabled)
+                throw new InvalidOperationException(
+                    "WPF read-only qualification unexpectedly enabled live Apply/Restore.");
+
             // Exercise the production column-width persistence against actual
             // WPF DataGrid columns without touching user profile settings.
             var widthsPath = System.IO.Path.Combine(

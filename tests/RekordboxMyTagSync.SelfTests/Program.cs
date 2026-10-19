@@ -246,6 +246,7 @@ try
     RekordboxUpdateCounterSelfTest.Run();
     RekordboxMyTagDefinitionWriterSelfTest.Run();
     RekordboxMutationExecutorSelfTest.Run(temp);
+    VerifiedMutationAuthoritySelfTest.Run(temp);
     RekordboxDatabaseAccessResolverSelfTest.Run(temp);
     AppSettingsStoreSelfTest.Run(temp);
     RekordboxDatabaseSelfTest.Run(temp);

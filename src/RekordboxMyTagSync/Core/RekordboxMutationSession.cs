@@ -279,7 +279,8 @@ internal static class RekordboxMutationPreflight
         ProvenanceDocument freshProvenance,
         IReadOnlyList<BridgeTrack> bridgeTracks,
         IReadOnlyList<MappingRule> mappings,
-        IReadOnlyList<PathAlias>? pathAliases = null)
+        IReadOnlyList<PathAlias>? pathAliases = null,
+        VerifiedMutationAuthority? physicalAuthority = null)
     {
         ArgumentNullException.ThrowIfNull(approvedPreview);
         ArgumentNullException.ThrowIfNull(freshSnapshot);
@@ -292,12 +293,27 @@ internal static class RekordboxMutationPreflight
         if (string.IsNullOrWhiteSpace(approvedPreview.FingerprintSha256))
             throw new InvalidDataException("Approved preview fingerprint is empty.");
 
-        var managedAssignments = ProvenanceStore.ToManagedAssignments(freshProvenance, freshSnapshot);
+        // A physically scoped approval MUST be reconstructed from freshly
+        // opened Windows file handles. Never accidentally substitute the
+        // full bridge/ContentID tables in the pending mutation preview.
+        var physicalScope = physicalAuthority?.Reverify(
+            freshSnapshot, bridgeTracks, pathAliases);
+        var sources = physicalScope?.Sources ?? bridgeTracks;
+        var targets = physicalScope?.Targets ?? freshSnapshot.Tracks;
+        var managedAssignments = ProvenanceStore.ToManagedAssignments(
+            freshProvenance, freshSnapshot);
+        if (physicalScope is not null)
+        {
+            var includedIds = targets.Select(x => x.ContentId)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            managedAssignments = managedAssignments
+                .Where(x => includedIds.Contains(x.ContentId)).ToArray();
+        }
         var request = new PreviewRequest(
             freshSnapshot.Identity.PreviewIdentity,
-            bridgeTracks,
+            sources,
             mappings,
-            freshSnapshot.Tracks,
+            targets,
             managedAssignments,
             pathAliases,
             freshSnapshot.MyTagDefinitions);

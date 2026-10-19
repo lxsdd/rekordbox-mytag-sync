@@ -153,6 +153,23 @@ public partial class MainWindow
             _bridgeSnapshot = result.stable;
             _cachedIdentityEvidence = result.observed;
             PreviewGrid.ItemsSource = result.preview.Details;
+            // Capture only the set of physically verified main files, with
+            // the exact effective mapping used for the displayed preview.
+            // This is still DISPLAY-ONLY while LiveDatabaseWritesApproved
+            // remains false; the executor must re-open native IDs at Apply.
+            if (result.preview.IsValid && result.preview.Counts.Conflicts == 0)
+            {
+                _approvedPhysicalAuthority = VerifiedMutationAuthority.CaptureReadOnly(
+                    database, result.stable.Tracks,
+                    result.scope.ConfiguredAliases ?? new[] { result.scope.TemporaryAlias },
+                    result.evidence);
+                _approvedPreviewMappings = result.effectiveMappings.ToArray();
+                _configuredMappingsAtPreview = settings.EffectiveMappings.ToArray();
+                _approvedPreview = result.preview;
+                _previewExists = true;
+                _previewValid = true;
+                _previewFresh = true;
+            }
             var pathByContentId = database.Tracks.ToDictionary(
                 x => x.ContentId, x => x.Path, StringComparer.OrdinalIgnoreCase);
             var qualifiedContentIds = result.scope.Targets
@@ -224,8 +241,9 @@ public partial class MainWindow
                     ? $"{settings.EffectivePathAliases.Count} configured roots were checked ONLY through native file IDs; "
                     : "Automatically suggested root is TEMPORARY; ") +
                 "all results are proposals, Apply and Restore stay LOCKED.";
-            // Intentionally never assign _approvedPreview. A display-only
-            // report is not an authorization to mutate a real database.
+            // The captured preview is informational in this read-only
+            // build. The production Apply/Restore buttons remain locked
+            // until separately and explicitly authorized.
             SetOperationStatus("Verified MyTag preview completed — no data or settings changed.");
             AppendDiagnostic(PreviewRunStatusTextBlock.Text);
         }
