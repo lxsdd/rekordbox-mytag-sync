@@ -99,6 +99,13 @@ public static class BridgeSourceDiscovery
                     state,
                     "digital-items.tsv.gz is missing.",
                     selected);
+            var payloadSchema = BridgeSnapshot.ProbeSchemaVersion(snapshotPath);
+            if (payloadSchema != state.SchemaVersion)
+                return new BridgeSourceCandidate(
+                    canonical, false, state,
+                    "Bridge state schema_version=" + state.SchemaVersion +
+                    " but snapshot header is schema v" + payloadSchema + ".",
+                    selected);
 
             return new BridgeSourceCandidate(
                 canonical,
@@ -133,15 +140,26 @@ public static class BridgeSourceDiscovery
 
         var beforeBytes = ReadSharedBytes(statePath);
         var state = ParseState(beforeBytes);
-        var tracks = BridgeSnapshot.Read(snapshotPath);
+
+        // Parse one immutable in-memory copy of the compressed source, and
+        // reject concurrent atomic replacement even if the state file did
+        // not yet advance its generation.
+        var payloadBefore = ReadSharedBytes(snapshotPath);
+        IReadOnlyList<BridgeTrack> tracks;
+        using (var pinned = new MemoryStream(payloadBefore, writable: false))
+            tracks = BridgeSnapshot.ReadCompressed(pinned, state.SchemaVersion);
         if (tracks.Count != state.ItemCount)
             throw new InvalidDataException(
                 $"Bridge item_count={state.ItemCount}, snapshot={tracks.Count}.");
 
+        var payloadAfter = ReadSharedBytes(snapshotPath);
         var afterBytes = ReadSharedBytes(statePath);
         if (!beforeBytes.AsSpan().SequenceEqual(afterBytes))
             throw new InvalidDataException(
                 "Bridge state changed while reading the snapshot; the snapshot is rejected.");
+        if (!payloadBefore.AsSpan().SequenceEqual(payloadAfter))
+            throw new InvalidDataException(
+                "Bridge compressed snapshot changed during read; rejecting mixed generation.");
 
         return new BridgeSourceSnapshot(canonical, state, tracks);
     }

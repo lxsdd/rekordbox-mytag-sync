@@ -155,6 +155,8 @@ try
     AssertSequence("bridge v2 true multivalue extra", v2[0].GetFieldValues("mood"), "Euphoric", "Dark");
     AssertSequence("bridge v2 custom multivalue extra", v2[0].GetFieldValues("CUSTOM_TAG"), "Foo", "Bar");
 
+    BridgeAtomicContractSelfTest.Run(temp);
+
     var v3 = BridgeSnapshot.Read(WriteBridgeV3Fixture(temp));
     if (v3.Count != 1 || v3[0].Path != @"Z:\Music\Singles\V3.mp3")
         throw new InvalidOperationException("bridge v3 read failed");

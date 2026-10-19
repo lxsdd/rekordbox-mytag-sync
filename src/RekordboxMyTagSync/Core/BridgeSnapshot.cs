@@ -31,16 +31,32 @@ public static class BridgeSnapshot
     public static IReadOnlyList<BridgeTrack> Read(string gzipPath)
     {
         using var file = File.OpenRead(gzipPath);
+        return ReadCompressed(file, expectedSchemaVersion: null);
+    }
+
+    // Source discovery needs only the gzip header, not a 52k-row inflation.
+    internal static int ProbeSchemaVersion(string gzipPath)
+    {
+        using var file = File.OpenRead(gzipPath);
         using var gzip = new GZipStream(file, CompressionMode.Decompress);
         using var reader = new StreamReader(gzip);
-        var header = (reader.ReadLine() ?? throw new InvalidDataException("Missing bridge header")).Split('\t');
-        if (header.Length is not (24 or 25 or 26) ||
-            !header.Take(24).SequenceEqual(V1Header, StringComparer.Ordinal))
-            throw new InvalidDataException("Unsupported bridge schema.");
-        if (header.Length >= 25 && header[24] != "extra_metadata_json")
-            throw new InvalidDataException("Unsupported bridge schema extension.");
-        if (header.Length == 26 && header[25] != "metadata_vectors_json")
-            throw new InvalidDataException("Unsupported bridge schema-v3 extension.");
+        return ValidateHeader(reader.ReadLine());
+    }
+
+    // Pin one compressed snapshot image before parsing: no path reopen.
+    internal static IReadOnlyList<BridgeTrack> ReadCompressed(
+        Stream compressed, int? expectedSchemaVersion)
+    {
+        using var gzip = new GZipStream(compressed, CompressionMode.Decompress, leaveOpen: true);
+        using var reader = new StreamReader(gzip);
+        var headerLine = reader.ReadLine();
+        var actual = ValidateHeader(headerLine);
+        if (expectedSchemaVersion.HasValue && actual != expectedSchemaVersion.Value)
+            throw new InvalidDataException(
+                "Bridge state schema_version=" + expectedSchemaVersion.Value +
+                " but digital-items.tsv.gz is schema v" + actual +
+                "; rejecting mixed snapshot generations.");
+        var header = headerLine!.Split('\t');
 
         var tracks = new List<BridgeTrack>();
         var identities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -95,6 +111,20 @@ public static class BridgeSnapshot
             tracks.Add(new BridgeTrack(cols[0], subsong, core, extra));
         }
         return tracks;
+    }
+
+    private static int ValidateHeader(string? line)
+    {
+        if (line is null) throw new InvalidDataException("Missing bridge header.");
+        var header = line.Split('\t');
+        if (header.Length is not (24 or 25 or 26) ||
+            !header.Take(24).SequenceEqual(V1Header, StringComparer.Ordinal))
+            throw new InvalidDataException("Unsupported bridge schema.");
+        if (header.Length >= 25 && header[24] != "extra_metadata_json")
+            throw new InvalidDataException("Unsupported bridge schema extension.");
+        if (header.Length == 26 && header[25] != "metadata_vectors_json")
+            throw new InvalidDataException("Unsupported bridge schema-v3 extension.");
+        return header.Length - 23;
     }
 
     // Bridge schema V3 contains the original foobar field vectors. Core

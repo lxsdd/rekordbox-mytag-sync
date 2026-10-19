@@ -110,6 +110,39 @@ public partial class App : Application
                         $"Production table '{name}' disables horizontal scrolling.");
             }
 
+            // Real WPF Source discovery must reject a V3 state advertising
+            // an older V2 payload. This is synthetic temporary input only.
+            var schemaSmokeDir = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(), "MyTagSync-source-schema-" +
+                Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(schemaSmokeDir);
+            try
+            {
+                System.IO.File.WriteAllText(
+                    System.IO.Path.Combine(schemaSmokeDir, BridgeSourceDiscovery.StateFileName),
+                    "schema_version\t3\ngeneration\t1\ncomplete\t1\n" +
+                    "item_count\t0\nlast_change_utc\t2026-10-19T00:00:00Z\n");
+                using (var file = System.IO.File.Create(System.IO.Path.Combine(
+                           schemaSmokeDir, BridgeSourceDiscovery.SnapshotFileName)))
+                using (var zip = new System.IO.Compression.GZipStream(
+                           file, System.IO.Compression.CompressionLevel.Fastest))
+                using (var writer = new System.IO.StreamWriter(zip))
+                    writer.WriteLine(
+                        "path\tsubsong\tartist\tartists\ttitle\toriginal_title\tremixed_by\t" +
+                        "album\talbum_artist\ttrack_number\ttotal_tracks\tdisc_number\t" +
+                        "total_discs\tdate\tgenre\tstyle\tbpm\tlabel\tcatalog_number\t" +
+                        "duration_seconds\tisrc\tcodec\tbitrate\ttag_fingerprint\textra_metadata_json");
+                var candidate = BridgeSourceDiscovery.Inspect(schemaSmokeDir);
+                if (candidate.Safe || candidate.Error is null ||
+                    !candidate.Error.Contains("schema", StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException(
+                        "WPF Source discovery allowed V3 state / V2 payload mismatch.");
+            }
+            finally
+            {
+                System.IO.Directory.Delete(schemaSmokeDir, recursive: true);
+            }
+
             // The source-value regex filter must be an editable production
             // mapping column, not just a core API option hidden from users.
             var filterColumn = window.MappingGrid.Columns
