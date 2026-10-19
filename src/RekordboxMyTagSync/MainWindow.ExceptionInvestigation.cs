@@ -144,6 +144,8 @@ public partial class MainWindow
                 if (!Equals(stable.State, source.State))
                     throw new InvalidDataException(
                         "foobar bridge generation changed; click Source → Inspect again.");
+                PhysicalExceptionReportCsv.AssertBridgePathsUnchanged(
+                    source.Tracks, stable.Tracks);
                 var analysis = PathMatchAdvisor.Analyze(
                     stable.Tracks, db.Tracks, []);
                 if (analysis.Proposals.Count != 1)
