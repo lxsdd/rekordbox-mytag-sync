@@ -147,7 +147,8 @@ public static class BridgeSourceDiscovery
         var payloadBefore = ReadSharedBytes(snapshotPath);
         IReadOnlyList<BridgeTrack> tracks;
         using (var pinned = new MemoryStream(payloadBefore, writable: false))
-            tracks = BridgeSnapshot.ReadCompressed(pinned, state.SchemaVersion);
+            tracks = BridgeSnapshot.ReadCompressed(pinned, state.SchemaVersion,
+                state.ItemCount);
         if (tracks.Count != state.ItemCount)
             throw new InvalidDataException(
                 $"Bridge item_count={state.ItemCount}, snapshot={tracks.Count}.");
