@@ -150,6 +150,18 @@ public partial class App : Application
                     System.IO.File.Delete(widthsPath);
             }
 
+            // Validate the real Source/Target WPF alias columns against
+            // the same whole-volume mapping semantics used by Preview.
+            if (window.PathAliasGrid.Columns.Count != 2 ||
+                window.PathAliasGrid.Columns[0].Header?.ToString() != "Bridge/source root" ||
+                window.PathAliasGrid.Columns[1].Header?.ToString() != "rekordbox/target root" ||
+                !WindowsPathMatcher.Equivalent(
+                    @"Z:\Music\Singles\Track.mp3",
+                    @"R:\Music\Singles\Track.mp3",
+                    new[] { new PathAlias(@"Z:\", @"R:\") }))
+                throw new InvalidOperationException(
+                    "WPF alias controls or whole-volume path resolution are inconsistent.");
+
             var physicalTable = window.PhysicalExceptionsGrid;
             if (physicalTable.Columns.Count != 13 || physicalTable.FrozenColumnCount != 2 ||
                 physicalTable.Columns[0].Header?.ToString() != "Reason" ||

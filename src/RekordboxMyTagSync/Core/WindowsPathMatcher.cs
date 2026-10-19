@@ -58,7 +58,11 @@ public static class WindowsPathMatcher
     private static bool IsAtOrBelow(string path, string root) =>
         string.Equals(path, root, StringComparison.OrdinalIgnoreCase) ||
         (path.Length > root.Length && path.StartsWith(root, StringComparison.OrdinalIgnoreCase) &&
-         (path[root.Length] == '\\' || path[root.Length] == '/'));
+         // Windows drive/UNC share roots ALREADY end in a separator.
+         // Requiring another separator at path[root.Length] silently rejects
+         // every child of aliases such as Z:\ or \\host\share\.
+         (root.EndsWith('\\') || root.EndsWith('/') ||
+          path[root.Length] == '\\' || path[root.Length] == '/'));
 
     private static string Canonical(string path)
     {

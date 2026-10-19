@@ -46,6 +46,31 @@ public static class PathMatcherSelfTest
         if (WindowsPathMatcher.Normalize(@"R:\") != @"R:\")
             throw new InvalidOperationException("Drive root trailing separator must be preserved.");
 
+        // Whole-volume and UNC-share roots retain their trailing separator.
+        // Children immediately follow that separator; a second separator
+        // must not be required at the next character.
+        var wholeVolume = new[] { new PathAlias(@"Z:\", @"R:\") };
+        if (!WindowsPathMatcher.Equivalent(
+                @"file://Z:/Music/Singles/Artist/Track.mp3",
+                @"R:\Music\Singles\Artist\Track.mp3", wholeVolume) ||
+            WindowsPathMatcher.Equivalent(
+                @"Y:\Music\Singles\Artist\Track.mp3",
+                @"R:\Music\Singles\Artist\Track.mp3", wholeVolume))
+            throw new InvalidOperationException(
+                "Whole-volume alias failed or matched a different physical volume.");
+
+        var uncShare = new[] {
+            new PathAlias(@"\\dj-nas\music\", @"\\dj-nas\library\")
+        };
+        if (!WindowsPathMatcher.Equivalent(
+                @"\\dj-nas\music\Artist\Track.mp3",
+                @"\\dj-nas\library\Artist\Track.mp3", uncShare) ||
+            WindowsPathMatcher.Equivalent(
+                @"\\dj-nas\music-other\Artist\Track.mp3",
+                @"\\dj-nas\library\Artist\Track.mp3", uncShare))
+            throw new InvalidOperationException(
+                "UNC share-root alias failed or escaped its share boundary.");
+
         var unsafePaths = new[]
         {
             @"file://Z:/Music/Artist/Bad%2FTrack.mp3",
