@@ -68,6 +68,8 @@ public partial class App : Application
                 "PreviewGrid",
                 "ApplyButton",
                 "RestoreButton",
+                "WriteConsentTextBox",
+                "WriteConsentChallengeTextBlock",
                 "SaveSettingsButton",
                 "DiagnosticsTextBox",
                 "SourceInspectionStatusTextBlock",
@@ -246,7 +248,16 @@ public partial class App : Application
             // until the user separately approves a hardware write test.
             if (window.ApplyButton.IsEnabled || window.RestoreButton.IsEnabled)
                 throw new InvalidOperationException(
-                    "WPF read-only qualification unexpectedly enabled live Apply/Restore.");
+                    "WPF without locally typed consent unexpectedly enabled live Apply/Restore.");
+            var consentText = window.WriteConsentTextBox;
+            if (consentText.Text.Length != 0 ||
+                window.WriteConsentChallengeTextBlock.Text.Length == 0)
+                throw new InvalidOperationException(
+                    "WPF one-operation consent must start blank with visible explanation.");
+            consentText.Text = "APPLY fake-db fake-proof";
+            if (window.ApplyButton.IsEnabled || window.RestoreButton.IsEnabled)
+                throw new InvalidOperationException(
+                    "Unqualified WPF target accepted a forged local write confirmation.");
 
             // A changed target library must revoke all previously captured
             // physical approval and effective-mapping state. Simulate this
@@ -270,7 +281,8 @@ public partial class App : Application
             mappingApprovalField.SetValue(window,
                 new[] { new MappingRule("GENRE", "Genre") });
             invalidateTarget.Invoke(window, new object[] { "WPF smoke target changed." });
-            if (mappingApprovalField.GetValue(window) is not null ||
+            if (consentText.Text.Length != 0 ||
+                mappingApprovalField.GetValue(window) is not null ||
                 physicalApprovalField.GetValue(window) is not null ||
                 window.ApplyButton.IsEnabled || window.RestoreButton.IsEnabled)
                 throw new InvalidOperationException(

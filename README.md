@@ -77,3 +77,17 @@ priority/empty fallback fixtures and real WPF smoke run in FAST/FULL. Technical
 file-info fields remain unspoofable, and live Apply/Restore remain locked.
 
 Local physical exception CSV export: after a fresh read-only inspection, the Physical exceptions tab saves the 13 evidence fields for exceptional ContentIDs to a user-selected UTF-8 CSV. It contains personal file paths/ContentIDs; never post it publicly. Source/target/mapping changes revoke the report; export checks bridge publication, DB file metadata and rekordbox/rbxport process state. Spreadsheet formula prefixes are neutralized. Only the selected CSV is written atomically; master.db, tags, CUE, media, backups and provenance remain untouched. FAST/FULL retain synthetic encrypted SQLCipher exception tests and real WPF smoke.
+
+One-operation local write confirmation: after a physically verified, conflict-free
+Preview and runtime-qualified SQLCipher master.db, the Apply tab shows a database-,
+source-preview- and operation-bound challenge. The user must type it exactly;
+a code is never persisted and is consumed BEFORE touching backup/provenance or
+master.db. The corresponding Restore challenge instead binds the validated
+rolling backup preimage; Restore refuses a backup image changed since consent.
+Changing target/Preview revokes consent. Both operations still independently
+enforce closed rekordbox/rbxport, physical identity, DB/schema, backup, transaction
+and postimage rules. The code is displayed only on the user's local Windows UI;
+nothing is uploaded. Typed confirmation is explicit user authorization at the
+local device, NOT authorization for this development process to touch any real
+master.db. Synthetic encrypted SQLCipher positive/negative confirmation
+regressions and actual WPF controls are exercised in FAST/FULL.

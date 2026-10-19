@@ -20,9 +20,8 @@ public partial class MainWindow : Window
     private AppSettings _settings = new();
     private readonly List<string> _diagnosticEvents = new();
     private bool _operationBusy;
-    // Live master.db mutation is disabled until a separately authorized
-    // hardware write qualification. Successful read-only checks are not approval.
-    private static readonly bool LiveDatabaseWritesApproved = false;
+    // A verified preview/restore point never grants write permission.
+    // The local operator must type a database- and scope-bound one-shot challenge.
     private CancellationTokenSource? _identityCancellation;
     private bool _targetDiscoveryUpdatingSelection;
     private bool _sourceSafe;
@@ -33,6 +32,7 @@ public partial class MainWindow : Window
     private bool _previewFresh;
     private bool _backupAvailable;
     private bool _backupMatchesTarget;
+    private string? _qualifiedRestoreImageSha256;
     private RekordboxDatabaseSnapshot? _databaseSnapshot;
     private RekordboxResolvedDatabaseAccess? _databaseAccess;
     private BridgeSourceSnapshot? _bridgeSnapshot;
@@ -110,6 +110,7 @@ public partial class MainWindow : Window
         InvestigatePhysicalExceptionsButton.Click += async (_, _) => await InspectPhysicalExceptionsAsync();
         ExportPhysicalExceptionsButton.Click += async (_, _) => await ExportPhysicalExceptionsAsync();
         CancelVerifiedPreviewButton.Click += (_, _) => _identityCancellation?.Cancel();
+        WriteConsentTextBox.TextChanged += (_, _) => UpdateWorkflowGate();
         ApplyButton.Click += (_, _) => ApplyApprovedPreview();
         RestoreButton.Click += (_, _) => RestoreRollingBackup();
 
@@ -562,6 +563,8 @@ public partial class MainWindow : Window
         _previewFresh = false;
         _backupAvailable = false;
         _backupMatchesTarget = false;
+        _qualifiedRestoreImageSha256 = null;
+        WriteConsentTextBox.Clear();
         _approvedPreview = null;
         _approvedPhysicalAuthority = null;
         _approvedPreviewMappings = null;
@@ -930,13 +933,16 @@ public partial class MainWindow : Window
 
     private void ApplyApprovedPreview()
     {
-        if (!LiveDatabaseWritesApproved)
+        if (_databaseSnapshot is null || _approvedPreview is null ||
+            !LiveWriteConsent.Matches(LiveWriteOperation.Apply,
+                _databaseSnapshot.Identity, _approvedPreview.FingerprintSha256,
+                WriteConsentTextBox.Text))
         {
-            ApplyStatusTextBox.Text =
-                "Apply blocked: the live rekordbox database is read-only until explicit write qualification.";
-            AppendDiagnostic(ApplyStatusTextBox.Text);
+            ApplyStatusTextBox.Text = "Apply blocked: type the exact one-operation APPLY confirmation for this verified preview.";
             return;
         }
+        // Consume the approval BEFORE any preflight, backup or mutation.
+        WriteConsentTextBox.Clear();
         try
         {
             if (_approvedPreview is null || _approvedPhysicalAuthority is null ||
@@ -1010,12 +1016,14 @@ public partial class MainWindow : Window
                         preApplyIdentity);
                     _backupAvailable = true;
                     _backupMatchesTarget = true;
+                    _qualifiedRestoreImageSha256 = inspection.Metadata.DatabaseSha256;
                     BackupPackageTextBox.Text = inspection.PackagePath;
                 }
                 catch (Exception restoreStateError)
                 {
                     _backupAvailable = false;
                     _backupMatchesTarget = false;
+                    _qualifiedRestoreImageSha256 = null;
                     BackupPackageTextBox.Text = inspection.PackagePath;
                     AppendDiagnostic(
                         $"Apply succeeded, but coordinated Restore was disabled because the pre-Apply provenance snapshot could not be persisted: {restoreStateError.Message}");
@@ -1025,6 +1033,7 @@ public partial class MainWindow : Window
             {
                 _backupAvailable = false;
                 _backupMatchesTarget = false;
+                _qualifiedRestoreImageSha256 = null;
                 BackupPackageTextBox.Text = string.Empty;
             }
 
@@ -1052,13 +1061,16 @@ public partial class MainWindow : Window
 
     private void RestoreRollingBackup()
     {
-        if (!LiveDatabaseWritesApproved)
+        if (_databaseSnapshot is null || _qualifiedRestoreImageSha256 is null ||
+            !LiveWriteConsent.Matches(LiveWriteOperation.Restore,
+                _databaseSnapshot.Identity, _qualifiedRestoreImageSha256,
+                WriteConsentTextBox.Text))
         {
-            ApplyStatusTextBox.Text =
-                "Restore blocked: database mutations are not authorized in this read-only build.";
-            AppendDiagnostic(ApplyStatusTextBox.Text);
+            ApplyStatusTextBox.Text = "Restore blocked: type the exact one-operation RESTORE confirmation for this validated backup.";
             return;
         }
+        // Consume the approval BEFORE inspecting or replacing any database.
+        WriteConsentTextBox.Clear();
         try
         {
             if (_databaseSnapshot is null ||
@@ -1081,6 +1093,9 @@ public partial class MainWindow : Window
             var inspection = RekordboxRollingBackup.Inspect(
                 packagePath,
                 currentIdentity);
+            if (!string.Equals(inspection.Metadata.DatabaseSha256,
+                    _qualifiedRestoreImageSha256, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("The rolling backup changed since local Restore consent; revalidate the backup.");
             var restoreProvenancePath = RestoreProvenancePath(inspection);
             if (!File.Exists(restoreProvenancePath))
                 throw new InvalidDataException(
@@ -1145,6 +1160,7 @@ public partial class MainWindow : Window
     {
         _backupAvailable = false;
         _backupMatchesTarget = false;
+        _qualifiedRestoreImageSha256 = null;
         BackupPackageTextBox.Text = string.Empty;
 
         try
@@ -1168,12 +1184,14 @@ public partial class MainWindow : Window
             _ = ProvenanceStore.Load(provenancePath, identity);
             _backupAvailable = true;
             _backupMatchesTarget = true;
+            _qualifiedRestoreImageSha256 = inspection.Metadata.DatabaseSha256;
             BackupPackageTextBox.Text = inspection.PackagePath;
         }
         catch (Exception ex)
         {
             _backupAvailable = false;
             _backupMatchesTarget = false;
+            _qualifiedRestoreImageSha256 = null;
             BackupPackageTextBox.Text = string.Empty;
             AppendDiagnostic($"Existing rolling restore point rejected: {ex.Message}");
         }
@@ -1229,6 +1247,7 @@ public partial class MainWindow : Window
         _approvedPhysicalAuthority = null;
         _approvedPreviewMappings = null;
         _configuredMappingsAtPreview = null;
+        WriteConsentTextBox.Clear();
         _previewExists = false;
         _previewValid = false;
         _previewFresh = false;
@@ -1275,22 +1294,37 @@ public partial class MainWindow : Window
         SaveSettingsButton.IsEnabled = !_operationBusy;
         AddAliasButton.IsEnabled = !_operationBusy;
         RemoveAliasButton.IsEnabled = !_operationBusy;
-        ApplyButton.IsEnabled = LiveDatabaseWritesApproved && !_operationBusy && state.CanApply;
-        RestoreButton.IsEnabled = LiveDatabaseWritesApproved && !_operationBusy && state.CanRestore;
+        var applyCode = state.CanApply && _databaseSnapshot is not null &&
+            _approvedPreview is not null && _approvedPhysicalAuthority is not null
+            ? LiveWriteConsent.Challenge(LiveWriteOperation.Apply,
+                _databaseSnapshot.Identity, _approvedPreview.FingerprintSha256)
+            : null;
+        var restoreCode = state.CanRestore && _databaseSnapshot is not null &&
+            _qualifiedRestoreImageSha256 is not null
+            ? LiveWriteConsent.Challenge(LiveWriteOperation.Restore,
+                _databaseSnapshot.Identity, _qualifiedRestoreImageSha256)
+            : null;
 
-        PreviewStatusTextBlock.Text = !LiveDatabaseWritesApproved
-            ? "Read-only qualification — database writes locked."
-            : state.CanApply
-                ? "Fresh conflict-free preview approved."
+        ApplyButton.IsEnabled = !_operationBusy && applyCode is not null &&
+            string.Equals(WriteConsentTextBox.Text, applyCode, StringComparison.Ordinal);
+        RestoreButton.IsEnabled = !_operationBusy && restoreCode is not null &&
+            string.Equals(WriteConsentTextBox.Text, restoreCode, StringComparison.Ordinal);
+        WriteConsentChallengeTextBlock.Text =
+            "No write is authorized by Preview alone. The local operator must type exactly ONE code for ONE operation:" +
+            (applyCode is null ? "" : Environment.NewLine + "Apply: " + applyCode) +
+            (restoreCode is null ? "" : Environment.NewLine + "Restore: " + restoreCode) +
+            (applyCode is null && restoreCode is null
+                ? Environment.NewLine + "First validate the target and fresh Preview or rolling backup." : "");
+
+        PreviewStatusTextBlock.Text = state.CanApply
+            ? "Fresh conflict-free preview available — local one-operation confirmation still required."
             : state.CanBuildPreview
                 ? "Ready to build a fresh preview."
                 : "Preview blocked by safety prerequisites.";
 
-        ApplyStatusTextBox.Text = !LiveDatabaseWritesApproved
-            ? "DATABASE WRITES LOCKED: no live Apply or Restore is authorized in this qualification build."
-            : state.Blockers.Count == 0
-                ? "All workflow safety gates are satisfied."
-                : string.Join(Environment.NewLine, state.Blockers.Select(x => "• " + x));
+        ApplyStatusTextBox.Text = state.Blockers.Count == 0
+            ? "No write authorized without exact one-operation local confirmation."
+            : string.Join(Environment.NewLine, state.Blockers.Select(x => "• " + x));
     }
 
     private void RefreshDiagnostics()

@@ -66,6 +66,7 @@ public static class UiWorkflowGate
 
         var canRestore =
             inputs.TargetLibrarySafe &&
+            inputs.DatabaseAccessQualified &&
             inputs.RekordboxClosed &&
             inputs.BackupAvailable &&
             inputs.BackupMatchesTarget;
