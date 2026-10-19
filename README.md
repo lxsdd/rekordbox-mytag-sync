@@ -2,6 +2,8 @@
 
 Portable Windows companion for synchronizing arbitrary foobar2000 metadata from `foo_dj_library_bridge` into rekordbox 6/7 My Tags.
 
+Windows cross-version compatibility: FULL now also tests the exact source SHA on the standard Windows Server 2022 runner, alongside the existing Windows 2025 runtime. It runs locked dependency restore, the full encrypted SQLCipher/native alias fixture suite, real WPF startup, single-file self-contained win-x64 publication and published WPF smoke with **zero artifact upload**. This is an older Windows API witness, NOT proof of client Windows 10 Home/Pro support. Real Windows10/rekordbox/RX3 acceptance is still mandatory. After successful SQLCipher validation the WPF Target status displays the canonical physical master.db and calls out an aliased selected path; a copied physical database cannot be labeled as that target (positive/negative UI smoke).
+
 Safety: bridge/audio/tag inputs are read-only; every write requires a fresh preview and closed rekordbox; exactly one validated rolling pre-write backup is kept per distinct rekordbox DBID; writes are transactional, idempotent and duplicate-free; manual My Tags are never blindly removed; only assignments recorded in tool provenance may be removed as stale; unsupported or ambiguous database states fail closed.
 
 Configurable mapping filters: each foobar tag mapping can optionally include a time-bounded

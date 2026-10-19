@@ -504,9 +504,7 @@ public partial class MainWindow : Window
             InvalidatePreview("Database access was requalified.");
 
             DatabaseAccessStatusTextBlock.Text =
-                $"Qualified automatically: DBVersion {access.Snapshot.Identity.DbVersion}, " +
-                $"DBID {access.Snapshot.Identity.DbId}, {access.Snapshot.Tracks.Count} tracks, " +
-                $"{access.Snapshot.MyTagDefinitions.Count} MyTag definitions.";
+                DescribeQualifiedTarget(access.Snapshot, databasePath);
             AppendDiagnostic(
                 $"Database access automatically qualified from {access.KeySource}; " +
                 $"SQLite3MC {access.Snapshot.Identity.SqliteCipherVersion}. " +
@@ -527,6 +525,26 @@ public partial class MainWindow : Window
             ValidateDatabaseAccessButton.IsEnabled = true;
             UpdateWorkflowGate();
         }
+    }
+
+    internal static string DescribeQualifiedTarget(
+        RekordboxDatabaseSnapshot snapshot, string selectedPath)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (!RekordboxDiscovery.PathsEqual(
+                snapshot.Identity.CanonicalPath, selectedPath))
+            throw new InvalidDataException(
+                "Selected target does not match the qualified physical master.db.");
+        var selected = Path.GetFullPath(selectedPath).TrimEnd(
+            Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var actual = snapshot.Identity.CanonicalPath;
+        var alias = !string.Equals(selected, actual, StringComparison.OrdinalIgnoreCase);
+        return $"Qualified automatically: DBVersion {snapshot.Identity.DbVersion}, " +
+            $"DBID {snapshot.Identity.DbId}, {snapshot.Tracks.Count:N0} tracks, " +
+            $"{snapshot.MyTagDefinitions.Count:N0} MyTag definitions. " +
+            $"Physical master.db: {actual}" +
+            (alias ? " (selected path is an alias of this database)." : ".") +
+            " Read-only qualification; no live writes authorized.";
     }
 
     private void InvalidateDatabaseAccess(string reason)

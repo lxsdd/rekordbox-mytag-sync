@@ -602,3 +602,60 @@ jobs:
             qualification/repository-hygiene-audit.txt
             qualification/license-audit.tsv
             qualification/publish-sha256.txt
+  
+  # Exact-SHA older Windows API/SQLCipher/WPF compatibility check.
+  # No saved ZIP, no expanded permissions, not proof of real Win10 support.
+  older-windows-api-smoke:
+    needs: preflight
+    if: needs.preflight.outputs.should_run == 'true'
+    runs-on: windows-2022
+    env:
+      SOURCE_SHA: ${{ needs.preflight.outputs.source_sha }}
+      PRODUCT_PROJECT: src/RekordboxMyTagSync/RekordboxMyTagSync.csproj
+      TEST_PROJECT: tests/RekordboxMyTagSync.SelfTests/RekordboxMyTagSync.SelfTests.csproj
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.source_sha }}
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.401'
+      - name: Older Windows source and dependency gate
+        shell: pwsh
+        run: |
+          if ((& git rev-parse HEAD).Trim() -ne $env:SOURCE_SHA) {
+            throw "Windows-2022 compatibility checkout SHA mismatch."
+          }
+          Get-CimInstance Win32_OperatingSystem |
+            Select-Object Caption, Version, BuildNumber | Format-List
+          dotnet restore $env:PRODUCT_PROJECT -r win-x64 --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw "Product restore failed." }
+          dotnet restore $env:TEST_PROJECT -r win-x64 --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw "Selftest restore failed." }
+      - name: Run all encrypted/native tests and WPF startup
+        shell: pwsh
+        run: |
+          dotnet build $env:PRODUCT_PROJECT -c Release --no-restore
+          if ($LASTEXITCODE -ne 0) { throw "Windows-2022 build failed." }
+          dotnet run --project $env:TEST_PROJECT -c Release --no-restore
+          if ($LASTEXITCODE -ne 0) { throw "Windows-2022 SQLCipher/native selftests failed." }
+          $exe = Join-Path $env:GITHUB_WORKSPACE "src/RekordboxMyTagSync/bin/Release/net10.0-windows/win-x64/rekordbox MyTagSync.exe"
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "WPF binary missing." }
+          $process = Start-Process -FilePath $exe -ArgumentList "--ui-smoke" -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            $errorPath = Join-Path ([IO.Path]::GetTempPath()) "RekordboxMyTagSync-ui-smoke-error.txt"
+            if (Test-Path -LiteralPath $errorPath) {
+              Get-Content -LiteralPath $errorPath
+              Remove-Item -LiteralPath $errorPath -Force
+            }
+            throw "Windows-2022 WPF UI smoke failed."
+          }
+      - name: Publish and smoke older Windows portable, retain nothing
+        shell: pwsh
+        run: |
+          dotnet publish $env:PRODUCT_PROJECT -c Release -r win-x64 --self-contained true --no-restore -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:ContinuousIntegrationBuild=true -p:Deterministic=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o older-win-portable
+          if ($LASTEXITCODE -ne 0) { throw "Older Windows portable publish failed." }
+          $exe = (Resolve-Path "older-win-portable/rekordbox MyTagSync.exe").Path
+          $process = Start-Process -FilePath $exe -ArgumentList "--ui-smoke" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Older Windows portable WPF smoke failed." }
+          Write-Host "Older Windows WPF/SQLCipher portable PASS for $env:SOURCE_SHA; no upload."

@@ -234,6 +234,40 @@ public partial class App : Application
                 throw new InvalidOperationException(
                     "WPF target change did not revoke previously approved mapping/physical scope.");
 
+            // Real WPF physical target status: byte-identical copies are NOT aliases.
+            var uiDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+                "MyTagSync-physical-target-ui-" + Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(uiDir);
+            try
+            {
+                var originalDb = System.IO.Path.Combine(uiDir, "master.db");
+                var copiedDb = System.IO.Path.Combine(uiDir, "copy.db");
+                System.IO.File.WriteAllText(originalDb, "synthetic-ui-db");
+                System.IO.File.Copy(originalDb, copiedDb);
+                var physical = PhysicalDatabasePath.ResolveExisting(originalDb);
+                var fake = new RekordboxDatabaseSnapshot(
+                    new RekordboxDatabaseIdentity("ui-fixture", "fixture-v1",
+                        physical, new System.IO.FileInfo(originalDb).Length,
+                        System.IO.File.GetLastWriteTimeUtc(originalDb), "fixture"),
+                    Array.Empty<RekordboxTrackSnapshot>(),
+                    Array.Empty<RekordboxMyTagDefinition>());
+                var caption = global::RekordboxMyTagSync.MainWindow.DescribeQualifiedTarget(fake, originalDb);
+                if (!caption.Contains(physical, StringComparison.OrdinalIgnoreCase) ||
+                    !caption.Contains("Physical master.db:", StringComparison.Ordinal) ||
+                    !caption.Contains("no live writes", StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("WPF physical target status is incomplete.");
+                var copyBlocked = false;
+                try { _ = global::RekordboxMyTagSync.MainWindow.DescribeQualifiedTarget(fake, copiedDb); }
+                catch (System.IO.InvalidDataException) { copyBlocked = true; }
+                if (!copyBlocked)
+                    throw new InvalidOperationException(
+                        "WPF target status accepted an unrelated copied database.");
+            }
+            finally
+            {
+                System.IO.Directory.Delete(uiDir, recursive: true);
+            }
+
             // Exercise the production column-width persistence against actual
             // WPF DataGrid columns without touching user profile settings.
             var widthsPath = System.IO.Path.Combine(
