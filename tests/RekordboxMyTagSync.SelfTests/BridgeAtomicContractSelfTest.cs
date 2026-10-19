@@ -211,6 +211,27 @@ public static class BridgeAtomicContractSelfTest
             Reject(() => BridgeSourceDiscovery.ReadStable(conflictDir),
                 "Two V3 aliases overwrote one canonical Core metadata field.");
         }
+        // foobar can legitimately contain user-defined fields named
+        // CODEC, BITRATE and DURATION_SECONDS. They may occur in vectors
+        // but must NOT override technical info/get_length columns.
+        var spoof = Path.Combine(root, "technical-field-spoof");
+        WritePublication(spoof, 3, 3, songOne, songTwo);
+        RewriteFirstRowVectors(Path.Combine(
+                spoof, BridgeSourceDiscovery.SnapshotFileName),
+            "[{\\"name\\":\\"CODEC\\",\\"values\\":[\\"FAKE\\"]}," +
+            "{\\"name\\":\\"BITRATE\\",\\"values\\":[\\"1\\"]}," +
+            "{\\"name\\":\\"DURATION_SECONDS\\",\\"values\\":[\\"999\\"]}," +
+            "{\\"name\\":\\"GENRE\\",\\"values\\":[\\"House\\",\\"Techno\\"]}]");
+        var technicalSnapshot = BridgeSourceDiscovery.ReadStable(spoof);
+        var technicalTrack = technicalSnapshot.Tracks[0];
+        if (!technicalTrack.GetFieldValues("codec").SequenceEqual(new[] { "MP3" }) ||
+            !technicalTrack.GetFieldValues("bitrate").SequenceEqual(new[] { "320" }) ||
+            !technicalTrack.GetFieldValues("duration_seconds").SequenceEqual(new[] { "300" }) ||
+            !technicalTrack.GetFieldValues("genre").SequenceEqual(
+                new[] { "House", "Techno" }))
+            throw new InvalidOperationException(
+                "User-supplied Bridge V3 metadata spoofed technical file properties.");
+
         var zeroRows = Path.Combine(root, "inflated-row-count");
         WritePublication(zeroRows, 3, 3, songOne, songTwo, count: 0);
         Reject(() => BridgeSourceDiscovery.ReadStable(zeroRows),

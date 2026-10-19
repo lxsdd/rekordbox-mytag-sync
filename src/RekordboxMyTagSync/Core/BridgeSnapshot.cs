@@ -194,7 +194,11 @@ public static class BridgeSnapshot
                     "CATALOGNUMBER" or "CATALOG NUMBER" or "CATALOG" => "catalog_number",
                     _ => name
                 };
-                if (core.ContainsKey(key))
+                // Only the producer's true foobar Core TAGS can alter
+                // canonical Core metadata. Its technical codec, bitrate and
+                // duration fields are from file_info.info_get/get_length,
+                // NOT arbitrary user metadata with the same names.
+                if (ReservedMetadataNames.Contains(name) && core.ContainsKey(key))
                 {
                     // TRACK and TRACKNUMBER, DATE and YEAR, etc. can be
                     // distinct foobar fields that map to ONE Core column.
