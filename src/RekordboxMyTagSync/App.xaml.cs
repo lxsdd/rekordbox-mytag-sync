@@ -251,14 +251,14 @@ public partial class App : Application
                         System.IO.File.GetLastWriteTimeUtc(originalDb), "fixture"),
                     Array.Empty<RekordboxTrackSnapshot>(),
                     Array.Empty<RekordboxMyTagDefinition>());
-                var caption = MainWindow.DescribeQualifiedTarget(fake, originalDb);
+                var caption = global::RekordboxMyTagSync.MainWindow.DescribeQualifiedTarget(fake, originalDb);
                 if (!caption.Contains(physical, StringComparison.OrdinalIgnoreCase) ||
                     !caption.Contains("Physical master.db:", StringComparison.Ordinal) ||
                     !caption.Contains("no live writes", StringComparison.OrdinalIgnoreCase))
                     throw new InvalidOperationException("WPF physical target status is incomplete.");
                 var copyBlocked = false;
-                try { _ = MainWindow.DescribeQualifiedTarget(fake, copiedDb); }
-                catch (InvalidDataException) { copyBlocked = true; }
+                try { _ = global::RekordboxMyTagSync.MainWindow.DescribeQualifiedTarget(fake, copiedDb); }
+                catch (System.IO.InvalidDataException) { copyBlocked = true; }
                 if (!copyBlocked)
                     throw new InvalidOperationException(
                         "WPF target status accepted an unrelated copied database.");
