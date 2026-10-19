@@ -13,17 +13,30 @@ internal sealed class VerifiedMutationAuthority
     private readonly PathAlias[] _aliases;
     private readonly string[] _approvedPairs;
     private readonly string _identity;
+    private readonly string _approvedDatabaseSha256;
 
     private VerifiedMutationAuthority(
-        string identity, PathAlias[] aliases, string[] approvedPairs)
+        string identity, PathAlias[] aliases, string[] approvedPairs,
+        string approvedDatabaseSha256)
     {
         _identity = identity;
         _aliases = aliases;
         _approvedPairs = approvedPairs;
+        _approvedDatabaseSha256 = approvedDatabaseSha256;
     }
 
     internal IReadOnlyList<PathAlias> Aliases => Array.AsReadOnly(_aliases);
     internal int AuthorizedContentIds => _approvedPairs.Length;
+    internal string ApprovedDatabaseSha256 => _approvedDatabaseSha256;
+
+    internal void RequireApprovedDatabaseHash(string freshHash)
+    {
+        if (!string.Equals(_approvedDatabaseSha256, freshHash,
+                StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "Encrypted master.db SHA-256 changed since the approved physical preview, " +
+                "even though its DBID, schema, size or timestamp may appear unchanged.");
+    }
 
     internal static VerifiedMutationAuthority CaptureReadOnly(
         RekordboxDatabaseSnapshot database,
@@ -48,8 +61,27 @@ internal sealed class VerifiedMutationAuthority
         if (scope.Targets.Count != evidence.SamePhysicalFiles)
             throw new InvalidDataException(
                 "Native verified pair count does not match the preview scope.");
+        // Cryptographically bind this approval to the exact encrypted
+        // database image, not just its DBID, length and LastWriteTimeUtc.
+        // The Apply executor already hashes the file before backup; compare
+        // against that existing pass instead of adding repeated 52k-track
+        // database reads during every native FileIndex recheck.
+        var approvedFile = new FileInfo(database.Identity.CanonicalPath);
+        if (!approvedFile.Exists ||
+            approvedFile.Length != database.Identity.FileLength ||
+            approvedFile.LastWriteTimeUtc != database.Identity.LastWriteUtc)
+            throw new InvalidOperationException(
+                "Encrypted database changed before physical preview approval.");
+        var approvedHash = RekordboxRollingBackup.ComputeFileSha256(
+            database.Identity.CanonicalPath);
+        approvedFile.Refresh();
+        if (!approvedFile.Exists ||
+            approvedFile.Length != database.Identity.FileLength ||
+            approvedFile.LastWriteTimeUtc != database.Identity.LastWriteUtc)
+            throw new InvalidOperationException(
+                "Encrypted database changed during physical preview SHA-256 capture.");
         return new VerifiedMutationAuthority(
-            database.Identity.PreviewIdentity, roots, PairKeys(scope));
+            database.Identity.PreviewIdentity, roots, PairKeys(scope), approvedHash);
     }
 
     internal VerifiedPreviewScope Reverify(
