@@ -101,6 +101,12 @@ if (!new[] { "rekordbox", "rekordboxAgent", "rbxport" }
     throw new InvalidOperationException(
         "Shared rekordbox/rbxport database process guard is incomplete or ambiguous.");
 
+// The public process-name view must not expose the mutable backing array.
+if (protectedProcesses is string[] ||
+    protectedProcesses is IList<string> mutableNames && !mutableNames.IsReadOnly)
+    throw new InvalidOperationException(
+        "Protected process-name list exposes mutable internal state.");
+
 var regex = new MappingRule("MOOD", "Mood", TransformKind.RegexReplace, Pattern: @"\s+", Replacement: "-");
 AssertSequence("regex replace", MappingEngine.Apply(regex, new[] { "Peak Time" }), "Peak-Time");
 
