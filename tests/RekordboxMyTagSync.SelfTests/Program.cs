@@ -253,6 +253,7 @@ try
     RekordboxDatabaseSelfTest.Run(temp);
     ProvenanceSelfTest.Run(temp);
     BackupRestoreSelfTest.Run(temp);
+    PhysicalDatabaseAliasSelfTest.Run(temp);
 
     var otherDbDir = Path.Combine(temp, "LibraryB");
     Directory.CreateDirectory(otherDbDir);

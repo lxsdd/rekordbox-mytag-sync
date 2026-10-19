@@ -40,7 +40,8 @@ public static class ProvenanceStore
             throw new InvalidDataException("Database DBID is empty.");
 
         var canonicalRoot = Path.GetFullPath(root);
-        var material = identity.DbId.Trim() + "\n" + Canonical(identity.CanonicalPath);
+        var material = identity.DbId.Trim() + "\n" +
+            PhysicalDatabasePath.SlotIdentity(identity.CanonicalPath);
         var fileName = Convert.ToHexString(
                 SHA256.HashData(Encoding.UTF8.GetBytes(material)))
             .ToLowerInvariant() + ".json";
@@ -202,6 +203,6 @@ public static class ProvenanceStore
     private static string Canonical(string path)
     {
         if (string.IsNullOrWhiteSpace(path)) throw new InvalidDataException("Database path is empty.");
-        return Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return PhysicalDatabasePath.ResolveExisting(path);
     }
 }

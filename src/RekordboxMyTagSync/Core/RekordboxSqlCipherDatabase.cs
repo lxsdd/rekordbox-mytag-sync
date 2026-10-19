@@ -83,7 +83,7 @@ public static class RekordboxSqlCipherDatabase
         if (policy.RequireRekordboxClosed && RekordboxProcessGuard.IsRunning())
             throw new InvalidOperationException("rekordbox is running. Database access is blocked until rekordbox is closed.");
 
-        var canonicalPath = Path.GetFullPath(databasePath);
+        var canonicalPath = PhysicalDatabasePath.ResolveExisting(databasePath);
         if (!File.Exists(canonicalPath)) throw new FileNotFoundException("rekordbox master.db not found.", canonicalPath);
         var file = new FileInfo(canonicalPath);
 

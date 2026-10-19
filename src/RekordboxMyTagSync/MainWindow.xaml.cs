@@ -1319,10 +1319,7 @@ public partial class MainWindow : Window
     }
 
     private static bool PathsEqual(string left, string right) =>
-        string.Equals(
-            Path.GetFullPath(left).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
-            Path.GetFullPath(right).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
-            StringComparison.OrdinalIgnoreCase);
+        RekordboxDiscovery.PathsEqual(left, right);
 
     private static string? OptionalPath(string? value) =>
         string.IsNullOrWhiteSpace(value)
