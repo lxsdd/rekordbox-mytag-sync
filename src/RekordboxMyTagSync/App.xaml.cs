@@ -106,6 +106,25 @@ public partial class App : Application
                         $"Production table '{name}' disables horizontal scrolling.");
             }
 
+            // The source-value regex filter must be an editable production
+            // mapping column, not just a core API option hidden from users.
+            var filterColumn = window.MappingGrid.Columns
+                .OfType<System.Windows.Controls.DataGridTextColumn>()
+                .FirstOrDefault(c => string.Equals(c.Header?.ToString(),
+                    "Source filter (regex)", StringComparison.Ordinal));
+            if (filterColumn?.Binding is not System.Windows.Data.Binding filterBinding ||
+                filterBinding.Path?.Path != "FilterPattern")
+                throw new InvalidOperationException(
+                    "Production WPF mapping grid is missing the source filter editor.");
+            var excludeColumn = window.MappingGrid.Columns
+                .OfType<System.Windows.Controls.DataGridCheckBoxColumn>()
+                .FirstOrDefault(c => string.Equals(c.Header?.ToString(),
+                    "Exclude matches", StringComparison.Ordinal));
+            if (excludeColumn?.Binding is not System.Windows.Data.Binding excludeBinding ||
+                excludeBinding.Path?.Path != "FilterExclude")
+                throw new InvalidOperationException(
+                    "Production WPF mapping grid is missing the source filter exclusion toggle.");
+
             // Exercise the production column-width persistence against actual
             // WPF DataGrid columns without touching user profile settings.
             var widthsPath = System.IO.Path.Combine(

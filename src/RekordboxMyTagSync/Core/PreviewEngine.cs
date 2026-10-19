@@ -430,9 +430,12 @@ public static class PreviewEngine
                      .ThenBy(x => x.IgnoreEmpty)
                      .ThenBy(x => x.Prefix, StringComparer.Ordinal)
                      .ThenBy(x => x.Pattern ?? string.Empty, StringComparer.Ordinal)
-                     .ThenBy(x => x.Replacement, StringComparer.Ordinal))
+                     .ThenBy(x => x.Replacement, StringComparer.Ordinal)
+                     .ThenBy(x => x.FilterPattern ?? string.Empty, StringComparer.Ordinal)
+                     .ThenBy(x => x.FilterExclude))
             writer.Add("mapping", rule.SourceField, rule.TargetMyTag, rule.Transform.ToString(), rule.PerValue.ToString(),
-                rule.IgnoreEmpty.ToString(), rule.Prefix, rule.Pattern ?? string.Empty, rule.Replacement);
+                rule.IgnoreEmpty.ToString(), rule.Prefix, rule.Pattern ?? string.Empty, rule.Replacement,
+                rule.FilterPattern ?? string.Empty, rule.FilterExclude.ToString());
 
         foreach (var bridge in bridgeTracks
                      .OrderBy(x => x.Path, StringComparer.OrdinalIgnoreCase)

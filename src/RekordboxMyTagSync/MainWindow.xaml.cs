@@ -1346,6 +1346,8 @@ public partial class MainWindow : Window
         public string Prefix { get; set; } = string.Empty;
         public string? Pattern { get; set; }
         public string Replacement { get; set; } = string.Empty;
+        public string? FilterPattern { get; set; }
+        public bool FilterExclude { get; set; }
 
         internal MappingRule ToRule()
         {
@@ -1361,7 +1363,9 @@ public partial class MainWindow : Window
                 IgnoreEmpty,
                 Prefix ?? string.Empty,
                 Pattern,
-                Replacement ?? string.Empty);
+                Replacement ?? string.Empty,
+                FilterPattern,
+                FilterExclude);
         }
 
         internal static MappingRow FromRule(MappingRule rule) =>
@@ -1374,7 +1378,9 @@ public partial class MainWindow : Window
                 IgnoreEmpty = rule.IgnoreEmpty,
                 Prefix = rule.Prefix,
                 Pattern = rule.Pattern,
-                Replacement = rule.Replacement
+                Replacement = rule.Replacement,
+                FilterPattern = rule.FilterPattern,
+                FilterExclude = rule.FilterExclude
             };
     }
 }

@@ -4,6 +4,16 @@ Portable Windows companion for synchronizing arbitrary foobar2000 metadata from 
 
 Safety: bridge/audio/tag inputs are read-only; every write requires a fresh preview and closed rekordbox; exactly one validated rolling pre-write backup is kept per distinct rekordbox DBID; writes are transactional, idempotent and duplicate-free; manual My Tags are never blindly removed; only assignments recorded in tool provenance may be removed as stale; unsupported or ambiguous database states fail closed.
 
+Configurable mapping filters: each foobar tag mapping can optionally include a time-bounded
+source-value regex filter. Matching source values are included by default; "Exclude matches"
+inverts the selection. Filtering is performed on each original value before optional
+multivalue joining, regex replacement, year extraction and prefixing. No matching values
+means no proposed MyTag assignment, even when Ignore empty is disabled. The filter
+pattern and inversion are saved in settings and included in the preview fingerprint,
+so changing a filter invalidates an older preview. Existing mappings without filters
+retain their previous behavior. The WPF Mapping tab exposes both controls; malformed
+patterns fail closed at settings validation and during preview.
+
 Physical exception diagnostics: the targeted, read-only eight-ContentID investigation reports duplicate rekordbox paths and missing bridge paths separately from virtual CUE subsongs. Optional playlist, cue, beatgrid, MyTag and hot-cue-bank tables are counted by ContentID only when their columns are directly verifiable. Deleted rows are excluded when a deletion flag exists; missing or incompatible optional tables display "Not verifiable", never an invented zero. Encrypted positive/negative regression fixtures validate beatgrid counts and that the inspected database image remains unchanged. No track is automatically removed based on reference counts.
 
 Concurrent writers: the closed-library process guard treats `rekordbox`, `rekordboxAgent`, and `rbxport` as protected processes. `rbxport` may replace an entire track's MyTag membership set, whereas MyTagSync changes only tool-owned assignments. A synthetic encrypted SQLCipher regression verifies that external removal of a tool-owned membership invalidates saved provenance and blocks stale Apply before any backup or database/provenance write; independently edited manual memberships are not adopted or deleted. This is a fail-closed compatibility prerequisite, not proof of complete rbxport interoperability or permission to write a live library.

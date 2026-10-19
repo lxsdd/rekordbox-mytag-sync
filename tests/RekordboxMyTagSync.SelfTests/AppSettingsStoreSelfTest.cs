@@ -53,7 +53,9 @@ public static class AppSettingsStoreSelfTest
                     IgnoreEmpty: true,
                     Prefix: "Style: ",
                     Pattern: @"\s+",
-                    Replacement: " ")
+                    Replacement: " ",
+                    FilterPattern: @"^(Deep|Peak)",
+                    FilterExclude: true)
             },
             SupportedDbVersions: new[] { "6.0.0", "7.0.0", "6.0.0" });
 
@@ -66,6 +68,8 @@ public static class AppSettingsStoreSelfTest
             loaded.EffectiveMappings[0].Transform != TransformKind.YearFromDate ||
             loaded.EffectiveMappings[1].Transform != TransformKind.RegexReplace ||
             loaded.EffectiveMappings[1].Prefix != "Style: " ||
+            loaded.EffectiveMappings[1].FilterPattern != @"^(Deep|Peak)" ||
+            !loaded.EffectiveMappings[1].FilterExclude ||
             loaded.EffectiveSupportedDbVersions.Count != 0 ||
             loaded.SupportedDbVersions is not null)
             throw new InvalidOperationException("settings roundtrip mismatch");
@@ -97,6 +101,10 @@ public static class AppSettingsStoreSelfTest
                     Pattern: "(")
             });
         AssertBlocked(() => AppSettingsStore.SaveAtomic(path, invalidMapping), "invalid");
+        AssertBlocked(() => AppSettingsStore.SaveAtomic(path, new AppSettings(
+            Mappings: new[] { new MappingRule("GENRE", "Genre", FilterPattern: "(") })), "invalid");
+        AssertBlocked(() => AppSettingsStore.SaveAtomic(path, new AppSettings(
+            Mappings: new[] { new MappingRule("GENRE", "Genre", FilterExclude: true) })), "invalid");
     }
 
     private static void QualifyUiWorkflowGate()

@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 namespace RekordboxMyTagSync.Core;
 
 public enum TransformKind { Direct, YearFromDate, RegexReplace, StrictYearFromDate }
-public sealed record MappingRule(string SourceField, string TargetMyTag, TransformKind Transform = TransformKind.Direct, bool PerValue = true, bool IgnoreEmpty = true, string Prefix = "", string? Pattern = null, string Replacement = "");
+public sealed record MappingRule(string SourceField, string TargetMyTag, TransformKind Transform = TransformKind.Direct, bool PerValue = true, bool IgnoreEmpty = true, string Prefix = "", string? Pattern = null, string Replacement = "", string? FilterPattern = null, bool FilterExclude = false);
 
 public static class MappingEngine
 {
@@ -24,9 +24,27 @@ public static class MappingEngine
         if (rule.Transform == TransformKind.RegexReplace && string.IsNullOrEmpty(rule.Pattern))
             throw new ArgumentException("RegexReplace requires a non-empty pattern.", nameof(rule));
 
+        // Filter individual source values BEFORE joining or transforming them.
+        // An explicit filter that matches nothing must never create an empty MyTag.
+        IEnumerable<string> selected = sourceValues;
+        if (rule.FilterPattern is not null)
+        {
+            if (string.IsNullOrWhiteSpace(rule.FilterPattern))
+                throw new ArgumentException("Source filter regex must not be empty.", nameof(rule));
+            var filter = new Regex(rule.FilterPattern, RegexOptions.CultureInvariant,
+                TimeSpan.FromMilliseconds(250));
+            var matches = sourceValues.Where(value =>
+                filter.IsMatch(value?.Trim() ?? string.Empty) != rule.FilterExclude).ToArray();
+            if (matches.Length == 0)
+                return Array.Empty<string>();
+            selected = matches;
+        }
+        else if (rule.FilterExclude)
+            throw new ArgumentException("Exclude matches requires a source filter regex.", nameof(rule));
+
         IEnumerable<string> values = rule.PerValue
-            ? sourceValues
-            : new[] { string.Join("; ", sourceValues.Where(v => !string.IsNullOrWhiteSpace(v))) };
+            ? selected
+            : new[] { string.Join("; ", selected.Where(v => !string.IsNullOrWhiteSpace(v))) };
         var output = new List<string>();
         foreach (var raw in values)
         {

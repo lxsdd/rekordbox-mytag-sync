@@ -195,7 +195,8 @@ public static class AppSettingsStore
             SourceField = rule.SourceField.Trim(),
             TargetMyTag = rule.TargetMyTag.Trim(),
             Prefix = rule.Prefix ?? string.Empty,
-            Replacement = rule.Replacement ?? string.Empty
+            Replacement = rule.Replacement ?? string.Empty,
+            FilterPattern = rule.FilterPattern
         };
 
         try
