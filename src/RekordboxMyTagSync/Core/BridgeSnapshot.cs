@@ -45,7 +45,7 @@ public static class BridgeSnapshot
 
     // Pin one compressed snapshot image before parsing: no path reopen.
     internal static IReadOnlyList<BridgeTrack> ReadCompressed(
-        Stream compressed, int? expectedSchemaVersion)
+        Stream compressed, int? expectedSchemaVersion, int? expectedItemCount = null)
     {
         using var gzip = new GZipStream(compressed, CompressionMode.Decompress, leaveOpen: true);
         using var reader = new StreamReader(gzip);
@@ -62,6 +62,12 @@ public static class BridgeSnapshot
         var identities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         for (string? line; (line = reader.ReadLine()) is not null;)
         {
+            // Never parse an unbounded compressed stream while the state
+            // advertises fewer rows. This limits both memory use and the
+            // amplification of malformed producer payloads.
+            if (expectedItemCount.HasValue && tracks.Count >= expectedItemCount.Value)
+                throw new InvalidDataException(
+                    "Bridge snapshot contains more tracks than its advertised item_count.");
             var cols = line.Split('\t');
             if (cols.Length != header.Length) throw new InvalidDataException("Bridge row column count mismatch.");
             if (string.IsNullOrWhiteSpace(cols[0])) throw new InvalidDataException("Bridge row path is empty.");
@@ -146,6 +152,7 @@ public static class BridgeSnapshot
                     "Bridge schema-v3 metadata vectors must be an array.");
 
             var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var mappedCoreKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var field in document.RootElement.EnumerateArray())
             {
                 if (field.ValueKind != JsonValueKind.Object ||
@@ -179,6 +186,8 @@ public static class BridgeSnapshot
                     "REMIXED BY" => "remixed_by",
                     "ALBUM ARTIST" => "album_artist",
                     "TRACKNUMBER" or "TRACK" => "track_number",
+                    "YEAR" => "date",
+                    "PUBLISHER" => "label",
                     "TOTALTRACKS" or "TRACKTOTAL" => "total_tracks",
                     "DISCNUMBER" or "DISC" => "disc_number",
                     "TOTALDISCS" or "DISCTOTAL" => "total_discs",
@@ -186,7 +195,16 @@ public static class BridgeSnapshot
                     _ => name
                 };
                 if (core.ContainsKey(key))
+                {
+                    // TRACK and TRACKNUMBER, DATE and YEAR, etc. can be
+                    // distinct foobar fields that map to ONE Core column.
+                    // Never silently select whichever happens to come last.
+                    if (!mappedCoreKeys.Add(key))
+                        throw new InvalidDataException(
+                            "Bridge schema-v3 has conflicting aliases for Core field '" +
+                            key + "'.");
                     core[key] = values.ToArray();
+                }
             }
         }
         catch (JsonException ex)

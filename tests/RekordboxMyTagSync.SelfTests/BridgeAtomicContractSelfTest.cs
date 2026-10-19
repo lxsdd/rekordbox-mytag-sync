@@ -173,6 +173,49 @@ public static class BridgeAtomicContractSelfTest
         Reject(() => BridgeSourceDiscovery.ReadStable(wrongCount),
             "Incorrect bridge state item count was accepted.");
 
+        // Producer synonyms YEAR and PUBLISHER must retain full Core
+        // vectors instead of falling back to their scalar DATE/LABEL column.
+        var aliases = Path.Combine(root, "positive-core-aliases");
+        WritePublication(aliases, 3, 3, songOne, songTwo);
+        var aliasFile = Path.Combine(aliases, BridgeSourceDiscovery.SnapshotFileName);
+        RewriteFirstRowVectors(aliasFile,
+            "[{\"name\":\"YEAR\",\"values\":[\"2001-01-01\",\"2002-02-02\"]}," +
+            "{\"name\":\"PUBLISHER\",\"values\":[\"Label\",\"Alternative Label\"]}]");
+        var parsedAliases = BridgeSourceDiscovery.ReadStable(aliases);
+        if (!parsedAliases.Tracks[0].GetFieldValues("DATE").SequenceEqual(
+                new[] { "2001-01-01", "2002-02-02" }) ||
+            !parsedAliases.Tracks[0].GetFieldValues("LABEL").SequenceEqual(
+                new[] { "Label", "Alternative Label" }) ||
+            !MappingEngine.Apply(
+                new MappingRule("DATE", "Year", TransformKind.YearFromDate),
+                parsedAliases.Tracks[0].GetFieldValues("DATE")).SequenceEqual(
+                    new[] { "2001", "2002" }))
+            throw new InvalidOperationException(
+                "Bridge V3 YEAR/PUBLISHER synonyms lost Core multivalues.");
+
+        foreach (var conflictVectors in new[]
+        {
+            "[{\"name\":\"DATE\",\"values\":[\"2001\"]}," +
+            "{\"name\":\"YEAR\",\"values\":[\"2002\"]}]",
+            "[{\"name\":\"TRACK\",\"values\":[\"1\"]}," +
+            "{\"name\":\"TRACKNUMBER\",\"values\":[\"2\"]}]",
+            "[{\"name\":\"LABEL\",\"values\":[\"A\"]}," +
+            "{\"name\":\"PUBLISHER\",\"values\":[\"B\"]}]"
+        })
+        {
+            var conflictDir = Path.Combine(root, "canonical-collision-" +
+                Guid.NewGuid().ToString("N"));
+            WritePublication(conflictDir, 3, 3, songOne, songTwo);
+            RewriteFirstRowVectors(Path.Combine(conflictDir,
+                BridgeSourceDiscovery.SnapshotFileName), conflictVectors);
+            Reject(() => BridgeSourceDiscovery.ReadStable(conflictDir),
+                "Two V3 aliases overwrote one canonical Core metadata field.");
+        }
+        var zeroRows = Path.Combine(root, "inflated-row-count");
+        WritePublication(zeroRows, 3, 3, songOne, songTwo, count: 0);
+        Reject(() => BridgeSourceDiscovery.ReadStable(zeroRows),
+            "Compressed snapshot was allowed to exceed advertised row count.");
+
         foreach (var schema in new[] { 1, 2 })
         {
             var legacy = Path.Combine(root, "valid-v" + schema);
@@ -183,6 +226,29 @@ public static class BridgeAtomicContractSelfTest
                 throw new InvalidOperationException(
                     "V1/V2 scalar compatibility changed.");
         }
+    }
+
+    // Produce fully valid V3 gzip records while replacing only one original
+    // foobar metadata_vectors_json field. No production media is involved.
+    private static void RewriteFirstRowVectors(string gzipPath, string vectors)
+    {
+        string[] records;
+        using (var file = File.OpenRead(gzipPath))
+        using (var zip = new GZipStream(file, CompressionMode.Decompress))
+        using (var reader = new StreamReader(zip))
+            records = reader.ReadToEnd().Split('\n')
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.TrimEnd('\r')).ToArray();
+        if (records.Length != 3)
+            throw new InvalidOperationException("V3 synthetic rewrite expected two rows.");
+        var row = records[1].Split('\t');
+        if (row.Length != 26) throw new InvalidOperationException("V3 synthetic row width.");
+        row[25] = vectors;
+        records[1] = string.Join('\t', row);
+        using var output = File.Create(gzipPath);
+        using var zipped = new GZipStream(output, CompressionLevel.SmallestSize);
+        using var writer = new StreamWriter(zipped, new UTF8Encoding(false));
+        foreach (var record in records) writer.WriteLine(record);
     }
 
     private static bool Has(RekordboxTrackSnapshot track, string group,

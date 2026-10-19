@@ -143,6 +143,15 @@ public partial class App : Application
                 System.IO.Directory.Delete(schemaSmokeDir, recursive: true);
             }
 
+            // DATE/Year's real WPF mapping evaluator must honor all
+            // producer V3 DATE/YEAR values, not just one scalar.
+            var yearValues = MappingEngine.Apply(
+                new MappingRule("DATE", "Year", TransformKind.YearFromDate),
+                new[] { "2001-01-01", "2002-02-02" });
+            if (!yearValues.SequenceEqual(new[] { "2001", "2002" }))
+                throw new InvalidOperationException(
+                    "Production WPF Year mapping dropped Bridge V3 Core multivalues.");
+
             // The source-value regex filter must be an editable production
             // mapping column, not just a core API option hidden from users.
             var filterColumn = window.MappingGrid.Columns
