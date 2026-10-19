@@ -133,6 +133,30 @@ public static class BridgeSnapshot
         return header.Length - 23;
     }
 
+    // The bridge producer applies meta_first_of in this order; its canonical
+    // JSON array is alphabetized and cannot supply synonym precedence.
+    private static readonly (string Column, string[] Tags)[] CoreVectorPriority =
+    {
+        ("artist", new[] { "ARTIST" }),
+        ("artists", new[] { "ARTISTS" }),
+        ("title", new[] { "TITLE" }),
+        ("original_title", new[] { "ORIGINAL TITLE" }),
+        ("remixed_by", new[] { "REMIXED BY" }),
+        ("album", new[] { "ALBUM" }),
+        ("album_artist", new[] { "ALBUM ARTIST" }),
+        ("track_number", new[] { "TRACKNUMBER", "TRACK" }),
+        ("total_tracks", new[] { "TOTALTRACKS", "TRACKTOTAL" }),
+        ("disc_number", new[] { "DISCNUMBER", "DISC" }),
+        ("total_discs", new[] { "TOTALDISCS", "DISCTOTAL" }),
+        ("date", new[] { "DATE", "YEAR" }),
+        ("genre", new[] { "GENRE" }),
+        ("style", new[] { "STYLE" }),
+        ("bpm", new[] { "BPM" }),
+        ("label", new[] { "LABEL", "PUBLISHER" }),
+        ("catalog_number", new[] { "CATALOGNUMBER", "CATALOG NUMBER", "CATALOG" }),
+        ("isrc", new[] { "ISRC" })
+    };
+
     // Bridge schema V3 contains the original foobar field vectors. Core
     // columns remain scalar backwards-compatibility projections; take their
     // real multiple values from metadata_vectors_json instead. Non-Core
@@ -152,7 +176,7 @@ public static class BridgeSnapshot
                     "Bridge schema-v3 metadata vectors must be an array.");
 
             var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var mappedCoreKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var vectors = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
             foreach (var field in document.RootElement.EnumerateArray())
             {
                 if (field.ValueKind != JsonValueKind.Object ||
@@ -177,38 +201,30 @@ public static class BridgeSnapshot
                     if (!string.IsNullOrEmpty(value)) values.Add(value);
                 }
 
-                // The producer uses foobar tag names whereas V1 Core header
-                // columns are snake_case. Some foobar synonyms are mapped
-                // onto their canonical existing Core column only.
-                var key = name.ToUpperInvariant() switch
+                // Technical properties remain bound to info_get/get_length,
+                // never an identically named user foobar tag.
+                if (ReservedMetadataNames.Contains(name))
+                    vectors.Add(name, values.ToArray());
+            }
+
+            // DATE beats YEAR, LABEL beats PUBLISHER, etc. even when JSON
+            // happens to list fallback tags first. Empty primary vectors
+            // fall back to the first nonempty synonym. V1/V2 scalar fields
+            // and absent V3 vectors retain their existing behavior.
+            foreach (var (column, tags) in CoreVectorPriority)
+            {
+                var seen = false;
+                IReadOnlyList<string> selected = Array.Empty<string>();
+                foreach (var tag in tags)
                 {
-                    "ORIGINAL TITLE" => "original_title",
-                    "REMIXED BY" => "remixed_by",
-                    "ALBUM ARTIST" => "album_artist",
-                    "TRACKNUMBER" or "TRACK" => "track_number",
-                    "YEAR" => "date",
-                    "PUBLISHER" => "label",
-                    "TOTALTRACKS" or "TRACKTOTAL" => "total_tracks",
-                    "DISCNUMBER" or "DISC" => "disc_number",
-                    "TOTALDISCS" or "DISCTOTAL" => "total_discs",
-                    "CATALOGNUMBER" or "CATALOG NUMBER" or "CATALOG" => "catalog_number",
-                    _ => name
-                };
-                // Only the producer's true foobar Core TAGS can alter
-                // canonical Core metadata. Its technical codec, bitrate and
-                // duration fields are from file_info.info_get/get_length,
-                // NOT arbitrary user metadata with the same names.
-                if (ReservedMetadataNames.Contains(name) && core.ContainsKey(key))
-                {
-                    // TRACK and TRACKNUMBER, DATE and YEAR, etc. can be
-                    // distinct foobar fields that map to ONE Core column.
-                    // Never silently select whichever happens to come last.
-                    if (!mappedCoreKeys.Add(key))
-                        throw new InvalidDataException(
-                            "Bridge schema-v3 has conflicting aliases for Core field '" +
-                            key + "'.");
-                    core[key] = values.ToArray();
+                    if (!vectors.TryGetValue(tag, out var values)) continue;
+                    seen = true;
+                    if (values.Count == 0) continue;
+                    selected = values;
+                    break;
                 }
+                if (seen)
+                    core[column] = selected;
             }
         }
         catch (JsonException ex)
