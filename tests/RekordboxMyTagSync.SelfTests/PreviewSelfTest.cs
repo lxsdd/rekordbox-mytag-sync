@@ -235,16 +235,36 @@ public static class PreviewSelfTest
         if (!string.Equals(preview.FingerprintSha256, reordered.FingerprintSha256, StringComparison.Ordinal))
             throw new InvalidOperationException("preview fingerprint changed under semantically irrelevant input ordering");
 
-        var duplicateBridge = Track(
+        // A virtual CUE sibling must never make its physical main file ambiguous.
+        var virtualCueSibling = Track(
             Path.Combine(canonicalRoot, "Artist", "One.mp3"),
             1,
             bridgeOne.Core,
             bridgeOne.Extra);
-        var duplicateBridgePreview = PreviewEngine.Create(request with
+        var physicalAndVirtual = PreviewEngine.Create(request with
         {
-            BridgeTracks = new[] { bridgeOne, duplicateBridge }
+            BridgeTracks = new[] { bridgeOne, virtualCueSibling }
         });
-        AssertInvalidConflict(duplicateBridgePreview, "bridge path/subsong collapse did not fail closed");
+        if (!physicalAndVirtual.IsValid)
+            throw new InvalidOperationException("virtual CUE sibling blocked the physical main file");
+        AssertCounts(physicalAndVirtual, additions: 1, removals: 1, already: 1,
+            conflicts: 0, unmatched: 1);
+        AssertDetail(physicalAndVirtual, PreviewDetailKind.Add, "C1", "Mood", "Euphoric");
+        if (!physicalAndVirtual.Details.Any(x => x.Kind == PreviewDetailKind.Unmatched &&
+                x.Message.Contains("Virtual subsong 1", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("virtual CUE sibling was not reported as excluded");
+
+        // Two physical bridge entries for the same canonical path remain unsafe.
+        var competingPhysical = bridgeOne with { Path = targetOne.Path };
+        var duplicatePhysicalPreview = PreviewEngine.Create(request with
+        {
+            BridgeTracks = new[] { bridgeOne, competingPhysical }
+        });
+        AssertInvalidConflict(duplicatePhysicalPreview,
+            "two competing physical bridge entries did not fail closed");
+        if (duplicatePhysicalPreview.Details.Any(x =>
+                x.Kind == PreviewDetailKind.Add || x.Kind == PreviewDetailKind.Remove))
+            throw new InvalidOperationException("ambiguous physical sources scheduled a MyTag write");
 
         var duplicateTargetPreview = PreviewEngine.Create(request with
         {
