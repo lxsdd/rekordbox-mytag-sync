@@ -10,7 +10,9 @@ public static class RekordboxProcessGuard
     private static readonly string[] RekordboxProcessNames =
         ["rekordbox", "rekordboxAgent", "rbxport"];
 
-    public static IReadOnlyList<string> ProtectedProcessNames => RekordboxProcessNames;
+    private static readonly IReadOnlyList<string> ProtectedNamesView = Array.AsReadOnly(RekordboxProcessNames);
+
+    public static IReadOnlyList<string> ProtectedProcessNames => ProtectedNamesView;
 
     public static bool IsRunning()
     {
