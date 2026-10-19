@@ -37,6 +37,9 @@ public partial class MainWindow : Window
     private RekordboxResolvedDatabaseAccess? _databaseAccess;
     private BridgeSourceSnapshot? _bridgeSnapshot;
     private PreviewResult? _approvedPreview;
+    private VerifiedMutationAuthority? _approvedPhysicalAuthority;
+    private IReadOnlyList<MappingRule>? _approvedPreviewMappings;
+    private IReadOnlyList<MappingRule>? _configuredMappingsAtPreview;
 
     public MainWindow()
     {
@@ -912,7 +915,8 @@ public partial class MainWindow : Window
         }
         try
         {
-            if (_approvedPreview is null ||
+            if (_approvedPreview is null || _approvedPhysicalAuthority is null ||
+                _approvedPreviewMappings is null || _configuredMappingsAtPreview is null ||
                 !_previewExists ||
                 !_previewValid ||
                 !_previewFresh)
@@ -927,6 +931,9 @@ public partial class MainWindow : Window
                 ?? throw new InvalidDataException("No target master.db is selected.");
             var bridgeDirectory = settings.EffectiveBridgeDirectory
                 ?? throw new InvalidDataException("No bridge source directory is selected.");
+            if (!settings.EffectiveMappings.SequenceEqual(_configuredMappingsAtPreview))
+                throw new InvalidDataException(
+                    "Configured mappings changed since the approved physical preview.");
             var key = _databaseAccess.Key;
             var policy = _databaseAccess.Policy;
             var bridge = BridgeSourceDiscovery.ReadStable(bridgeDirectory);
@@ -939,7 +946,7 @@ public partial class MainWindow : Window
             var preApplyProvenance = ProvenanceStore.Load(
                 provenancePath,
                 preApplyIdentity);
-            var mappingHash = ComputeMappingHashSha256(settings.EffectiveMappings);
+            var mappingHash = ComputeMappingHashSha256(_approvedPreviewMappings);
             var toolVersion = ProductVersion();
 
             var result = RekordboxMutationExecutor.Apply(
@@ -948,12 +955,13 @@ public partial class MainWindow : Window
                 policy,
                 _approvedPreview,
                 bridge.Tracks,
-                settings.EffectiveMappings,
+                _approvedPreviewMappings,
                 provenancePath,
                 backupRoot,
                 mappingHash,
                 toolVersion,
-                settings.EffectivePathAliases);
+                _approvedPhysicalAuthority.Aliases,
+                _approvedPhysicalAuthority);
 
             _databaseSnapshot = RekordboxSqlCipherDatabase.ReadSnapshot(
                 databasePath,
@@ -1193,6 +1201,9 @@ public partial class MainWindow : Window
             AppendDiagnostic(reason);
 
         _approvedPreview = null;
+        _approvedPhysicalAuthority = null;
+        _approvedPreviewMappings = null;
+        _configuredMappingsAtPreview = null;
         _previewExists = false;
         _previewValid = false;
         _previewFresh = false;

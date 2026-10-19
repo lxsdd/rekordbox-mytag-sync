@@ -23,7 +23,8 @@ internal static class RekordboxMutationExecutor
         string backupRoot,
         string mappingHashSha256,
         string toolVersion,
-        IReadOnlyList<PathAlias>? pathAliases = null)
+        IReadOnlyList<PathAlias>? pathAliases = null,
+        VerifiedMutationAuthority? physicalAuthority = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
@@ -44,7 +45,8 @@ internal static class RekordboxMutationExecutor
             initialProvenance,
             bridgeTracks,
             mappings,
-            pathAliases);
+            pathAliases,
+            physicalAuthority);
 
         if (!initialPreflight.HasWork)
         {
@@ -75,7 +77,8 @@ internal static class RekordboxMutationExecutor
             provenance,
             bridgeTracks,
             mappings,
-            pathAliases);
+            pathAliases,
+            physicalAuthority);
         if (!preflight.HasWork)
             throw new InvalidOperationException(
                 "Approved mutation set changed after pre-write backup creation; mutation is blocked.");
@@ -95,6 +98,11 @@ internal static class RekordboxMutationExecutor
 
         try
         {
+            // Final native file-ID recheck before opening the mutation
+            // session. A source/target replacement after backup must fail.
+            // The read-only preview alone never grants write permission.
+            if (physicalAuthority is not null)
+                _ = physicalAuthority.Reverify(before, bridgeTracks, pathAliases);
             using var session = RekordboxMutationSession.Open(databasePath, key);
             var connection = session.Connection;
             var requireTombstone = preflight.CurrentPreview.Details.Any(
