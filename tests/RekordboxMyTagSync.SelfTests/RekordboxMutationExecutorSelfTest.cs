@@ -12,6 +12,106 @@ public static class RekordboxMutationExecutorSelfTest
         QualifyDefinitionCreationRestoreAfterPostCommitFailure(temp);
         QualifyRestoreAfterPostCommitFailure(temp);
         QualifyVerifiedRestoreRoundTrip(temp);
+        QualifyExternalWholeSetEditorProvenanceDrift(temp);
+    }
+
+    // Model a second SQLCipher client that replaces a track's whole MyTag set:
+    // it tombstones one tool-owned membership and reactivates an unrelated,
+    // previously tombstoned manual membership. Our stale preview must never
+    // adopt that new link, delete the remaining manual tag or write the DB.
+    private static void QualifyExternalWholeSetEditorProvenanceDrift(string temp)
+    {
+        var root = Path.Combine(temp, "ExternalWholeSetEditor");
+        var databasePath = Path.Combine(root, "master.db");
+        var trackOne = Path.Combine(temp, "ExternalEditorMusic", "One.mp3");
+        var trackTwo = Path.Combine(temp, "ExternalEditorMusic", "Two.mp3");
+        EncryptedMutationFixture.Create(databasePath, trackOne, trackTwo);
+
+        var policy = Policy();
+        var before = RekordboxSqlCipherDatabase.ReadSnapshot(
+            databasePath, EncryptedMutationFixture.Key, policy);
+        var provenancePath = Path.Combine(root, "state", "provenance.json");
+        var owned = ProvenanceStore.ReplaceAssignments(
+            ProvenanceStore.Empty(before.Identity), before.Identity,
+            new[] { new OwnedAssignment("C1", "T3", "Mood", "Euphoric") });
+        ProvenanceStore.SaveAtomic(provenancePath, owned, before.Identity);
+        var bridgeTracks = new[] { Bridge(trackOne, "House") };
+        var mappings = new[] { new MappingRule("GENRE", "Genre") };
+        var approved = PreviewEngine.Create(new PreviewRequest(
+            before.Identity.PreviewIdentity, bridgeTracks, mappings,
+            before.Tracks, ProvenanceStore.ToManagedAssignments(owned, before),
+            MyTagDefinitions: before.MyTagDefinitions));
+        AssertPreview(approved, additions: 0, removals: 1,
+            alreadyCorrect: 1, conflicts: 0, unmatched: 0);
+
+        // Simulate rbxport-style external set replacement on a SYNTHETIC
+        // encrypted database only; no production DB or music file is opened.
+        using (var connection = EncryptedMutationFixture.Open(databasePath))
+        {
+            ExecuteSql(connection, """
+                UPDATE djmdSongMyTag SET rb_local_deleted=1, rb_local_usn=101
+                WHERE ContentID='C1' AND MyTagID='T3';
+                UPDATE djmdSongMyTag SET rb_local_deleted=0, rb_local_usn=102
+                WHERE ContentID='C1' AND MyTagID='T2';
+                UPDATE agentRegistry SET int_1=102
+                WHERE registry_id='localUpdateCount';
+                """);
+        }
+
+        var external = RekordboxSqlCipherDatabase.ReadSnapshot(
+            databasePath, EncryptedMutationFixture.Key, policy);
+        var c1 = external.Tracks.Single(x => x.ContentId == "C1");
+        AssertHas(c1, "Genre", "House");
+        AssertHas(c1, "Genre", "Techno");
+        AssertMissing(c1, "Mood", "Euphoric");
+
+        var rejectedOwnershipDrift = false;
+        try
+        {
+            _ = ProvenanceStore.ToManagedAssignments(owned, external);
+        }
+        catch (InvalidDataException)
+        {
+            rejectedOwnershipDrift = true;
+        }
+        if (!rejectedOwnershipDrift)
+            throw new InvalidOperationException(
+                "external whole-set replacement silently adopted stale ownership");
+
+        var externalHash = RekordboxRollingBackup.ComputeFileSha256(databasePath);
+        var provenanceHash = RekordboxRollingBackup.ComputeFileSha256(provenancePath);
+        var backupRoot = Path.Combine(root, "backup");
+        var blocked = false;
+        try
+        {
+            _ = RekordboxMutationExecutor.Apply(
+                databasePath, EncryptedMutationFixture.Key, policy,
+                approved, bridgeTracks, mappings, provenancePath, backupRoot,
+                Sha256("external-whole-set-mapping"), "0.1.0-dev");
+        }
+        catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException)
+        {
+            blocked = true;
+        }
+        if (!blocked)
+            throw new InvalidOperationException(
+                "stale preview applied after external whole-set MyTag replacement");
+        if (!string.Equals(externalHash,
+                RekordboxRollingBackup.ComputeFileSha256(databasePath),
+                StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(provenanceHash,
+                RekordboxRollingBackup.ComputeFileSha256(provenancePath),
+                StringComparison.OrdinalIgnoreCase) ||
+            Directory.Exists(backupRoot))
+            throw new InvalidOperationException(
+                "blocked external edit unexpectedly wrote database, provenance or backup");
+
+        var after = RekordboxSqlCipherDatabase.ReadSnapshot(
+            databasePath, EncryptedMutationFixture.Key, policy);
+        var retained = after.Tracks.Single(x => x.ContentId == "C1");
+        AssertHas(retained, "Genre", "House");
+        AssertHas(retained, "Genre", "Techno");
+        AssertMissing(retained, "Mood", "Euphoric");
     }
 
     private static void QualifyVerifiedRestoreRoundTrip(string temp)
