@@ -357,5 +357,6 @@ public static class RekordboxDiscovery
     internal static bool PathsEqual(string a, string b) =>
         string.Equals(CanonicalPath(a), CanonicalPath(b), StringComparison.OrdinalIgnoreCase);
 
-    internal static string CanonicalPath(string path) => Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    internal static string CanonicalPath(string path) =>
+        PhysicalDatabasePath.ForDiscovery(path);
 }

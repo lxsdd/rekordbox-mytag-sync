@@ -255,5 +255,5 @@ internal static class RekordboxMutationExecutor
             StringComparison.OrdinalIgnoreCase);
 
     private static string Canonical(string path) =>
-        Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        PhysicalDatabasePath.ResolveExisting(path);
 }

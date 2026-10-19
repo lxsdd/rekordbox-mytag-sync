@@ -39,7 +39,8 @@ public static class RekordboxRollingBackup
         ArgumentNullException.ThrowIfNull(identity);
         ValidateIdentity(identity);
         var canonicalRoot = Path.GetFullPath(backupRoot);
-        var keyMaterial = identity.DbId.Trim() + "\n" + Canonical(identity.CanonicalPath);
+        var keyMaterial = identity.DbId.Trim() + "\n" +
+            PhysicalDatabasePath.SlotIdentity(identity.CanonicalPath);
         var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(keyMaterial))).ToLowerInvariant();
         return Path.Combine(canonicalRoot, key + ".rbbackup");
     }
@@ -328,7 +329,7 @@ public static class RekordboxRollingBackup
     }
 
     private static string Canonical(string path) =>
-        Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        PhysicalDatabasePath.ResolveExisting(path);
 
     internal static string ComputeFileSha256(string path)
     {
