@@ -45,16 +45,18 @@ jobs:
               echo "should_run=false" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            # A workflow with a skipped qualification job still reports
-            # conclusion=success. Only a real, unexpired SHA-bound FULL
-            # qualification artifact can suppress a subsequent build.
+            # A preflight-only/skipped FULL run may itself report success.
+            # Inspect the *actual* qualified Windows job, not the workflow
+            # conclusion or presence of a large retained artifact. Normal
+            # automatic FULL runs validate/package/check hashes but deliberately
+            # do not retain ~143 MB on every intermediate main merge.
             previous_ids="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/full.yml/runs?branch=main&head_sha=$SOURCE_SHA&per_page=100" \
               --jq '.workflow_runs[] | select(.conclusion == "success") | .id')"
             for previous_id in $previous_ids; do
-              artifact_count="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$previous_id/artifacts?per_page=100" \
-                --jq "[.artifacts[] | select(.name == \"RekordboxMyTagSync-FULL-$SOURCE_SHA\" and .expired == false)] | length")"
-              if [[ "$artifact_count" != "0" ]]; then
-                echo "Real FULL artifact already exists for $SOURCE_SHA (run $previous_id); skipping duplicate."
+              qualified_count="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$previous_id/jobs?per_page=100" \
+                --jq '[.jobs[] | select(.name == "qualify-portable-candidate" and .conclusion == "success")] | length')"
+              if [[ "$qualified_count" != "0" ]]; then
+                echo "Real Windows FULL qualification already succeeded for $SOURCE_SHA (run $previous_id); skipping duplicate."
                 echo "should_run=false" >> "$GITHUB_OUTPUT"
                 exit 0
               fi
@@ -580,11 +582,15 @@ jobs:
           Write-Host "FULL candidate artifact SHA-256: $candidateHash"
           Write-Host "FULL candidate product version: $($qualification.productVersion)"
 
+      # Only a deliberately dispatched final-candidate run retains its ZIP.
+      # Automatic FAST-triggered FULL keeps the same compile, self-tests,
+      # deterministic ZIP/hash proof and smoke gate, without storage growth.
       - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
         with:
           name: RekordboxMyTagSync-FULL-${{ env.SOURCE_SHA }}
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 7
           compression-level: 0
           path: |
             artifacts/${{ steps.package.outputs.candidate_name }}
