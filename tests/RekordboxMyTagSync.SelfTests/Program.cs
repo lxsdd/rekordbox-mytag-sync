@@ -219,6 +219,44 @@ try
     if (!string.Equals(discovery.Libraries[0].DatabasePath, expectedDatabasePath, StringComparison.OrdinalIgnoreCase))
         throw new InvalidOperationException("discovered database path mismatch");
 
+    // The physical database resolver is exercised against the real encrypted
+    // fixture and rejects a hardlink before any backup/provenance write.
+    var aliasDbDir = Path.Combine(temp, "AliasEncryptedDatabase");
+    Directory.CreateDirectory(aliasDbDir);
+    var encryptedDb = Path.Combine(aliasDbDir, "master.db");
+    EncryptedMutationFixture.Create(
+        encryptedDb, @"Z:\Music\Singles\Alias-One.mp3",
+        @"Z:\Music\Singles\Alias-Two.mp3");
+    var physicalPath = RekordboxDatabaseFileIdentity.ResolveCanonicalPath(encryptedDb);
+    if (!string.Equals(physicalPath, Path.GetFullPath(encryptedDb), StringComparison.OrdinalIgnoreCase))
+        throw new InvalidOperationException("Native canonical encrypted DB path was not stable.");
+    var verifiedEncrypted = RekordboxSqlCipherDatabase.ReadSnapshot(
+        physicalPath, EncryptedMutationFixture.Key,
+        RekordboxDatabaseReadPolicy.SchemaQualifiedRuntime());
+    if (verifiedEncrypted.Identity.DbVersion != EncryptedMutationFixture.DbVersion)
+        throw new InvalidOperationException("Canonicalized encrypted database failed SQLCipher qualification.");
+    var hardlink = Path.Combine(aliasDbDir, "master-hardlink.db");
+    File.CreateHardLink(hardlink, encryptedDb);
+    var rejectedHardlink = false;
+    try { _ = RekordboxDatabaseFileIdentity.ResolveCanonicalPath(encryptedDb); }
+    catch (InvalidDataException) { rejectedHardlink = true; }
+    if (!rejectedHardlink)
+        throw new InvalidOperationException("Multiply linked master.db was not rejected.");
+    var beforeHardlinkBackup = Directory.Exists(Path.Combine(aliasDbDir, "backups"))
+        ? Directory.EnumerateFiles(Path.Combine(aliasDbDir, "backups")).Count() : 0;
+    var rejectedHardlinkBackup = false;
+    try
+    {
+        _ = RekordboxRollingBackup.GetPackagePath(
+            Path.Combine(aliasDbDir, "backups"), verifiedEncrypted.Identity);
+    }
+    catch (InvalidDataException) { rejectedHardlinkBackup = true; }
+    if (!rejectedHardlinkBackup ||
+        (Directory.Exists(Path.Combine(aliasDbDir, "backups")) &&
+         Directory.EnumerateFiles(Path.Combine(aliasDbDir, "backups")).Count() != beforeHardlinkBackup))
+        throw new InvalidOperationException("Hardlinked database generated a backup authority.");
+    File.Delete(hardlink);
+
     var manualTarget = RekordboxDiscovery.InspectManual(
         dbPath,
         new RekordboxDiscoveryOptions(programRoot, appRoot));

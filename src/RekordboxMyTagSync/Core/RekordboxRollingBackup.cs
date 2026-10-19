@@ -38,6 +38,7 @@ public static class RekordboxRollingBackup
         ArgumentException.ThrowIfNullOrWhiteSpace(backupRoot);
         ArgumentNullException.ThrowIfNull(identity);
         ValidateIdentity(identity);
+        RekordboxDatabaseFileIdentity.RequireCanonicalPath(identity.CanonicalPath);
         var canonicalRoot = Path.GetFullPath(backupRoot);
         var keyMaterial = identity.DbId.Trim() + "\n" + Canonical(identity.CanonicalPath);
         var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(keyMaterial))).ToLowerInvariant();

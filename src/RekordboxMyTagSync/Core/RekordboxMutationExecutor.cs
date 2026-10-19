@@ -36,6 +36,8 @@ internal static class RekordboxMutationExecutor
         ArgumentException.ThrowIfNullOrWhiteSpace(backupRoot);
         ArgumentException.ThrowIfNullOrWhiteSpace(mappingHashSha256);
         ArgumentException.ThrowIfNullOrWhiteSpace(toolVersion);
+        // An alternate path cannot silently fork rolling backups/provenance.
+        RekordboxDatabaseFileIdentity.RequireCanonicalPath(databasePath);
 
         var (initialSnapshot, approvedDatabaseHash) = ReadVerifiedSnapshot(databasePath, key, policy);
         // The WPF-authorized preview is pinned to exact SQLCipher bytes.

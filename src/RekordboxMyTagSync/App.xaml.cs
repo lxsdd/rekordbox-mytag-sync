@@ -39,6 +39,21 @@ public partial class App : Application
 
     private static void RunUiSmoke()
     {
+        // Exercise native DB path qualification inside the actual WPF process.
+        // This fixture is a temporary read-only path check, never a user DB.
+        var probe = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+            "MyTagSync-db-alias-ui-smoke-" + Guid.NewGuid().ToString("N") + ".db");
+        try
+        {
+            System.IO.File.WriteAllBytes(probe, new byte[] { 1, 2, 3 });
+            var resolved = RekordboxDatabaseFileIdentity.ResolveCanonicalPath(probe);
+            if (!string.Equals(resolved, System.IO.Path.GetFullPath(probe),
+                    StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    "WPF physical database target canonicalization failed.");
+        }
+        finally { if (System.IO.File.Exists(probe)) System.IO.File.Delete(probe); }
+
         var window = new MainWindow { Tag = "ui-smoke" };
         try
         {

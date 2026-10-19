@@ -51,6 +51,12 @@ public static class RekordboxDiscovery
         try { agentDb = ReadAgentDatabasePath(optionsPath); }
         catch (Exception ex) { diagnostics.Add($"agent-options: {ex.Message}"); }
 
+        // Resolve SUBST/UNC/junction/symlink spellings to the same open Windows file.
+        // An unreadable or multiply hardlinked database remains explicitly unsafe.
+        var unsafePaths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        settingsDb = ResolveDatabaseEvidence(settingsDb, "rekordbox3.settings", diagnostics, unsafePaths);
+        agentDb = ResolveDatabaseEvidence(agentDb, "rekordboxAgent options.json", diagnostics, unsafePaths);
+
         var evidenceByPath = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
         AddEvidence(evidenceByPath, settingsDb, "rekordbox3.settings");
         AddEvidence(evidenceByPath, agentDb, "rekordboxAgent options.json");
@@ -67,7 +73,8 @@ public static class RekordboxDiscovery
             var exists = File.Exists(fullPath);
             var error = conflict
                 ? "Rekordbox settings and rekordboxAgent disagree about the active master.db path."
-                : !exists ? "Referenced master.db does not exist." : null;
+                : !exists ? "Referenced master.db does not exist."
+                : unsafePaths.TryGetValue(fullPath, out var unsafeReason) ? unsafeReason : null;
             libraries.Add(new RekordboxLibraryCandidate(
                 fullPath,
                 installations,
@@ -97,6 +104,16 @@ public static class RekordboxDiscovery
             discoverRegistered);
         var canonical = CanonicalPath(databasePath);
         var exists = File.Exists(canonical);
+        string? aliasError = null;
+        if (exists)
+        {
+            try { canonical = RekordboxDatabaseFileIdentity.ResolveCanonicalPath(canonical); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
+                InvalidDataException or PlatformNotSupportedException)
+            {
+                aliasError = "Physical database path qualification failed: " + ex.Message;
+            }
+        }
         var supportedInstallations = installations
             .Where(x => x.MajorVersion is 6 or 7)
             .ToArray();
@@ -104,6 +121,8 @@ public static class RekordboxDiscovery
         string? error = null;
         if (!exists)
             error = "Selected master.db does not exist.";
+        else if (aliasError is not null)
+            error = aliasError;
         else if (supportedInstallations.Length == 0)
             error = "No supported rekordbox 6/7 installation was discovered for manual target qualification.";
 
@@ -344,6 +363,25 @@ public static class RekordboxDiscovery
             return CanonicalPath(raw);
         }
         return null;
+    }
+
+    private static string? ResolveDatabaseEvidence(
+        string? path, string source, List<string> diagnostics,
+        Dictionary<string, string> unsafePaths)
+    {
+        if (path is null || !File.Exists(path)) return path;
+        try
+        {
+            return RekordboxDatabaseFileIdentity.ResolveCanonicalPath(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
+            InvalidDataException or PlatformNotSupportedException)
+        {
+            var reason = "Physical database path qualification failed: " + ex.Message;
+            unsafePaths[CanonicalPath(path)] = reason;
+            diagnostics.Add(source + ": " + reason);
+            return path;
+        }
     }
 
     private static void AddEvidence(Dictionary<string, List<string>> map, string? path, string evidence)
