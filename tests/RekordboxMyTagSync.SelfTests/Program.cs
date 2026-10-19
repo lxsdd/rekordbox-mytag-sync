@@ -234,6 +234,7 @@ try
     PathPairVerifierSelfTest.Run(temp);
     PhysicalFileIdentityVerifierSelfTest.Run(temp);
     MultiRootVerifiedPreviewSelfTest.Run(temp);
+    EncryptedLibraryScalePreviewSelfTest.Run(temp);
     VerifiedPreviewScopeSelfTest.Run(temp);
     ReadOnlyDiagnosticsSelfTest.Run(temp);
     PhysicalExceptionInvestigatorSelfTest.Run(temp);

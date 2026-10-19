@@ -90,6 +90,9 @@
                                TextWrapping="Wrap"
                                Text="Source not yet inspected."/>
                     <DataGrid x:Name="SourceCandidatesGrid"
+                              EnableRowVirtualization="True"
+                              EnableColumnVirtualization="True"
+                              ScrollViewer.CanContentScroll="True"
                               Grid.Row="3"
                               IsReadOnly="True"
                               AutoGenerateColumns="False"
@@ -109,6 +112,9 @@
                                FontWeight="SemiBold"
                                Text="Windows / SUBST path aliases"/>
                     <DataGrid x:Name="PathAliasGrid"
+                              EnableRowVirtualization="True"
+                              EnableColumnVirtualization="True"
+                              ScrollViewer.CanContentScroll="True"
                               Grid.Row="5"
                               AutoGenerateColumns="False"
                               CanUserAddRows="False">
@@ -164,6 +170,9 @@
                                TextWrapping="Wrap"
                                Text="No target discovery performed yet."/>
                     <DataGrid x:Name="TargetCandidatesGrid"
+                              EnableRowVirtualization="True"
+                              EnableColumnVirtualization="True"
+                              ScrollViewer.CanContentScroll="True"
                               Grid.Row="3"
                               IsReadOnly="True"
                               AutoGenerateColumns="False"
@@ -259,6 +268,9 @@
                                TextWrapping="Wrap"
                                Text="Entire mapping not checked against physical file IDs. No alias is approved."/>
                     <DataGrid x:Name="PathProposalsGrid"
+                              EnableRowVirtualization="True"
+                              EnableColumnVirtualization="True"
+                              ScrollViewer.CanContentScroll="True"
                               Grid.Row="5"
                               AutoGenerateColumns="False"
                               IsReadOnly="True"
@@ -282,6 +294,9 @@
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     <DataGrid x:Name="MappingGrid"
+                              EnableRowVirtualization="True"
+                              EnableColumnVirtualization="True"
+                              ScrollViewer.CanContentScroll="True"
                               AutoGenerateColumns="False"
                               CanUserAddRows="False">
                         <DataGrid.Columns>
@@ -345,6 +360,9 @@
                     <TabControl Grid.Row="3" x:Name="PreviewResultsTabs">
                         <TabItem Header="MyTag changes / conflicts">
                             <DataGrid x:Name="PreviewGrid"
+                              EnableRowVirtualization="True"
+                              EnableColumnVirtualization="True"
+                              ScrollViewer.CanContentScroll="True"
                                       IsReadOnly="True"
                                       AutoGenerateColumns="False"
                                       CanUserAddRows="False">
@@ -365,6 +383,9 @@
                                            TextWrapping="Wrap"
                                            Text="Run Auto-match and preview to classify excluded rekordbox ContentIDs and duplicate MyTag link rows."/>
                                 <DataGrid x:Name="PreviewInvestigationGrid"
+                              EnableRowVirtualization="True"
+                              EnableColumnVirtualization="True"
+                              ScrollViewer.CanContentScroll="True"
                                           IsReadOnly="True"
                                           AutoGenerateColumns="False"
                                           FrozenColumnCount="2"
@@ -413,6 +434,9 @@
                                                Text="This identifies individual physical FILE references, not virtual CUE tracks. A pair of rekordbox ContentIDs at one path is not necessarily two audio files. Reference counts do not prove that a track is safe to delete."/>
                                 </StackPanel>
                                 <DataGrid x:Name="PhysicalExceptionsGrid"
+                              EnableRowVirtualization="True"
+                              EnableColumnVirtualization="True"
+                              ScrollViewer.CanContentScroll="True"
                                           IsReadOnly="True"
                                           AutoGenerateColumns="False"
                                           CanUserResizeColumns="True"

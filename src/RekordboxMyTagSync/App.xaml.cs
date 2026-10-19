@@ -98,6 +98,10 @@ public partial class App : Application
                 if (!HorizontalScrollSupport.IsEnabled(table))
                     throw new InvalidOperationException(
                         $"Production table '{name}' is missing DJ Library precision-touchpad horizontal routing.");
+                if (!table.EnableRowVirtualization || !table.EnableColumnVirtualization ||
+                    !System.Windows.Controls.ScrollViewer.GetCanContentScroll(table))
+                    throw new InvalidOperationException(
+                        $"Production WPF table '{name}' must virtualize both rows and columns at 52,784+ library scale.");
                 table.ApplyTemplate();
                 var mode = System.Windows.Controls.ScrollViewer.GetHorizontalScrollBarVisibility(table);
                 if (mode != System.Windows.Controls.ScrollBarVisibility.Auto &&
