@@ -46,6 +46,11 @@ public static class BridgeAtomicContractSelfTest
                     "Synthetic Year MyTag definitions were not initialized.");
         }
         WritePublication(bridgeRoot, stateSchema: 3, payloadSchema: 3, songOne, songTwo);
+        // The encrypted SQLCipher Preview/Apply E2E below must use the
+        // producer's YEAR-only fallback, not a DATE vector.
+        RewriteFirstRowVectors(Path.Combine(
+                bridgeRoot, BridgeSourceDiscovery.SnapshotFileName),
+            "[{\"name\":\"GENRE\",\"values\":[\"House\",\"Techno\"]},{\"name\":\"YEAR\",\"values\":[\"2001-01-01\",\"2002-02-02\"]}]");
         var candidate = BridgeSourceDiscovery.Inspect(bridgeRoot, selected: true);
         if (!candidate.Safe || !candidate.Selected ||
             candidate.State?.SchemaVersion != 3)
@@ -193,24 +198,69 @@ public static class BridgeAtomicContractSelfTest
             throw new InvalidOperationException(
                 "Bridge V3 YEAR/PUBLISHER synonyms lost Core multivalues.");
 
-        foreach (var conflictVectors in new[]
-        {
-            "[{\"name\":\"DATE\",\"values\":[\"2001\"]}," +
-            "{\"name\":\"YEAR\",\"values\":[\"2002\"]}]",
-            "[{\"name\":\"TRACK\",\"values\":[\"1\"]}," +
-            "{\"name\":\"TRACKNUMBER\",\"values\":[\"2\"]}]",
-            "[{\"name\":\"LABEL\",\"values\":[\"A\"]}," +
-            "{\"name\":\"PUBLISHER\",\"values\":[\"B\"]}]"
-        })
-        {
-            var conflictDir = Path.Combine(root, "canonical-collision-" +
-                Guid.NewGuid().ToString("N"));
-            WritePublication(conflictDir, 3, 3, songOne, songTwo);
-            RewriteFirstRowVectors(Path.Combine(conflictDir,
-                BridgeSourceDiscovery.SnapshotFileName), conflictVectors);
-            Reject(() => BridgeSourceDiscovery.ReadStable(conflictDir),
-                "Two V3 aliases overwrote one canonical Core metadata field.");
-        }
+        // Two foobar synonyms are legitimate when the producer exposes
+        // both: its explicit priority resolves them without JSON last-wins.
+        var priorityDir0 = Path.Combine(root, "producer-priority-0");
+        WritePublication(priorityDir0, 3, 3, songOne, songTwo);
+        RewriteFirstRowVectors(Path.Combine(
+                priorityDir0, BridgeSourceDiscovery.SnapshotFileName),
+            "[{\"name\":\"YEAR\",\"values\":[\"1999\"]},{\"name\":\"DATE\",\"values\":[\"2001\",\"2002\"]}]");
+        if (!BridgeSourceDiscovery.ReadStable(priorityDir0).Tracks[0]
+            .GetFieldValues("DATE")
+            .SequenceEqual(new[] { "2001", "2002" }))
+            throw new InvalidOperationException(
+                "Bridge V3 producer alias precedence case 0 did not hold.");
+        var priorityDir1 = Path.Combine(root, "producer-priority-1");
+        WritePublication(priorityDir1, 3, 3, songOne, songTwo);
+        RewriteFirstRowVectors(Path.Combine(
+                priorityDir1, BridgeSourceDiscovery.SnapshotFileName),
+            "[{\"name\":\"TRACK\",\"values\":[\"2\"]},{\"name\":\"TRACKNUMBER\",\"values\":[\"1\"]}]");
+        if (!BridgeSourceDiscovery.ReadStable(priorityDir1).Tracks[0]
+            .GetFieldValues("track_number")
+            .SequenceEqual(new[] { "1" }))
+            throw new InvalidOperationException(
+                "Bridge V3 producer alias precedence case 1 did not hold.");
+        var priorityDir2 = Path.Combine(root, "producer-priority-2");
+        WritePublication(priorityDir2, 3, 3, songOne, songTwo);
+        RewriteFirstRowVectors(Path.Combine(
+                priorityDir2, BridgeSourceDiscovery.SnapshotFileName),
+            "[{\"name\":\"PUBLISHER\",\"values\":[\"B\"]},{\"name\":\"LABEL\",\"values\":[\"A\",\"C\"]}]");
+        if (!BridgeSourceDiscovery.ReadStable(priorityDir2).Tracks[0]
+            .GetFieldValues("LABEL")
+            .SequenceEqual(new[] { "A", "C" }))
+            throw new InvalidOperationException(
+                "Bridge V3 producer alias precedence case 2 did not hold.");
+        var priorityDir3 = Path.Combine(root, "producer-priority-3");
+        WritePublication(priorityDir3, 3, 3, songOne, songTwo);
+        RewriteFirstRowVectors(Path.Combine(
+                priorityDir3, BridgeSourceDiscovery.SnapshotFileName),
+            "[{\"name\":\"CATALOG\",\"values\":[\"FALLBACK\"]},{\"name\":\"CATALOGNUMBER\",\"values\":[\"PRIMARY\"]}]");
+        if (!BridgeSourceDiscovery.ReadStable(priorityDir3).Tracks[0]
+            .GetFieldValues("catalog_number")
+            .SequenceEqual(new[] { "PRIMARY" }))
+            throw new InvalidOperationException(
+                "Bridge V3 producer alias precedence case 3 did not hold.");
+        var priorityDir4 = Path.Combine(root, "producer-priority-4");
+        WritePublication(priorityDir4, 3, 3, songOne, songTwo);
+        RewriteFirstRowVectors(Path.Combine(
+                priorityDir4, BridgeSourceDiscovery.SnapshotFileName),
+            "[{\"name\":\"DATE\",\"values\":[]},{\"name\":\"YEAR\",\"values\":[\"2001\",\"2002\"]}]");
+        if (!BridgeSourceDiscovery.ReadStable(priorityDir4).Tracks[0]
+            .GetFieldValues("DATE")
+            .SequenceEqual(new[] { "2001", "2002" }))
+            throw new InvalidOperationException(
+                "Bridge V3 producer alias precedence case 4 did not hold.");
+
+        // Ambiguous names differing only by case still fail closed, as do
+        // non-string vector elements, malformed JSON and atomicity failures.
+        var duplicateNamesDir = Path.Combine(root, "duplicate-case-fields");
+        WritePublication(duplicateNamesDir, 3, 3, songOne, songTwo);
+        RewriteFirstRowVectors(Path.Combine(
+                duplicateNamesDir, BridgeSourceDiscovery.SnapshotFileName),
+            "[{\"name\":\"DATE\",\"values\":[\"2001\"]},{\"name\":\"date\",\"values\":[\"2002\"]}]");
+        Reject(() => BridgeSourceDiscovery.ReadStable(duplicateNamesDir),
+            "Case-insensitive duplicate vector names were accepted.");
+
         // foobar can legitimately contain user-defined fields named
         // CODEC, BITRATE and DURATION_SECONDS. They may occur in vectors
         // but must NOT override technical info/get_length columns.

@@ -63,3 +63,15 @@ producer's file info and length. Synthetic positive/negative vector fixtures
 verify physical metadata retention and GENRE multivalue preservation alongside
 the encrypted V3 Preview→Apply→backup→provenance→idempotence regression and
 actual WPF UI smoke. This does not unlock live Apply/Restore.
+
+Bridge V3 producer-defined alias priority: foobar fields such as DATE and
+YEAR may coexist legitimately. The producer uses first-nonempty canonical
+priority (DATE before YEAR, LABEL before PUBLISHER, TRACKNUMBER before TRACK
+and the documented disc/catalog synonyms), independently of the sorted
+metadata_vectors_json order. The reader now preserves *all values* from the
+winning field and ignores empty primary vectors when a populated fallback
+exists. Distinct case-insensitive duplicate field names and malformed vectors
+still fail closed. Synthetic encrypted SQLCipher Preview→Apply→rolling
+backup→provenance→idempotence now starts with YEAR-only V3 values; producer
+priority/empty fallback fixtures and real WPF smoke run in FAST/FULL. Technical
+file-info fields remain unspoofable, and live Apply/Restore remain locked.
