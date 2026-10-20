@@ -587,7 +587,7 @@ jobs:
       # Automatic FAST-triggered FULL keeps the same compile, self-tests,
       # deterministic ZIP/hash proof and smoke gate, without storage growth.
       - uses: actions/upload-artifact@v4
-        if: github.event_name == 'workflow_dispatch'
+        if: false # Keep FULL-qualified packages ephemeral until rights clearance
         with:
           name: RekordboxMyTagSync-FULL-${{ env.SOURCE_SHA }}
           if-no-files-found: error
