@@ -67,7 +67,24 @@ def category(path):
         return "APPLICATION_OWNERSHIP_REVIEW"
     return "UNCLASSIFIED_REQUIRES_REVIEW"
 
-def inspect(path):
+def inspect(path, publish_dir=None):
+    sidecars = []
+    if publish_dir is not None:
+        root = Path(publish_dir).resolve()
+        if not root.is_dir() or Path(path).resolve().parent != root:
+            raise BundleError("invalid publish directory for executable")
+        for f in sorted(root.rglob("*")):
+            if not f.is_file() or f.resolve() == Path(path).resolve():
+                continue
+            relative = f.relative_to(root).as_posix()
+            if (relative.startswith(("/", "../")) or
+                any(part in ("", ".", "..") for part in relative.split("/")) or
+                f.suffix.lower() in MEDIA or
+                f.suffix.lower() in (".db", ".edb", ".key")):
+                raise BundleError("unsafe external published companion")
+            sidecars.append(dict(name=relative, bytes=f.stat().st_size,
+                                 sha256=hashlib.sha256(f.read_bytes()).hexdigest(),
+                                 licenseReview=category(relative)))
     with Path(path).open("rb") as fp, mmap.mmap(
             fp.fileno(), 0, access=mmap.ACCESS_READ) as mm:
         pos = mm.find(SIGNATURE)
@@ -103,14 +120,24 @@ def inspect(path):
                               licenseReview=category(name)))
         # Direct proof of the product's advertised native WindowsDesktop and
         # SQLCipher bundle members, not a license-approval shortcut.
-        if "coreclr.dll" not in names or "wpfgfx_cor3.dll" not in names:
-            raise BundleError("self-contained .NET/WindowsDesktop runtime missing")
-        if not any("sqlite3mc" in name for name in names):
-            raise BundleError("expected native SQLite3MC library missing")
+        all_names = names | {x["name"].rsplit("/", 1)[-1].casefold()
+                             for x in sidecars}
+        # Some WindowsDesktop components can be loose sidecars. The bundle
+        # manifest alone must not be mistaken for the entire publish folder.
+        if "coreclr.dll" not in all_names:
+            raise BundleError("expected self-contained CoreCLR is missing")
+        if not all_names.intersection({
+                "wpfgfx_cor3.dll", "presentationcore.dll",
+                "presentationframework.dll"}):
+            raise BundleError("expected WPF managed/native component is missing")
+        if not any("sqlite3mc" in name for name in all_names):
+            raise BundleError("expected SQLite3MC runtime component is missing")
         return dict(schemaVersion=1, bundleMajorVersion=major,
                     bundleMinorVersion=minor, embeddedFileCount=count,
                     bundleSha256=hashlib.sha256(mm).hexdigest(),
                     distributionLicenseStatus="REVIEW_REQUIRED_NOT_AUTHORIZED",
+                    externalFileCount=len(sidecars),
+                    externalFiles=sidecars,
                     embeddedFiles=sorted(files, key=lambda f: f["name"].casefold()))
 
 def seven(n):
@@ -153,11 +180,16 @@ def selftest():
         obj = inspect(path)
         assert obj["embeddedFileCount"] == 5
         assert obj["distributionLicenseStatus"] == "REVIEW_REQUIRED_NOT_AUTHORIZED"
+        # Native WPF may legitimately be outside the single-file; a managed
+        # WPF assembly is still sufficient evidence of WPF's presence.
+        managed = [p for p in base if p != "wpfgfx_cor3.dll"] + ["PresentationCore.dll"]
+        path.write_bytes(fixture(managed))
+        inspect(path)
         assert any(f["licenseReview"] == "MICROSOFT_WINDOWS_SDK_LICENSE_REVIEW"
                    for f in obj["embeddedFiles"])
         attacks = [(base + ["CORECLR.DLL"], False),
                    (base + ["../fake.mp3"], False),
-                   (base, True), (base[:1] + base[2:], False),
+                   (base, True), (base[1:], False),
                    ([], False)]
         for names, bad_offset in attacks:
             path.write_bytes(fixture(names, bad_offset))
@@ -172,6 +204,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--self-test", action="store_true")
     p.add_argument("--exe", type=Path)
+    p.add_argument("--publish-dir", type=Path)
     p.add_argument("--output", type=Path)
     a = p.parse_args()
     if a.self_test:
@@ -179,11 +212,12 @@ def main():
         return
     if a.exe is None or a.output is None:
         p.error("--exe and --output are required")
-    result = inspect(a.exe)
+    result = inspect(a.exe, a.publish_dir)
     a.output.parent.mkdir(parents=True, exist_ok=True)
     a.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print("MYTAGSYNC_REAL_BUNDLE_MANIFEST_AUDIT=PASS "
-          f"entries={result['embeddedFileCount']} "
+          f"embedded={result['embeddedFileCount']} "
+          f"external={result['externalFileCount']} "
           f"categories={dict(Counter(f['licenseReview'] for f in result['embeddedFiles']))} "
           "distribution=REVIEW_REQUIRED_NOT_AUTHORIZED")
 
