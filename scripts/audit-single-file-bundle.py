@@ -275,7 +275,8 @@ def selftest():
     base = ["System.Private.CoreLib.dll", "wpfgfx_cor3.dll",
             "D3DCompiler_47_cor3.dll", "e_sqlite3mc.dll",
             "rekordbox MyTagSync.dll"]
-    with tempfile.TemporaryDirectory(prefix="mytagsync-bundle-test-") as root:
+    with (tempfile.TemporaryDirectory(prefix="mytagsync-bundle-test-") as root,
+          tempfile.TemporaryDirectory(prefix="mytagsync-pinned-source-") as source_tmp):
         path = Path(root) / "invented.exe"
         path.write_bytes(fixture(base))
         obj = inspect(path)
@@ -283,8 +284,7 @@ def selftest():
         assert obj["distributionLicenseStatus"] == "REVIEW_REQUIRED_NOT_AUTHORIZED"
         # Same-basename byte equality against a pinned source is evidence;
         # equal bytes with another basename and compressed members are not.
-        source_root = Path(root) / "runtime-pack"
-        source_root.mkdir()
+        source_root = Path(source_tmp)
         (source_root / "System.Private.CoreLib.dll").write_bytes(
             b"FICTIONAL_SYNTHETIC")
         (source_root / "Unrelated.dll").write_bytes(b"FICTIONAL_SYNTHETIC")
