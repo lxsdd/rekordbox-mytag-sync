@@ -47,13 +47,17 @@ jobs:
           ref: badc4a9594f8016823dfd6c83a9741307547a345
           path: native-bridge-publisher
           persist-credentials: false
-      - name: Setup Visual Studio native compiler for original Bridge Publisher
-        uses: microsoft/setup-msbuild@v2
       - name: Original native Bridge Publisher -> MyTagSync encrypted Preview E2E
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $msbuild = (Get-Command msbuild.exe -ErrorAction Stop).Source
+          # Use the Visual Studio installation supplied by windows-latest.
+          # Do not add a third-party setup action to this cross-repo integration gate.
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\\Installer\\vswhere.exe'
+          if (-not (Test-Path -LiteralPath $vswhere -PathType Leaf)) { throw 'Visual Studio vswhere.exe is not present on runner.' }
+          $msbuildCandidates = @(& $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -find 'MSBuild\\**\\Bin\\MSBuild.exe')
+          $msbuild = $msbuildCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+          if (-not $msbuild) { throw 'No preinstalled Visual Studio MSBuild.exe found via vswhere.' }
           & $msbuild 'native-bridge-publisher/tests/publisher_integration.vcxproj' /m /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /restore
           if ($LASTEXITCODE -ne 0) { throw 'Pinned original native Bridge Publisher fixture build failed.' }
           $exe = Join-Path $env:GITHUB_WORKSPACE 'native-bridge-publisher/out/x64/Release/publisher_integration.exe'
