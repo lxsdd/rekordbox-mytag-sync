@@ -124,14 +124,16 @@ def inspect(path, publish_dir=None):
                              for x in sidecars}
         # Some WindowsDesktop components can be loose sidecars. The bundle
         # manifest alone must not be mistaken for the entire publish folder.
-        if "coreclr.dll" not in all_names:
-            # No local paths, only public build payload entry basenames.
+        # In modern .NET single-file Windows publishing, CoreCLR's native
+        # runtime may be prelinked into the host and not a manifest file.
+        # System.Private.CoreLib is the core managed runtime identity. This
+        # is component inventory evidence, NOT full portable-runtime proof.
+        if "system.private.corelib.dll" not in all_names:
             evidence = sorted(all_names)
-            summary = ",".join(evidence[:60])
             raise BundleError(
-                "expected self-contained CoreCLR is missing; "
+                "expected .NET CoreLib runtime payload missing; "
                 f"embedded={len(names)} external={len(sidecars)} "
-                f"actual-component-names-first60={summary}")
+                f"actual-component-names-first60={','.join(evidence[:60])}")
         if not all_names.intersection({
                 "wpfgfx_cor3.dll", "presentationcore.dll",
                 "presentationframework.dll"}):
@@ -178,8 +180,9 @@ def fixture(paths, invalid_offset=False):
     return fake
 
 def selftest():
-    base = ["coreclr.dll", "wpfgfx_cor3.dll", "D3DCompiler_47_cor3.dll",
-            "e_sqlite3mc.dll", "rekordbox MyTagSync.dll"]
+    base = ["System.Private.CoreLib.dll", "wpfgfx_cor3.dll",
+            "D3DCompiler_47_cor3.dll", "e_sqlite3mc.dll",
+            "rekordbox MyTagSync.dll"]
     with tempfile.TemporaryDirectory(prefix="mytagsync-bundle-test-") as root:
         path = Path(root) / "invented.exe"
         path.write_bytes(fixture(base))
