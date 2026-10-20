@@ -23,6 +23,9 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.401'
+      - name: Assert FULL artifact and public release gates stay closed
+        shell: pwsh
+        run: python scripts/verify-public-artifact-hold.py
       - name: Restore locked dependency graph
         shell: pwsh
         run: |

@@ -30,6 +30,7 @@ permissions:
 
 jobs:
   promote-qualified-artifact:
+    if: false # Distribution rights must be cleared before release
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
