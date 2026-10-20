@@ -340,7 +340,7 @@ jobs:
                 $_.Name -cne 'rekordbox MyTagSync.exe'
               } |
               ForEach-Object {
-                [IO.Path]::GetRelativePath((Resolve-Path $root), $_.FullName).Replace('\\', '/')
+                [IO.Path]::GetRelativePath((Resolve-Path $root), $_.FullName).Replace('\', '/')
               })
             if ($loose.Count -gt 0) {
               throw "Publish left native or managed sidecars outside the single-file bundle: $($loose -join ', ')"
