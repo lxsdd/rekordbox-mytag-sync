@@ -1,0 +1,87 @@
+name: RECOVER-MAIN-FAST
+
+# Cost-aware fallback when a bot-originated main commit does not trigger push CI.
+# No release, approval, tag, artifact promotion or database access.
+on:
+  schedule:
+    - cron: '13 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: recover-mytagsync-main-fast
+  cancel-in-progress: false
+
+jobs:
+  recover-if-missing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Dispatch FAST only if latest public main SHA has no run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import urllib.parse
+          import urllib.request
+
+          repo = os.environ['REPO']
+          root = 'https://api.github.com/repos/' + repo
+          headers = {
+              'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+              'Accept': 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+              'User-Agent': 'mytagsync-fast-recovery',
+          }
+
+          def request(method, path, data=None):
+              payload = None if data is None else json.dumps(data).encode('utf-8')
+              r = urllib.request.Request(root + '/' + path,
+                                         data=payload, headers=headers, method=method)
+              if payload is not None:
+                  r.add_header('Content-Type', 'application/json')
+              with urllib.request.urlopen(r, timeout=20) as response:
+                  body = response.read()
+              return json.loads(body) if body else None
+
+          info = request('GET', '')
+          if info.get('private') is not False or info.get('default_branch') != 'main':
+              print('SKIP: only public main is permitted')
+              raise SystemExit(0)
+
+          workflow = request('GET', 'actions/workflows/fast.yml')
+          if workflow.get('state') != 'active' or (
+              workflow.get('path') != '.github/workflows/fast.yml'):
+              raise RuntimeError('FAST not active on default branch')
+          sha = (request('GET', 'branches/main').get('commit') or {}).get('sha')
+          if not isinstance(sha, str) or not re.fullmatch(r'[0-9a-f]{40}', sha):
+              raise RuntimeError('Invalid main SHA')
+
+          runs = request('GET', 'actions/workflows/fast.yml/runs?' +
+              urllib.parse.urlencode({'head_sha': sha, 'per_page': 100}))
+          if runs.get('total_count', 0) > 100:
+              raise RuntimeError('Unexpected FAST history bound')
+          if any(run.get('head_sha') == sha and
+                 run.get('event') in ('push', 'workflow_dispatch')
+                 for run in runs.get('workflow_runs', [])):
+              print('PASS: FAST already exists for main ' + sha[:12])
+              raise SystemExit(0)
+
+          # Another bot commit may race this check. Never qualify a stale SHA.
+          current = (request('GET', 'branches/main').get('commit') or {}).get('sha')
+          if current != sha:
+              print('SKIP: main advanced during check')
+              raise SystemExit(0)
+
+          request('POST', 'actions/workflows/fast.yml/dispatches', {'ref': 'main'})
+          print('DISPATCH: FAST for ' + sha[:12] +
+                '; FULL remains gated by successful FAST exact-SHA result')
+          PY
