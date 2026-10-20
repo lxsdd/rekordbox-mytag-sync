@@ -519,12 +519,16 @@
                         <Button x:Name="ApplyButton"
                                 Padding="18,8"
                                 IsEnabled="False"
-                                Content="Apply approved preview"/>
+                                Content="Apply approved preview"
+                                 ToolTip="Requires a verified read-only preview, qualified database access, validated backup and the exact one-operation confirmation. Close rekordbox before applying."
+                                 ToolTipService.ShowOnDisabled="True"/>
                         <Button x:Name="RestoreButton"
                                 Margin="10,0,0,0"
                                 Padding="18,8"
                                 IsEnabled="False"
-                                Content="Restore rolling backup"/>
+                                Content="Restore rolling backup"
+                                 ToolTip="Requires a validated rolling backup, the exact one-operation confirmation and rekordbox to be closed. No restoration happens automatically."
+                                 ToolTipService.ShowOnDisabled="True"/>
                         </StackPanel>
                     </StackPanel>
                     <Grid Grid.Row="2" Margin="0,14,0,0">
