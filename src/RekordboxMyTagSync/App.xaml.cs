@@ -661,6 +661,11 @@ public partial class App : Application
                 throw new InvalidOperationException(
                     "The production app title or native window icon is missing.");
 
+            // Check actual WPF Source/Target row geometry at minimum/normal
+            // viewport sizes and that the Find sources button reports failures.
+            // No host profile, master.db, media or tags are opened or written.
+            WpfReadOnlyUiRegression.Run(window);
+
             // Regression gate: the same placement code used on closing/reopening
             // the real WPF window preserves size, position and maximize state.
             var placementPath = System.IO.Path.Combine(

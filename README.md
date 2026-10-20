@@ -118,3 +118,14 @@ native Publisher source is never copied into the application or packaged,
 and no component/user profile/audio, secrets, private collection, live
 rekordbox database, releases or artifacts are accessed or uploaded.
 This does not assert a consumer Windows10 device pass or visual UI usability.
+
+Read-only WPF interaction and geometry qualification: the real product
+`--ui-smoke` now measures the actual source/target textboxes and buttons
+through the WPF visual tree at both supported minimum and normal window
+widths. It rejects row-center misalignment, zero-sized/invisible controls,
+overlaps, and controls extending outside their workflow tab. It also clicks
+the production **Find sources** action against a deliberately missing
+synthetic directory and verifies a visible status and unsafe candidate
+rather than an inert button. This is an offscreen WPF layout/behavior smoke
+test on hosted Windows; it does NOT claim a screenshot, physical DPI
+100–200% or real touchpad/manual accessibility acceptance.
