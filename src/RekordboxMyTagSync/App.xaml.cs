@@ -84,6 +84,22 @@ public partial class App : Application
                         $"Required WPF workflow element '{name}' is missing.");
             }
 
+            // Stable IDs for future UIA interaction without depending on
+            // localized captions, order or pixel coordinates.
+            foreach (var elementName in new[]
+            {
+                "BridgeDirectoryTextBox", "TargetDatabaseTextBox",
+                "PathProposalsGrid", "WriteConsentTextBox",
+                "DiscoverSourceButton", "DiscoverTargetButton", "InspectSourceButton",
+                "OperationStatusTextBlock", "PreviewRunStatusTextBlock"
+            })
+            {
+                if (window.FindName(elementName) is not System.Windows.FrameworkElement control ||
+                    System.Windows.Automation.AutomationProperties.GetAutomationId(control) != elementName)
+                    throw new InvalidOperationException(
+                        $"The production WPF control '{elementName}' lacks its stable AutomationId.");
+            }
+
             // Real production elements must be understandable through WPF
             // accessibility APIs, even when visible labels are in another tab
             // or a user navigates entirely with the keyboard.
