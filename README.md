@@ -101,3 +101,20 @@ Restore and negative wrong-preimage E2E prove byte preservation on rejection;
 the production WPF handler passes the scoped approval into the executor
 rather than relying only on a preflight UI check. This introduces no
 unsolicited writes and no additional retained backup history.
+
+Native Bridge Publisher integration in Windows FAST: a disposable Windows
+runner checks out the public foobar Bridge sources pinned to an immutable
+previously Win32/x64-qualified commit, compiles the ORIGINAL native C++
+Publisher integration fixture, then reads its actual version-3 atomic
+bridge-state.tsv + digital-items.tsv.gz stages through the PRODUCTION MyTagSync
+BridgeSourceDiscovery.Inspect/ReadStable path. The test covers generation
+boundaries including create/edit/remove/restart/empty/1,024 rows, retains
+full Core/extra vectors and verifies the real PreviewEngine against a newly
+created encrypted **synthetic** SQLCipher master.db. Nonzero foobar subsongs
+remain unmatched rather than receiving rekordbox ContentIDs; a mixed
+generation is rejected; the encrypted master.db stays byte-identical.
+Existing FAST actual WPF startup runs independently in the same job. The
+native Publisher source is never copied into the application or packaged,
+and no component/user profile/audio, secrets, private collection, live
+rekordbox database, releases or artifacts are accessed or uploaded.
+This does not assert a consumer Windows10 device pass or visual UI usability.
