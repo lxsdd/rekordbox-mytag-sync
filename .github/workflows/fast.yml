@@ -34,6 +34,17 @@ jobs:
       - name: Assert FULL artifact and public release gates stay closed
         shell: pwsh
         run: python scripts/verify-public-artifact-hold.py
+      - name: TEMPORARY derive exact NuGet 10.0.13 lock hashes (must remove)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet restore $env:PRODUCT_PROJECT -r win-x64 --force-evaluate
+          if ($LASTEXITCODE -ne 0) { throw 'NuGet product lock regeneration failed' }
+          dotnet restore $env:TEST_PROJECT -r win-x64 --force-evaluate
+          if ($LASTEXITCODE -ne 0) { throw 'NuGet self-test lock regeneration failed' }
+          Write-Host ('PRODUCT_LOCK_BASE64=' + [Convert]::ToBase64String([IO.File]::ReadAllBytes('src/RekordboxMyTagSync/packages.lock.json')))
+          Write-Host ('SELFTEST_LOCK_BASE64=' + [Convert]::ToBase64String([IO.File]::ReadAllBytes('tests/RekordboxMyTagSync.SelfTests/packages.lock.json')))
+          throw 'Migration staging: generated NuGet locks must be committed; restore locked-mode before merge'
       - name: Restore locked dependency graph
         shell: pwsh
         run: |
