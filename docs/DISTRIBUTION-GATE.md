@@ -88,8 +88,14 @@ rather than inferring embedded runtime/native dependencies from NuGet metadata
 or the outer ZIP alone. The parser follows Microsoft's documented
 `Microsoft.NET.HostModel.Bundle.Manifest` / `FileEntry` format, rejects
 wrong/duplicate/unsafe bundle entries and truncated/out-of-range payload
-offsets, and positively requires self-contained `coreclr.dll`,
-`wpfgfx_cor3.dll` and native SQLite3MC. FAST has synthetic negative tests.
+offsets, and positively requires self-contained CoreCLR, at least one real WPF
+managed/native component and native SQLite3MC **across both the embedded
+manifest and any separate published companions**. This explicitly avoids
+the previously overstrict assumption that native `wpfgfx_cor3.dll`
+must always be embedded rather than shipped alongside the EXE. FAST
+now performs an actual, disposable PR-only self-contained Windows
+publish and runs the same audit before any SHA-bound merge, in addition
+to synthetic negative tests.
 
 The sanitized `embedded-bundle-inventory.json` lists every embedded member,
 reported size, bundle type and **license-review category** without source
