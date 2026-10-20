@@ -10,6 +10,8 @@ from collections import Counter
 import hashlib
 import json
 import mmap
+import os
+import re
 from pathlib import Path
 import struct
 import sys
@@ -210,6 +212,73 @@ def inspect(path, publish_dir=None):
                     externalFiles=sidecars,
                     embeddedFiles=sorted(files, key=lambda f: f["name"].casefold()))
 
+
+def correlate_exact_sources(inventory, source_roots):
+    """Only exact RAW stored bytes equal to a pinned source file establish an
+    origin candidate. No filenames-only approvals, decompression assumptions,
+    source absolute paths, or redistribution/license clearance.
+    """
+    verified = {}
+    seen_ids = set()
+    for definition in source_roots:
+        if "=" not in definition:
+            raise BundleError("source root must be ID=directory")
+        origin, folder = definition.split("=", 1)
+        if not re.fullmatch(r"[A-Z0-9][A-Z0-9._-]{2,100}", origin) or origin in seen_ids:
+            raise BundleError("invalid or duplicated pinned source ID")
+        seen_ids.add(origin)
+        root = Path(folder)
+        if root.is_symlink() or not root.is_dir():
+            raise BundleError("pinned source root unavailable: " + origin)
+        root = root.resolve(strict=True)
+        processed = 0
+        for parent, dirs, names in os.walk(root, followlinks=False):
+            dirs[:] = sorted(d for d in dirs if not (Path(parent) / d).is_symlink())
+            for filename in sorted(names):
+                file = Path(parent) / filename
+                if file.is_symlink() or file.suffix.lower() not in {
+                        ".dll", ".exe", ".json", ".winmd", ".dat"}:
+                    continue
+                processed += 1
+                if processed > 10000:
+                    raise BundleError("unbounded pinned source root: " + origin)
+                if not 0 < file.stat().st_size <= 256 * 1024 * 1024:
+                    continue
+                relative = file.relative_to(root).as_posix()
+                if any(part in ("", ".", "..") for part in relative.split("/")):
+                    raise BundleError("invalid source-relative file path")
+                checksum = hashlib.sha256()
+                with file.open("rb") as stream:
+                    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                        checksum.update(chunk)
+                key = (filename.casefold(), file.stat().st_size, checksum.hexdigest())
+                verified.setdefault(key, set()).add((origin, relative))
+
+    counts = {"MATCHED_EXACT_RAW_BYTES": 0, "COMPRESSED_UNRESOLVED": 0,
+              "UNMATCHED_REQUIRES_REVIEW": 0}
+    evidence = []
+    both = [(x, False) for x in inventory["embeddedFiles"]] + [
+        (x, True) for x in inventory["externalFiles"]]
+    for item, external in both:
+        mode = "RAW" if external else item["onDiskEncoding"]
+        size = item["bytes"] if external else item["onDiskBytes"]
+        checksum = item["sha256"] if external else item["onDiskSha256"]
+        candidates = (sorted(verified.get((
+            item["name"].rsplit("/", 1)[-1].casefold(), size, checksum), ()))
+            if mode == "RAW" else [])
+        decision = ("MATCHED_EXACT_RAW_BYTES" if candidates else
+                    "COMPRESSED_UNRESOLVED" if mode == "COMPRESSED" else
+                    "UNMATCHED_REQUIRES_REVIEW")
+        counts[decision] += 1
+        evidence.append(dict(name=item["name"], status=decision,
+                             possibleSources=[dict(sourceId=i, relativePath=p)
+                                              for i, p in candidates]))
+    evidence.sort(key=lambda x: x["name"].casefold())
+    return dict(status="REVIEW_REQUIRED_NOT_AUTHORIZED",
+                scope="STORED_RAW_BYTES_ONLY_NO_LICENSE_OR_COPYRIGHT_ASSERTION",
+                pinnedSourceIds=sorted(seen_ids),
+                counts=counts, components=evidence)
+
 def seven(n):
     buf = bytearray()
     while n >= 128:
@@ -247,12 +316,46 @@ def selftest():
     base = ["System.Private.CoreLib.dll", "wpfgfx_cor3.dll",
             "D3DCompiler_47_cor3.dll", "e_sqlite3mc.dll",
             "rekordbox MyTagSync.dll"]
-    with tempfile.TemporaryDirectory(prefix="mytagsync-bundle-test-") as root:
+    with (tempfile.TemporaryDirectory(prefix="mytagsync-bundle-test-") as root,
+          tempfile.TemporaryDirectory(prefix="mytagsync-pinned-source-") as source_tmp):
         path = Path(root) / "invented.exe"
         path.write_bytes(fixture(base))
         obj = inspect(path)
         assert obj["embeddedFileCount"] == 5
         assert obj["distributionLicenseStatus"] == "REVIEW_REQUIRED_NOT_AUTHORIZED"
+        # Same-basename byte equality against a pinned source is evidence;
+        # equal bytes with another basename and compressed members are not.
+        source_root = Path(source_tmp)
+        (source_root / "System.Private.CoreLib.dll").write_bytes(
+            b"FICTIONAL_SYNTHETIC")
+        (source_root / "Unrelated.dll").write_bytes(b"FICTIONAL_SYNTHETIC")
+        evidence = correlate_exact_sources(
+            obj, ["NETCORE_RUNTIME_10.0.13=" + str(source_root)])
+        assert evidence["counts"]["MATCHED_EXACT_RAW_BYTES"] == 1
+        assert evidence["counts"]["UNMATCHED_REQUIRES_REVIEW"] == 4
+        core = next(x for x in evidence["components"]
+                    if x["name"] == "System.Private.CoreLib.dll")
+        assert core["possibleSources"] == [
+            dict(sourceId="NETCORE_RUNTIME_10.0.13",
+                 relativePath="System.Private.CoreLib.dll")]
+        compressed = json.loads(json.dumps(obj))
+        compressed["embeddedFiles"][0]["onDiskEncoding"] = "COMPRESSED"
+        assert correlate_exact_sources(
+            compressed, ["NETCORE_RUNTIME_10.0.13=" + str(source_root)]
+        )["counts"]["COMPRESSED_UNRESOLVED"] == 1
+        (source_root / "System.Private.CoreLib.dll").write_bytes(b"CHANGED")
+        assert correlate_exact_sources(
+            obj, ["NETCORE_RUNTIME_10.0.13=" + str(source_root)]
+        )["counts"]["MATCHED_EXACT_RAW_BYTES"] == 0
+        for invalid in ["badid=" + str(source_root),
+                        "NETCORE_RUNTIME_10.0.13=/nonexistent/pinned-source"]:
+            try:
+                correlate_exact_sources(obj, [invalid])
+            except BundleError:
+                pass
+            else:
+                raise AssertionError("unsafe/absent pinned source accepted")
+
         assert category("de/PresentationCore.resources.dll") == (
             "MICROSOFT_WPF_SATELLITE_ATTRIBUTION_PENDING")
         assert category("PresentationFramework.Aero2.dll") == (
@@ -330,6 +433,7 @@ def main():
     p.add_argument("--exe", type=Path)
     p.add_argument("--publish-dir", type=Path)
     p.add_argument("--output", type=Path)
+    p.add_argument("--source-root", action="append", default=[])
     a = p.parse_args()
     if a.self_test:
         selftest()
@@ -337,6 +441,8 @@ def main():
     if a.exe is None or a.output is None:
         p.error("--exe and --output are required")
     result = inspect(a.exe, a.publish_dir)
+    if a.source_root:
+        result["sourceByteEvidence"] = correlate_exact_sources(result, a.source_root)
     a.output.parent.mkdir(parents=True, exist_ok=True)
     a.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print("MYTAGSYNC_REAL_BUNDLE_MANIFEST_AUDIT=PASS "

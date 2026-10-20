@@ -330,10 +330,35 @@ jobs:
           $ErrorActionPreference = 'Stop'
           python scripts/audit-single-file-bundle.py --self-test
           if ($LASTEXITCODE -ne 0) { throw 'Bundle audit negative regression failed.' }
-          python scripts/audit-single-file-bundle.py --exe 'artifacts/publish-a/rekordbox MyTagSync.exe' --publish-dir 'artifacts/publish-a' --output qualification/bundle-audit-a.json
-          if ($LASTEXITCODE -ne 0) { throw 'Real Windows single-file A bundle audit failed.' }
-          python scripts/audit-single-file-bundle.py --exe 'artifacts/publish-b/rekordbox MyTagSync.exe' --publish-dir 'artifacts/publish-b' --output qualification/bundle-audit-b.json
-          if ($LASTEXITCODE -ne 0) { throw 'Real Windows single-file B bundle audit failed.' }
+          # The source root labels are version-bound, and the NuGet versions
+          # come from the locked project inputs restored earlier in this job.
+          # Missing optional packs are not silently declared matched; the
+          # inventory retains all unmatched entries for license review.
+          $nuget = Join-Path $env:USERPROFILE '.nuget/packages'
+          $dotnetPacks = Join-Path $env:ProgramFiles 'dotnet/packs'
+          $candidates = @(
+            @{id='NETCORE_RUNTIME_10.0.13'; path=(Join-Path $nuget 'microsoft.netcore.app.runtime.win-x64/10.0.13')},
+            @{id='WINDOWSDESKTOP_RUNTIME_10.0.13'; path=(Join-Path $nuget 'microsoft.windowsdesktop.app.runtime.win-x64/10.0.13')},
+            @{id='NETCORE_PACK_10.0.13'; path=(Join-Path $dotnetPacks 'Microsoft.NETCore.App.Runtime.win-x64/10.0.13')},
+            @{id='WINDOWSDESKTOP_PACK_10.0.13'; path=(Join-Path $dotnetPacks 'Microsoft.WindowsDesktop.App.Runtime.win-x64/10.0.13')},
+            @{id='SQLITE3MC_LIB_2.4.0'; path=(Join-Path $nuget 'sqlite3mc.pclraw.lib/2.4.0')},
+            @{id='SQLITE3MC_PROVIDER_2.4.0'; path=(Join-Path $nuget 'sqlite3mc.pclraw.provider/2.4.0')},
+            @{id='SQLITEPCLRAW_CORE_3.0.2'; path=(Join-Path $nuget 'sqlitepclraw.core/3.0.2')},
+            @{id='MICROSOFT_SQLITE_CORE_10.0.13'; path=(Join-Path $nuget 'microsoft.data.sqlite.core/10.0.13')}
+          )
+          $sourceArgs = @()
+          foreach ($candidate in $candidates) {
+            if (Test-Path -LiteralPath $candidate.path -PathType Container) {
+              $sourceArgs += @('--source-root', ($candidate.id + '=' + $candidate.path))
+            }
+          }
+          if ($sourceArgs.Count -eq 0) {
+            throw 'No pinned source package roots available for byte-provenance audit.'
+          }
+          python scripts/audit-single-file-bundle.py --exe 'artifacts/publish-a/rekordbox MyTagSync.exe' --publish-dir 'artifacts/publish-a' --output qualification/bundle-audit-a.json @sourceArgs
+          if ($LASTEXITCODE -ne 0) { throw 'Real Windows single-file A bundle/provenance audit failed.' }
+          python scripts/audit-single-file-bundle.py --exe 'artifacts/publish-b/rekordbox MyTagSync.exe' --publish-dir 'artifacts/publish-b' --output qualification/bundle-audit-b.json @sourceArgs
+          if ($LASTEXITCODE -ne 0) { throw 'Real Windows single-file B bundle/provenance audit failed.' }
           $a = Get-Content qualification/bundle-audit-a.json -Raw | ConvertFrom-Json
           $b = Get-Content qualification/bundle-audit-b.json -Raw | ConvertFrom-Json
           if ($a.bundleSha256 -cne $b.bundleSha256 -or
@@ -343,7 +368,18 @@ jobs:
               $b.distributionLicenseStatus -cne 'REVIEW_REQUIRED_NOT_AUTHORIZED') {
             throw 'Actual single-file embedded inventory differs or incorrectly claims license approval.'
           }
-          Write-Host "Windows embedded component inventory PASS ($($a.embeddedFileCount) entries). Distribution remains BLOCKED."
+          if ((Get-Content qualification/bundle-audit-a.json -Raw) -cne
+              (Get-Content qualification/bundle-audit-b.json -Raw)) {
+            throw 'Independent Windows publish evidence differs byte-for-byte.'
+          }
+          if ($a.sourceByteEvidence.status -cne 'REVIEW_REQUIRED_NOT_AUTHORIZED' -or
+              $a.sourceByteEvidence.pinnedSourceIds.Count -eq 0) {
+            throw 'Pinned source-byte evidence is missing or incorrectly approves distribution.'
+          }
+          Write-Host "Windows embedded component inventory PASS ($($a.embeddedFileCount) entries)."
+          Write-Host "Exact RAW source matches=$($a.sourceByteEvidence.counts.MATCHED_EXACT_RAW_BYTES); "
+          Write-Host "Unmatched=$($a.sourceByteEvidence.counts.UNMATCHED_REQUIRES_REVIEW); "
+          Write-Host "Compressed=$($a.sourceByteEvidence.counts.COMPRESSED_UNRESOLVED). Distribution BLOCKED."
       - name: Smoke-test published WPF application
         shell: pwsh
         run: |
