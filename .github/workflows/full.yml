@@ -330,14 +330,15 @@ jobs:
           $ErrorActionPreference = 'Stop'
           python scripts/audit-single-file-bundle.py --self-test
           if ($LASTEXITCODE -ne 0) { throw 'Bundle audit negative regression failed.' }
-          python scripts/audit-single-file-bundle.py --exe 'artifacts/publish-a/rekordbox MyTagSync.exe' --output qualification/bundle-audit-a.json
+          python scripts/audit-single-file-bundle.py --exe 'artifacts/publish-a/rekordbox MyTagSync.exe' --publish-dir 'artifacts/publish-a' --output qualification/bundle-audit-a.json
           if ($LASTEXITCODE -ne 0) { throw 'Real Windows single-file A bundle audit failed.' }
-          python scripts/audit-single-file-bundle.py --exe 'artifacts/publish-b/rekordbox MyTagSync.exe' --output qualification/bundle-audit-b.json
+          python scripts/audit-single-file-bundle.py --exe 'artifacts/publish-b/rekordbox MyTagSync.exe' --publish-dir 'artifacts/publish-b' --output qualification/bundle-audit-b.json
           if ($LASTEXITCODE -ne 0) { throw 'Real Windows single-file B bundle audit failed.' }
           $a = Get-Content qualification/bundle-audit-a.json -Raw | ConvertFrom-Json
           $b = Get-Content qualification/bundle-audit-b.json -Raw | ConvertFrom-Json
           if ($a.bundleSha256 -cne $b.bundleSha256 -or
               $a.embeddedFileCount -ne $b.embeddedFileCount -or
+              $a.externalFileCount -ne $b.externalFileCount -or
               $a.distributionLicenseStatus -cne 'REVIEW_REQUIRED_NOT_AUTHORIZED' -or
               $b.distributionLicenseStatus -cne 'REVIEW_REQUIRED_NOT_AUTHORIZED') {
             throw 'Actual single-file embedded inventory differs or incorrectly claims license approval.'
