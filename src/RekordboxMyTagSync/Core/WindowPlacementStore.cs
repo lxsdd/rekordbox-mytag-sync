@@ -54,6 +54,44 @@ public static class WindowPlacementStore
             window.WindowState = WindowState.Maximized;
     }
 
+    /// <summary>
+    /// Fit compact primary desktops in WPF DIPs without moving saved windows
+    /// wholly on another monitor. Does not touch any rekordbox data.
+    /// </summary>
+    public static void FitToPrimaryWorkArea(Window window) =>
+        FitToWorkArea(window, SystemParameters.WorkArea);
+
+    internal static void FitToWorkArea(Window window, Rect area)
+    {
+        ArgumentNullException.ThrowIfNull(window);
+        const double gap = 8;
+        if (window.WindowState != WindowState.Normal ||
+            area.IsEmpty || !double.IsFinite(area.X) || !double.IsFinite(area.Y) ||
+            !double.IsFinite(area.Width) || !double.IsFinite(area.Height) ||
+            area.Width < window.MinWidth + gap * 2 ||
+            area.Height < window.MinHeight + gap * 2)
+            return;
+
+        var left = double.IsFinite(window.Left) ? window.Left : area.Left + gap;
+        var top = double.IsFinite(window.Top) ? window.Top : area.Top + gap;
+        var width = double.IsFinite(window.Width) ? window.Width : window.MinWidth;
+        var height = double.IsFinite(window.Height) ? window.Height : window.MinHeight;
+        var visible = Rect.Intersect(area, new Rect(left, top,
+            Math.Max(width, window.MinWidth), Math.Max(height, window.MinHeight)));
+        if (visible.IsEmpty || visible.Width < 120 || visible.Height < 80)
+            return; // Preserves user placement entirely on a secondary display.
+
+        width = Math.Clamp(width, window.MinWidth, area.Width - gap * 2);
+        height = Math.Clamp(height, window.MinHeight, area.Height - gap * 2);
+        left = Math.Clamp(left, area.Left + gap, area.Right - width - gap);
+        top = Math.Clamp(top, area.Top + gap, area.Bottom - height - gap);
+        window.WindowStartupLocation = WindowStartupLocation.Manual;
+        window.Width = width;
+        window.Height = height;
+        window.Left = left;
+        window.Top = top;
+    }
+
     public static void Save(Window window, string? path = null)
     {
         ArgumentNullException.ThrowIfNull(window);

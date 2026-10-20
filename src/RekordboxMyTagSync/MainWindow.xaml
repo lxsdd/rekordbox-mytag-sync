@@ -5,8 +5,8 @@
         Icon="/assets/MyTagSync.ico"
         Height="820"
         Width="1280"
-        MinHeight="700"
-        MinWidth="1050">
+        MinHeight="600"
+        MinWidth="900">
     <DockPanel Margin="18">
         <StackPanel DockPanel.Dock="Top" Margin="0,0,0,14">
             <TextBlock FontSize="26" FontWeight="SemiBold" Text="rekordbox MyTagSync"/>
@@ -242,7 +242,7 @@
                     </Grid.RowDefinitions>
                     <TextBlock TextWrapping="Wrap"
                                Text="Each table row is ONE proposed mapping between entire folder roots, not one unmatched track. The source/target tracks shown are illustrative examples only. Proposed aliases remain UNVERIFIED until read-only file checks succeed; no aliases are applied or saved automatically."/>
-                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,12,0,10">
+                    <WrapPanel Grid.Row="1" Orientation="Horizontal" Margin="0,12,0,10">
                         <Button x:Name="AnalyzePathsButton"
                                 Padding="16,7"
                                 Content="Analyze paths (read-only)"
@@ -267,7 +267,7 @@
                                 Content="Cancel file check"
                                 ToolTip="Stop the current read-only physical-file identity verification. No partial result authorizes any writes."
                                 ToolTipService.ShowOnDisabled="True"/>
-                    </StackPanel>
+                    </WrapPanel>
                     <TextBlock x:Name="PathAnalysisStatusTextBlock"
                      AutomationProperties.LiveSetting="Polite"
                                Grid.Row="2"
@@ -348,7 +348,7 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
-                    <StackPanel Orientation="Horizontal">
+                    <WrapPanel Orientation="Horizontal">
                         <Button x:Name="BuildPreviewButton" Padding="16,7" Content="Refresh verified preview"
                                 ToolTip="Recheck physical file IDs for the one-to-one foobar/rekordbox source-target scope. This uses the same fail-closed verification as Auto-match; path strings alone never authorize tagging or writes."
                                 ToolTipService.ShowOnDisabled="True"/>
@@ -365,10 +365,10 @@
                                 Content="Cancel"
                                 ToolTip="Cancel the running read-only verified preview; no partial result is retained."/>
                         <TextBlock x:Name="PreviewStatusTextBlock"
-                                   Margin="14,0,0,0"
+                                   Margin="14,0,0,0" MaxWidth="300" TextWrapping="Wrap"
                                    VerticalAlignment="Center"
                                    Text="No approved preview."/>
-                    </StackPanel>
+                    </WrapPanel>
                     <TextBlock x:Name="PreviewRunStatusTextBlock"
                      AutomationProperties.AutomationId="PreviewRunStatusTextBlock"
                      AutomationProperties.LiveSetting="Polite"
@@ -443,7 +443,7 @@
                         <TabItem Header="Physical exceptions (8)">
                             <DockPanel Margin="4">
                                 <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-                                    <StackPanel Orientation="Horizontal">
+                                    <WrapPanel Orientation="Horizontal">
                                         <Button x:Name="InvestigatePhysicalExceptionsButton"
                                                 Padding="12,7"
                                                 Content="Inspect physical exceptions (read-only)"
@@ -454,10 +454,10 @@
                                                 IsEnabled="False"
                                                 ToolTip="Save a fresh exception report locally. Contains private paths and ContentIDs; never upload publicly. No master.db or audio writes."/>
                                         <TextBlock x:Name="PhysicalExceptionsStatusTextBlock"
-                                                   Margin="12,0,0,0"
+                                                   Margin="12,0,0,0" MaxWidth="380" TextWrapping="Wrap"
                                                    VerticalAlignment="Center"
                                                    Text="Inspect Source and Validate Target first. No files or tags will be changed."/>
-                                    </StackPanel>
+                                    </WrapPanel>
                                     <TextBlock Margin="0,8,0,0" TextWrapping="Wrap"
                                                Text="This identifies individual physical FILE references, not virtual CUE tracks. A pair of rekordbox ContentIDs at one path is not necessarily two audio files. Reference counts do not prove that a track is safe to delete."/>
                                 </StackPanel>
