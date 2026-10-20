@@ -221,7 +221,9 @@ def selftest():
         changed[202] ^= 1
         path.write_bytes(changed)
         mutated = inspect(path)
-        assert mutated["embeddedFiles"][0]["onDiskSha256"] != expected_sha
+        changed_member = next(f for f in mutated["embeddedFiles"]
+                              if f["name"] == base[0])
+        assert changed_member["onDiskSha256"] != expected_sha
         path.write_bytes(fixture(base))
         # Native WPF may legitimately be outside the single-file; a managed
         # WPF assembly is still sufficient evidence of WPF's presence.
