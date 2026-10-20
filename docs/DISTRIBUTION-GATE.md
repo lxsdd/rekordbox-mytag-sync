@@ -110,6 +110,27 @@ every member, or by itself permit distribution. Review all
 `UNCLASSIFIED_REQUIRES_REVIEW` rows and license requirements before
 any private delivery; preserve the disabled upload/release gates.
 
+## Actual embedded payload checksums (technical identity, not license clearance)
+
+A follow-up to the actual WPF/SQLCipher inventory now SHA-256-hashes the
+**exact bytes stored inside the sealed .NET single-file EXE** for every
+embedded entry, in addition to the pre-existing outer executable SHA-256
+and SHA-256 of every external publish companion. The inventory records
+`onDiskBytes`, `onDiskEncoding` (`RAW` or `COMPRESSED`) and
+`onDiskSha256`, sorted by relative name. Compressed entries are hashed in
+their stored representation; this is deliberately **not** a claim to have
+decompressed each managed assembly or traced it to its upstream SDK pack.
+Overlapping member payload offsets are fail-closed. Synthetic byte mutation
+must change that member digest, and a synthetic overlapping region must
+be rejected. Both separately published portable builds must produce
+**byte-for-byte identical inventories**, not just identical EXE digests.
+
+This enables an eventual component-by-component notice provenance comparison.
+It does **not** provide verified source copyright notices, attest an
+upstream signature, clear Microsoft's .NET or Windows SDK redistribution
+conditions, authorize a public artifact, or qualify a delivery to the user.
+The blocking license status remains `REVIEW_REQUIRED_NOT_AUTHORIZED`.
+
 ## What is still needed before *any* candidate publication
 
 1. **Published file-by-file component manifest.** Identify the *actual* files in the sealed self-contained ZIP, including transitive assemblies, native `sqlite3mc` code and self-contained .NET/WindowsDesktop runtime files. A NuGet package list alone is insufficient to establish the exact contents.
