@@ -105,14 +105,21 @@ def inspect(path):
         # audit. Supply bounded, source-relative evidence for the actual
         # release payload so a Windows FULL regression can be repaired without
         # guessing which binary did (or did not) get embedded.
-        required = {"coreclr.dll", "wpfgfx_cor3.dll"}
+        # In modern self-contained .NET single-file apps the CoreCLR engine
+        # can be prelinked into the host rather than listed as a distinct
+        # coreclr.dll manifest FileEntry. Requiring that filename falsely
+        # rejects genuine .NET 10 Windows bundles. Prove the embedded managed
+        # core + WindowsDesktop runtime and native SQLCipher instead; FULL
+        # separately rejects loose executable/native sidecars.
+        required = {"system.private.corelib.dll", "system.runtime.dll",
+                    "wpfgfx_cor3.dll"}
         missing = sorted(required - names)
         if missing:
             native = sorted(f["name"] for f in files
                             if f["fileType"] == 2
                             and f["name"].lower().endswith(".dll"))
             raise BundleError(
-                "self-contained .NET/WindowsDesktop runtime missing: "
+                "required .NET managed core/WPF bundle payload missing: "
                 + ",".join(missing)
                 + f"; embedded_entries={count}, native_dll_count={len(native)}, "
                 + "native_dll_sample=" + repr(native[:24]))
@@ -121,6 +128,8 @@ def inspect(path):
         return dict(schemaVersion=1, bundleMajorVersion=major,
                     bundleMinorVersion=minor, embeddedFileCount=count,
                     bundleSha256=hashlib.sha256(mm).hexdigest(),
+                    coreclrSeparateManifestEntry="coreclr.dll" in names,
+                    prelinkedCoreclrProvenance="REQUIRES_RUNTIME_PACK_SOURCE_REVIEW",
                     distributionLicenseStatus="REVIEW_REQUIRED_NOT_AUTHORIZED",
                     embeddedFiles=sorted(files, key=lambda f: f["name"].casefold()))
 
@@ -156,19 +165,24 @@ def fixture(paths, invalid_offset=False):
     return fake
 
 def selftest():
-    base = ["coreclr.dll", "wpfgfx_cor3.dll", "D3DCompiler_47_cor3.dll",
+    base = ["System.Private.CoreLib.dll", "System.Runtime.dll",
+            "wpfgfx_cor3.dll", "D3DCompiler_47_cor3.dll",
             "e_sqlite3mc.dll", "rekordbox MyTagSync.dll"]
     with tempfile.TemporaryDirectory(prefix="mytagsync-bundle-test-") as root:
         path = Path(root) / "invented.exe"
         path.write_bytes(fixture(base))
         obj = inspect(path)
-        assert obj["embeddedFileCount"] == 5
+        assert obj["embeddedFileCount"] == 6
         assert obj["distributionLicenseStatus"] == "REVIEW_REQUIRED_NOT_AUTHORIZED"
         assert any(f["licenseReview"] == "MICROSOFT_WINDOWS_SDK_LICENSE_REVIEW"
                    for f in obj["embeddedFiles"])
-        attacks = [(base + ["CORECLR.DLL"], False),
+        assert obj["coreclrSeparateManifestEntry"] is False
+        assert obj["prelinkedCoreclrProvenance"] == "REQUIRES_RUNTIME_PACK_SOURCE_REVIEW"
+        attacks = [(base + ["SYSTEM.RUNTIME.DLL"], False),
                    (base + ["../fake.mp3"], False),
                    (base, True), (base[:1] + base[2:], False),
+                   (base[:2] + base[3:], False),
+                   (base[:4] + base[5:], False),
                    ([], False)]
         for names, bad_offset in attacks:
             path.write_bytes(fixture(names, bad_offset))
@@ -179,7 +193,7 @@ def selftest():
             raise AssertionError("invalid synthetic bundle was accepted")
         # Diagnostic detail must never lower the positive embedded-runtime
         # requirement, even when other native and SQLCipher members exist.
-        path.write_bytes(fixture(base[:1] + base[2:]))
+        path.write_bytes(fixture(base[:2] + base[3:]))
         try:
             inspect(path)
         except BundleError as exc:
@@ -187,6 +201,11 @@ def selftest():
             assert "native_dll_count=" in str(exc)
         else:
             raise AssertionError("missing WPF runtime passed as distributable")
+        # An optional distinct coreclr.dll manifest entry does not replace the
+        # required managed CoreLib. The native runtime's own provenance remains
+        # an independently blocked legal/source attribution gate.
+        path.write_bytes(fixture(base + ["coreclr.dll"]))
+        assert inspect(path)["distributionLicenseStatus"] == "REVIEW_REQUIRED_NOT_AUTHORIZED"
     print("MYTAGSYNC_REAL_BUNDLE_MANIFEST_AUDIT_SELFTEST=PASS")
 
 def main():
