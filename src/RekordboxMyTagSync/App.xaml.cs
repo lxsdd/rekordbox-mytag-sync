@@ -133,6 +133,17 @@ public partial class App : Application
                         $"The discovery action '{buttonName}' is not clear or lacks explanatory help.");
             }
 
+            // Dangerous actions stay discoverable while the fail-closed
+            // workflow correctly disables them before physical verification.
+            foreach (var name in new[] { "ApplyButton", "RestoreButton" })
+            {
+                if (window.FindName(name) is not System.Windows.Controls.Button button ||
+                    string.IsNullOrWhiteSpace(button.ToolTip?.ToString()) ||
+                    !System.Windows.Controls.ToolTipService.GetShowOnDisabled(button))
+                    throw new InvalidOperationException(
+                        $"The gated '{name}' action needs an explanatory disabled-state tooltip.");
+            }
+
             foreach (var statusName in new[]
             {
                 "OperationStatusTextBlock", "PathAnalysisStatusTextBlock",
