@@ -330,6 +330,22 @@ jobs:
           $ErrorActionPreference = 'Stop'
           python scripts/audit-single-file-bundle.py --self-test
           if ($LASTEXITCODE -ne 0) { throw 'Bundle audit negative regression failed.' }
+          # A Windows runtime prelinked into a modern single-file host need
+          # not have a distinct coreclr.dll manifest entry. Crucially, this
+          # cannot hide a sidecar runtime or unbundled managed/native payload.
+          foreach ($root in @('artifacts/publish-a', 'artifacts/publish-b')) {
+            $loose = @(Get-ChildItem -LiteralPath $root -File -Recurse |
+              Where-Object {
+                $_.Extension -in @('.dll', '.exe') -and
+                $_.Name -cne 'rekordbox MyTagSync.exe'
+              } |
+              ForEach-Object {
+                [IO.Path]::GetRelativePath((Resolve-Path $root), $_.FullName).Replace('\\', '/')
+              })
+            if ($loose.Count -gt 0) {
+              throw "Publish left native or managed sidecars outside the single-file bundle: $($loose -join ', ')"
+            }
+          }
           python scripts/audit-single-file-bundle.py --exe 'artifacts/publish-a/rekordbox MyTagSync.exe' --output qualification/bundle-audit-a.json
           if ($LASTEXITCODE -ne 0) { throw 'Real Windows single-file A bundle audit failed.' }
           python scripts/audit-single-file-bundle.py --exe 'artifacts/publish-b/rekordbox MyTagSync.exe' --output qualification/bundle-audit-b.json
@@ -338,6 +354,9 @@ jobs:
           $b = Get-Content qualification/bundle-audit-b.json -Raw | ConvertFrom-Json
           if ($a.bundleSha256 -cne $b.bundleSha256 -or
               $a.embeddedFileCount -ne $b.embeddedFileCount -or
+              $a.coreclrSeparateManifestEntry -ne $b.coreclrSeparateManifestEntry -or
+              $a.prelinkedCoreclrProvenance -cne 'REQUIRES_RUNTIME_PACK_SOURCE_REVIEW' -or
+              $b.prelinkedCoreclrProvenance -cne 'REQUIRES_RUNTIME_PACK_SOURCE_REVIEW' -or
               $a.distributionLicenseStatus -cne 'REVIEW_REQUIRED_NOT_AUTHORIZED' -or
               $b.distributionLicenseStatus -cne 'REVIEW_REQUIRED_NOT_AUTHORIZED') {
             throw 'Actual single-file embedded inventory differs or incorrectly claims license approval.'
