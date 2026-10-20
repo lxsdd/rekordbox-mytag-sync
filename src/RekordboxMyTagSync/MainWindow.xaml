@@ -52,7 +52,7 @@
                     Content="Save settings"/>
         </Grid>
 
-        <TabControl>
+        <TabControl x:Name="WorkflowTabs">
             <TabItem Header="Source">
                 <Grid Margin="14">
                     <Grid.RowDefinitions>
