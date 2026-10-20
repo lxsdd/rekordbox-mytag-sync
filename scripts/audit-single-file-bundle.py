@@ -221,6 +221,16 @@ def selftest():
             raise AssertionError("media in portable publish folder was not blocked")
         bad_media.unlink()
         sidecar.unlink()
+        # Preserve PR #71's fail-closed native FileType=2 diagnostics, now
+        # with the qualified CoreLib/WPF-or-sidecar compatibility contract.
+        path.write_bytes(fixture([p for p in base if p != "wpfgfx_cor3.dll"]))
+        try:
+            inspect(path)
+        except BundleError as exc:
+            assert "native_dll_count=" in str(exc)
+            assert "WPF managed/native" in str(exc)
+        else:
+            raise AssertionError("missing WPF and no companion was accepted")
         attacks = [(base + ["CORECLR.DLL"], False),
                    (base + ["../fake.mp3"], False),
                    (base, True), (base[1:], False),
