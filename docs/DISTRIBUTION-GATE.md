@@ -88,7 +88,9 @@ rather than inferring embedded runtime/native dependencies from NuGet metadata
 or the outer ZIP alone. The parser follows Microsoft's documented
 `Microsoft.NET.HostModel.Bundle.Manifest` / `FileEntry` format, rejects
 wrong/duplicate/unsafe bundle entries and truncated/out-of-range payload
-offsets, and positively requires self-contained CoreCLR, at least one real WPF
+offsets, and positively requires `System.Private.CoreLib.dll` as a core managed runtime
+identity (native `coreclr.dll` may be prelinked in modern single-file builds),
+at least one real WPF
 managed/native component and native SQLite3MC **across both the embedded
 manifest and any separate published companions**. This explicitly avoids
 the previously overstrict assumption that native `wpfgfx_cor3.dll`
