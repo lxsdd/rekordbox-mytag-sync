@@ -14,6 +14,16 @@ if (args.Contains("--verify-remote-access-sources", StringComparer.Ordinal))
     return;
 }
 
+// An opt-in CI interop invocation reads only disposable snapshots emitted
+// by the original native foobar Bridge Publisher on this Windows runner.
+// It deliberately does NOT run the independent large built-in selftests twice.
+if (args.Length == 2 &&
+    string.Equals(args[0], "--native-bridge-publisher-root", StringComparison.Ordinal))
+{
+    NativeBridgePublisherPreviewSelfTest.Run(args[1]);
+    return;
+}
+
 static void AssertSequence(string name, IReadOnlyList<string> actual, params string[] expected)
 {
     if (!actual.SequenceEqual(expected, StringComparer.Ordinal))
