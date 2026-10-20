@@ -231,7 +231,7 @@ def selftest():
             assert "WPF managed/native" in str(exc)
         else:
             raise AssertionError("missing WPF and no companion was accepted")
-        attacks = [(base + ["CORECLR.DLL"], False),
+        attacks = [(base + ["SYSTEM.PRIVATE.CORELIB.DLL"], False),
                    (base + ["../fake.mp3"], False),
                    (base, True), (base[1:], False),
                    ([], False)]
