@@ -109,7 +109,7 @@ def inspect(path):
         missing = sorted(required - names)
         if missing:
             native = sorted(f["name"] for f in files
-                            if f["fileType"] in (3, 4)
+                            if f["fileType"] == 2
                             and f["name"].lower().endswith(".dll"))
             raise BundleError(
                 "self-contained .NET/WindowsDesktop runtime missing: "
