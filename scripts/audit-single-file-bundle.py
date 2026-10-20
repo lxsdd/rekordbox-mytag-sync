@@ -187,6 +187,23 @@ def selftest():
         inspect(path)
         assert any(f["licenseReview"] == "MICROSOFT_WINDOWS_SDK_LICENSE_REVIEW"
                    for f in obj["embeddedFiles"])
+        # Real EXE+external folder: WPF component can be a loose sidecar.
+        path.write_bytes(fixture([p for p in base if p != "wpfgfx_cor3.dll"]))
+        sidecar = Path(root) / "PresentationCore.dll"
+        sidecar.write_bytes(b"SYNTHETIC_WPF_COMPANION")
+        actual = inspect(path, root)
+        assert actual["externalFileCount"] == 1
+        assert actual["externalFiles"][0]["name"] == "PresentationCore.dll"
+        bad_media = Path(root) / "private_track.mp3"
+        bad_media.write_bytes(b"NOT_REAL_MEDIA")
+        try:
+            inspect(path, root)
+        except BundleError:
+            pass
+        else:
+            raise AssertionError("media in portable publish folder was not blocked")
+        bad_media.unlink()
+        sidecar.unlink()
         attacks = [(base + ["CORECLR.DLL"], False),
                    (base + ["../fake.mp3"], False),
                    (base, True), (base[1:], False),
