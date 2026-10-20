@@ -12,8 +12,8 @@ These are the locked NuGet dependencies from `src/RekordboxMyTagSync/packages.lo
 
 | Package | Locked version | Declared license | Primary evidence |
 | --- | --- | --- | --- |
-| `Microsoft.Data.Sqlite.Core` | 10.0.12 | MIT | https://www.nuget.org/packages/Microsoft.Data.Sqlite.Core/10.0.12 |
-| `Microsoft.NET.ILLink.Tasks` | 10.0.12 | MIT | https://www.nuget.org/packages/Microsoft.NET.ILLink.Tasks/10.0.12 |
+| `Microsoft.Data.Sqlite.Core` | 10.0.13 | MIT | https://www.nuget.org/packages/Microsoft.Data.Sqlite.Core/10.0.13 |
+| `Microsoft.NET.ILLink.Tasks` | 10.0.13 | MIT | https://www.nuget.org/packages/Microsoft.NET.ILLink.Tasks/10.0.13 |
 | `SQLite3MC.PCLRaw.bundle` | 2.4.0 | MIT | https://www.nuget.org/packages/SQLite3MC.PCLRaw.bundle/2.4.0 |
 | `SQLite3MC.PCLRaw.lib` | 2.4.0 | MIT | https://www.nuget.org/packages/SQLite3MC.PCLRaw.lib/2.4.0 |
 | `SQLite3MC.PCLRaw.provider` | 2.4.0 | MIT | https://www.nuget.org/packages/SQLite3MC.PCLRaw.provider/2.4.0 |
@@ -42,6 +42,43 @@ publish output. Retain the required license/notice text in the candidate and
 prove the coverage with a file-by-file audit. A passing `license-audit.tsv`
 or a verified ZIP manifest only proves metadata/integrity, **not** that this
 legal obligation has been met. Keep public artifact and release jobs disabled.
+
+## October 2026 .NET servicing and Windows SDK licensing gate
+
+Official .NET 10.0.13 servicing release (2026-10-13) fixes multiple security
+issues and ships in SDK **10.0.402** / **10.0.113**:
+https://github.com/dotnet/core/blob/main/release-notes/10.0/10.0.13/10.0.13.md
+
+The FAST and FULL Windows CI build definitions now **request SDK 10.0.402**.
+A separate, synthetic-negative-tested guard verifies both
+`Microsoft.NETCore.App` and `Microsoft.WindowsDesktop.App` at least
+**10.0.13**. FULL also explicitly requests `RuntimeFrameworkVersion=10.0.13`
+for *both* self-contained win-x64 publishes. Passing this guard is proof of
+the build environment and publish request, **not** independent proof of the
+contents of the bundled single-file EXE. The final manifest, executable and
+source SHA still require a separate artifact-specific audit before delivery.
+
+Microsoft's specific .NET-on-Windows licensing inventory says
+`coreclr.dll`/single-file embedded .NET runtimes,
+`PresentationNative_cor3.dll`, `vcruntime140_cor3.dll` and
+`wpfgfx_cor3.dll` are subject to **.NET Library License**; additionally,
+`D3DCompiler_47_cor3.dll` is governed by the **Windows SDK License**.
+Everything else is not automatically covered by one blanket MIT attribution:
+https://github.com/dotnet/core/blob/main/license-information-windows.md
+and https://learn.microsoft.com/en-us/legal/windows-sdk/license
+
+Before permitting any binary handoff, account for any applicable Windows SDK
+distributable rights and third-party notices **as well as** runtime license
+notices. Do not assume the earlier NuGet license-audit.tsv addresses native
+single-file payloads. The public artifact and release gates remain disabled.
+
+**NuGet lock status:** `Microsoft.Data.Sqlite.Core` and SDK-derived
+`Microsoft.NET.ILLink.Tasks` were updated to **10.0.13** using `dotnet restore
+--force-evaluate` on an actual Windows SDK 10.0.402 runner. Both committed
+product and self-test `packages.lock.json` files contain NuGet-generated
+SHA-512 `contentHash` values. Ordinary FAST/FULL must still prove the
+result with strict `--locked-mode` before qualification or merger.
+Distribution remains on HOLD pending the complete license/notice audit.
 
 ## What is still needed before *any* candidate publication
 

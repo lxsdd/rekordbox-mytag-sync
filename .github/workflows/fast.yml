@@ -25,7 +25,12 @@ jobs:
         run: '& ./scripts/Verify-Win11Candidate.ps1 -SelfTest'
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.401'
+          dotnet-version: '10.0.402'
+      - name: Verify patched .NET SDK/WindowsDesktop security runtime
+        shell: pwsh
+        run: |
+          & ./scripts/Assert-PatchedDotNet.ps1 -SelfTest
+          & ./scripts/Assert-PatchedDotNet.ps1
       - name: Assert FULL artifact and public release gates stay closed
         shell: pwsh
         run: python scripts/verify-public-artifact-hold.py
@@ -65,15 +70,38 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Pinned original native Bridge Publisher fixture build failed.' }
           $exe = Join-Path $env:GITHUB_WORKSPACE 'native-bridge-publisher/out/x64/Release/publisher_integration.exe'
           if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Original Publisher integration executable missing.' }
-          $root = Join-Path $env:RUNNER_TEMP ('mytagsync-native-publisher-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT)
-          if (Test-Path -LiteralPath $root) { throw 'Refusing to reuse a native Publisher fixture directory.' }
+          $rootBase = Join-Path $env:RUNNER_TEMP ('mytagsync-native-publisher-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT)
+          $attemptRoots = @($rootBase, ($rootBase + '-retry1'))
+          foreach ($candidateRoot in $attemptRoots) {
+            if (Test-Path -LiteralPath $candidateRoot) { throw 'Refusing to reuse a native Publisher fixture directory.' }
+          }
           try {
-            & $exe $root
-            if ($LASTEXITCODE -ne 0) { throw 'Original C++ Publisher fixture run failed.' }
-            dotnet run --project $env:TEST_PROJECT -c Release --no-restore -- --native-bridge-publisher-root $root
+            $completedRoot = $null
+            for ($attempt = 0; $attempt -lt 2; $attempt++) {
+              $root = $attemptRoots[$attempt]
+              $output = (& $exe $root 2>&1 | Out-String)
+              $exitCode = $LASTEXITCODE
+              Write-Host $output
+              if ($exitCode -eq 0) {
+                $completedRoot = $root
+                break
+              }
+              # Do not suppress structural C++ Publisher failures. Retry once,
+              # in a *fresh* synthetic root, only for the previously observed
+              # completed-generation-zero timeout (never an arbitrary failure).
+              if ($attempt -ne 0 -or
+                  -not $output.Contains('PUBLISHER_NATIVE_INTEGRATION=FAIL Timed out at generation 7 marker=7:0 items=0')) {
+                throw "Native Publisher failed; attempt=$attempt exit=$exitCode."
+              }
+              Write-Warning 'Observed known generation-7/complete=0 timeout. One isolated diagnostic retry; never considered PASS by itself.'
+            }
+            if (-not $completedRoot) { throw 'Native Publisher never passed the complete integration fixture.' }
+            dotnet run --project $env:TEST_PROJECT -c Release --no-restore -- --native-bridge-publisher-root $completedRoot
             if ($LASTEXITCODE -ne 0) { throw 'Native Bridge -> real SQLCipher Preview integration failed.' }
           } finally {
-            if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Recurse -Force }
+            foreach ($root in $attemptRoots) {
+              if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Recurse -Force }
+            }
           }
       - name: Smoke-test WPF startup
         shell: pwsh
