@@ -88,8 +88,20 @@ rather than inferring embedded runtime/native dependencies from NuGet metadata
 or the outer ZIP alone. The parser follows Microsoft's documented
 `Microsoft.NET.HostModel.Bundle.Manifest` / `FileEntry` format, rejects
 wrong/duplicate/unsafe bundle entries and truncated/out-of-range payload
-offsets, and positively requires self-contained `coreclr.dll`,
-`wpfgfx_cor3.dll` and native SQLite3MC. FAST has synthetic negative tests.
+offsets, and requires embedded `System.Private.CoreLib.dll`,
+`System.Runtime.dll`, `wpfgfx_cor3.dll` and native SQLite3MC.
+FAST has synthetic positive/negative tests. In modern .NET single-file
+publishes the native CoreCLR engine can be prelinked into the host and need
+not be represented by a separate `coreclr.dll` manifest entry. Requiring
+that filename was a false-positive FULL failure on source
+`7db770dfc5cf7a6a1cd90faec4b6299bf90e7eae`: the actual manifest
+had 388 entries including six native DLLs and WPF/SQLite3MC. This is
+**not** proof by itself that CoreCLR binary provenance or redistributable
+license obligations are complete. FULL separately rejects any loose
+`.dll` or extra `.exe` outside the single-file EXE in **either** publish
+directory; runtime source-pack provenance and notices remain on HOLD.
+Official .NET deployment guidance:
+https://learn.microsoft.com/en-us/dotnet/core/deploying/single-file/
 
 The sanitized `embedded-bundle-inventory.json` lists every embedded member,
 reported size, bundle type and **license-review category** without source
