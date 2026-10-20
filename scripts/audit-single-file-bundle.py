@@ -100,7 +100,7 @@ def inspect(path, publish_dir=None):
         if not 0 < len(bundle_id) <= 100:
             raise BundleError("missing bundle ID")
         _, index = number(mm, "<qqqqQ", index)  # deps/runtime config and flags
-        files, seen, names = [], set(), set()
+        files, seen, names, spans = [], set(), set(), []
         for _ in range(count):
             (start, size, compressed, kind), index = number(mm, "<qqqB", index)
             name, index = read_string(mm, index)
@@ -113,10 +113,23 @@ def inspect(path, publish_dir=None):
                 size <= 0 or start <= 0 or compressed < 0 or
                 compressed > size or start + (compressed or size) > offset):
                 raise BundleError("unsafe/duplicate/invalid embedded file")
+            on_disk_bytes = compressed or size
+            end = start + on_disk_bytes
+            if any(start < prior_end and prior_start < end
+                   for prior_start, prior_end in spans):
+                raise BundleError("overlapping embedded bundle payloads")
+            spans.append((start, end))
+            # Hash the exact sealed bytes, not a guessed extracted assembly.
+            # Compressed payloads are hashed as stored in the executable;
+            # this is not a signature or a proof of redistribution rights.
+            stored_sha = hashlib.sha256(memoryview(mm)[start:end]).hexdigest()
             seen.add(canonical)
             names.add(name.rsplit("/", 1)[-1].casefold())
             files.append(dict(name=name, fileType=kind, bytes=size,
                               compressedBytes=compressed,
+                              onDiskBytes=on_disk_bytes,
+                              onDiskEncoding=("COMPRESSED" if compressed else "RAW"),
+                              onDiskSha256=stored_sha,
                               licenseReview=category(name)))
         # Direct proof of the product's advertised native WindowsDesktop and
         # SQLCipher bundle members, not a license-approval shortcut.
@@ -164,7 +177,7 @@ def seven(n):
     buf.append(n)
     return bytes(buf)
 
-def fixture(paths, invalid_offset=False):
+def fixture(paths, invalid_offset=False, overlap=False):
     fake = bytearray(b"MZ" + bytes(200))
     spans = []
     for name in paths:
@@ -181,6 +194,8 @@ def fixture(paths, invalid_offset=False):
     for i, (start, size, name) in enumerate(spans):
         if invalid_offset and i == 0:
             start = 999999999
+        if overlap and i == 1:
+            start = spans[0][0]
         encoded = name.encode("utf-8")
         fake += struct.pack("<qqqB", start, size, 0, 1)
         fake += seven(len(encoded)) + encoded
@@ -197,6 +212,17 @@ def selftest():
         obj = inspect(path)
         assert obj["embeddedFileCount"] == 5
         assert obj["distributionLicenseStatus"] == "REVIEW_REQUIRED_NOT_AUTHORIZED"
+        expected_sha = hashlib.sha256(b"FICTIONAL_SYNTHETIC").hexdigest()
+        assert all(f["onDiskSha256"] == expected_sha and
+                   f["onDiskBytes"] == 19 and f["onDiskEncoding"] == "RAW"
+                   for f in obj["embeddedFiles"])
+        # Content mutation must alter the exact embedded component digest.
+        changed = bytearray(fixture(base))
+        changed[202] ^= 1
+        path.write_bytes(changed)
+        mutated = inspect(path)
+        assert mutated["embeddedFiles"][0]["onDiskSha256"] != expected_sha
+        path.write_bytes(fixture(base))
         # Native WPF may legitimately be outside the single-file; a managed
         # WPF assembly is still sufficient evidence of WPF's presence.
         managed = [p for p in base if p != "wpfgfx_cor3.dll"] + ["PresentationCore.dll"]
@@ -231,12 +257,12 @@ def selftest():
             assert "WPF managed/native" in str(exc)
         else:
             raise AssertionError("missing WPF and no companion was accepted")
-        attacks = [(base + ["SYSTEM.PRIVATE.CORELIB.DLL"], False),
-                   (base + ["../fake.mp3"], False),
-                   (base, True), (base[1:], False),
-                   ([], False)]
-        for names, bad_offset in attacks:
-            path.write_bytes(fixture(names, bad_offset))
+        attacks = [(base + ["SYSTEM.PRIVATE.CORELIB.DLL"], False, False),
+                   (base + ["../fake.mp3"], False, False),
+                   (base, True, False), (base, False, True),
+                   (base[1:], False, False), ([], False, False)]
+        for names, bad_offset, overlap in attacks:
+            path.write_bytes(fixture(names, bad_offset, overlap))
             try:
                 inspect(path)
             except BundleError:
