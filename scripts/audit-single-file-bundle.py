@@ -292,6 +292,17 @@ def main():
           f"external={result['externalFileCount']} "
           f"categories={dict(Counter(f['licenseReview'] for f in result['embeddedFiles']))} "
           "distribution=REVIEW_REQUIRED_NOT_AUTHORIZED")
+    # Exact names of still-unclassified payloads are needed to attribute
+    # copyrights/notices against the pinned SDK/runtime/NuGet pack. These
+    # are sanitized bundle member names from this synthetic public build,
+    # NOT user paths or extracted binaries. Never imply license approval.
+    unresolved = sorted(
+        (item["name"] for item in result["embeddedFiles"] + result["externalFiles"]
+         if item["licenseReview"] == "UNCLASSIFIED_REQUIRES_REVIEW"),
+        key=str.casefold)
+    print("MYTAGSYNC_NOTICE_REVIEW_UNCLASSIFIED_COUNT=" + str(len(unresolved)))
+    for name in unresolved:
+        print("MYTAGSYNC_NOTICE_REVIEW_COMPONENT=" + json.dumps(name, ensure_ascii=True))
 
 if __name__ == "__main__":
     try:
