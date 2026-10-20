@@ -23,6 +23,9 @@ jobs:
       - name: Verify Windows 11 candidate ZIP preflight with synthetic tampering
         shell: pwsh
         run: '& ./scripts/Verify-Win11Candidate.ps1 -SelfTest'
+      - name: Verify real .NET single-file manifest audit rejects synthetic attacks
+        shell: pwsh
+        run: python scripts/audit-single-file-bundle.py --self-test
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.402'

@@ -324,6 +324,25 @@ jobs:
             ForEach-Object { "$($_.Value)  $($_.Name)" } |
             Set-Content qualification/publish-sha256.txt -Encoding ASCII
 
+      - name: Inventory actual embedded .NET/WPF/SQLCipher bundle members
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/audit-single-file-bundle.py --self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Bundle audit negative regression failed.' }
+          python scripts/audit-single-file-bundle.py --exe 'artifacts/publish-a/rekordbox MyTagSync.exe' --output qualification/bundle-audit-a.json
+          if ($LASTEXITCODE -ne 0) { throw 'Real Windows single-file A bundle audit failed.' }
+          python scripts/audit-single-file-bundle.py --exe 'artifacts/publish-b/rekordbox MyTagSync.exe' --output qualification/bundle-audit-b.json
+          if ($LASTEXITCODE -ne 0) { throw 'Real Windows single-file B bundle audit failed.' }
+          $a = Get-Content qualification/bundle-audit-a.json -Raw | ConvertFrom-Json
+          $b = Get-Content qualification/bundle-audit-b.json -Raw | ConvertFrom-Json
+          if ($a.bundleSha256 -cne $b.bundleSha256 -or
+              $a.embeddedFileCount -ne $b.embeddedFileCount -or
+              $a.distributionLicenseStatus -cne 'REVIEW_REQUIRED_NOT_AUTHORIZED' -or
+              $b.distributionLicenseStatus -cne 'REVIEW_REQUIRED_NOT_AUTHORIZED') {
+            throw 'Actual single-file embedded inventory differs or incorrectly claims license approval.'
+          }
+          Write-Host "Windows embedded component inventory PASS ($($a.embeddedFileCount) entries). Distribution remains BLOCKED."
       - name: Smoke-test published WPF application
         shell: pwsh
         run: |
@@ -352,6 +371,7 @@ jobs:
           Copy-Item "qualification/database-access-source-audit.txt" $stage
           Copy-Item "qualification/repository-hygiene-audit.txt" $stage
           Copy-Item "qualification/license-audit.tsv" $stage
+          Copy-Item "qualification/bundle-audit-a.json" (Join-Path $stage "embedded-bundle-inventory.json")
           Copy-Item "qualification/publish-sha256.txt" $stage
           Copy-Item "src/RekordboxMyTagSync/packages.lock.json" (Join-Path $stage "product-packages.lock.json")
           Copy-Item "tests/RekordboxMyTagSync.SelfTests/packages.lock.json" (Join-Path $stage "selftest-packages.lock.json")
@@ -508,6 +528,7 @@ jobs:
               "database-access-source-audit.txt",
               "repository-hygiene-audit.txt",
               "license-audit.tsv",
+              "embedded-bundle-inventory.json",
               "publish-sha256.txt",
               "product-packages.lock.json",
               "selftest-packages.lock.json")) {
