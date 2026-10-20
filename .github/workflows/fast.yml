@@ -25,7 +25,12 @@ jobs:
         run: '& ./scripts/Verify-Win11Candidate.ps1 -SelfTest'
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.401'
+          dotnet-version: '10.0.402'
+      - name: Verify patched .NET SDK/WindowsDesktop security runtime
+        shell: pwsh
+        run: |
+          & ./scripts/Assert-PatchedDotNet.ps1 -SelfTest
+          & ./scripts/Assert-PatchedDotNet.ps1
       - name: Assert FULL artifact and public release gates stay closed
         shell: pwsh
         run: python scripts/verify-public-artifact-hold.py
