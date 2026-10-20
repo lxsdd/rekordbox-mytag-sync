@@ -84,6 +84,52 @@ public partial class App : Application
                         $"Required WPF workflow element '{name}' is missing.");
             }
 
+            // Real production elements must be understandable through WPF
+            // accessibility APIs, even when visible labels are in another tab
+            // or a user navigates entirely with the keyboard.
+            foreach (var (elementName, expectedName) in new[]
+            {
+                ("BridgeDirectoryTextBox", "foobar2000 Bridge snapshot directory"),
+                ("TargetDatabaseTextBox", "rekordbox master.db database path"),
+                ("PathProposalsGrid", "Unverified folder root mapping proposals"),
+                ("WriteConsentTextBox", "One-operation database write confirmation")
+            })
+            {
+                if (window.FindName(elementName) is not System.Windows.FrameworkElement element ||
+                    System.Windows.Automation.AutomationProperties.GetName(element) != expectedName ||
+                    string.IsNullOrWhiteSpace(
+                        System.Windows.Automation.AutomationProperties.GetHelpText(element)))
+                    throw new InvalidOperationException(
+                        $"The production WPF UI is missing an accessible name/description on '{elementName}'.");
+            }
+
+            foreach (var (buttonName, expectedCaption) in new[]
+            {
+                ("DiscoverSourceButton", "Find sources"),
+                ("InspectSourceButton", "Inspect selected"),
+                ("DiscoverTargetButton", "Find libraries")
+            })
+            {
+                if (window.FindName(buttonName) is not System.Windows.Controls.Button button ||
+                    !string.Equals(button.Content?.ToString(), expectedCaption, StringComparison.Ordinal) ||
+                    string.IsNullOrWhiteSpace(button.ToolTip?.ToString()))
+                    throw new InvalidOperationException(
+                        $"The discovery action '{buttonName}' is not clear or lacks explanatory help.");
+            }
+
+            foreach (var statusName in new[]
+            {
+                "OperationStatusTextBlock", "PathAnalysisStatusTextBlock",
+                "PathVerificationStatusTextBlock", "PreviewRunStatusTextBlock"
+            })
+            {
+                if (window.FindName(statusName) is not System.Windows.Controls.TextBlock status ||
+                    System.Windows.Automation.AutomationProperties.GetLiveSetting(status) !=
+                        System.Windows.Automation.AutomationLiveSetting.Polite)
+                    throw new InvalidOperationException(
+                        $"The workflow result status '{statusName}' lacks an accessible live-region setting.");
+            }
+
             // Production table templates must never silently clip columns.
             // In particular Path matching needs horizontal overflow for
             // long Z:/R: source and destination paths at normal window width.
