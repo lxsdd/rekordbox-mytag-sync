@@ -43,6 +43,43 @@ prove the coverage with a file-by-file audit. A passing `license-audit.tsv`
 or a verified ZIP manifest only proves metadata/integrity, **not** that this
 legal obligation has been met. Keep public artifact and release jobs disabled.
 
+## October 2026 .NET servicing and Windows SDK licensing gate
+
+Official .NET 10.0.13 servicing release (2026-10-13) fixes multiple security
+issues and ships in SDK **10.0.402** / **10.0.113**:
+https://github.com/dotnet/core/blob/main/release-notes/10.0/10.0.13/10.0.13.md
+
+The FAST and FULL Windows CI build definitions now **request SDK 10.0.402**.
+A separate, synthetic-negative-tested guard verifies both
+`Microsoft.NETCore.App` and `Microsoft.WindowsDesktop.App` at least
+**10.0.13**. FULL also explicitly requests `RuntimeFrameworkVersion=10.0.13`
+for *both* self-contained win-x64 publishes. Passing this guard is proof of
+the build environment and publish request, **not** independent proof of the
+contents of the bundled single-file EXE. The final manifest, executable and
+source SHA still require a separate artifact-specific audit before delivery.
+
+Microsoft's specific .NET-on-Windows licensing inventory says
+`coreclr.dll`/single-file embedded .NET runtimes,
+`PresentationNative_cor3.dll`, `vcruntime140_cor3.dll` and
+`wpfgfx_cor3.dll` are subject to **.NET Library License**; additionally,
+`D3DCompiler_47_cor3.dll` is governed by the **Windows SDK License**.
+Everything else is not automatically covered by one blanket MIT attribution:
+https://github.com/dotnet/core/blob/main/license-information-windows.md
+and https://learn.microsoft.com/en-us/legal/windows-sdk/license
+
+Before permitting any binary handoff, account for any applicable Windows SDK
+distributable rights and third-party notices **as well as** runtime license
+notices. Do not assume the earlier NuGet license-audit.tsv addresses native
+single-file payloads. The public artifact and release gates remain disabled.
+
+**Known remaining dependency action:** the locked NuGet product package
+`Microsoft.Data.Sqlite.Core` and SDK-derived
+`Microsoft.NET.ILLink.Tasks` are still 10.0.12 in the old lock graphs;
+a tested lockfile regeneration/update may be necessary when the patched SDK
+is adopted. Do not fabricate or hand-edit NuGet SHA-512 content hashes.
+The old lockfiles and current candidate stay under the distribution HOLD
+until this is independently qualified.
+
 ## What is still needed before *any* candidate publication
 
 1. **Published file-by-file component manifest.** Identify the *actual* files in the sealed self-contained ZIP, including transitive assemblies, native `sqlite3mc` code and self-contained .NET/WindowsDesktop runtime files. A NuGet package list alone is insufficient to establish the exact contents.
