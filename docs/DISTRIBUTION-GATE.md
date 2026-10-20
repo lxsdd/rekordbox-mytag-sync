@@ -80,6 +80,28 @@ SHA-512 `contentHash` values. Ordinary FAST/FULL must still prove the
 result with strict `--locked-mode` before qualification or merger.
 Distribution remains on HOLD pending the complete license/notice audit.
 
+## Actual single-file embedded component inventory (still NOT distribution approval)
+
+The Windows FULL workflow now reads the **actual** .NET single-file header
+and embedded file-entry manifest from **both** independently published EXEs,
+rather than inferring embedded runtime/native dependencies from NuGet metadata
+or the outer ZIP alone. The parser follows Microsoft's documented
+`Microsoft.NET.HostModel.Bundle.Manifest` / `FileEntry` format, rejects
+wrong/duplicate/unsafe bundle entries and truncated/out-of-range payload
+offsets, and positively requires self-contained `coreclr.dll`,
+`wpfgfx_cor3.dll` and native SQLite3MC. FAST has synthetic negative tests.
+
+The sanitized `embedded-bundle-inventory.json` lists every embedded member,
+reported size, bundle type and **license-review category** without source
+filesystem paths or passwords. FULL compares both embedded inventories,
+includes the inventory in the deterministic candidate ZIP, and still
+**never uploads** that ZIP. The inventory is a concrete evidence source
+for subsequent runtime and Windows SDK NOTICE coverage. It **does not**
+contain verified full license notices, determine copyright ownership of
+every member, or by itself permit distribution. Review all
+`UNCLASSIFIED_REQUIRES_REVIEW` rows and license requirements before
+any private delivery; preserve the disabled upload/release gates.
+
 ## What is still needed before *any* candidate publication
 
 1. **Published file-by-file component manifest.** Identify the *actual* files in the sealed self-contained ZIP, including transitive assemblies, native `sqlite3mc` code and self-contained .NET/WindowsDesktop runtime files. A NuGet package list alone is insufficient to establish the exact contents.
