@@ -178,6 +178,35 @@ published Windows candidates byte for byte, and still leaves
 `distributionLicenseStatus=REVIEW_REQUIRED_NOT_AUTHORIZED`. This is a
 technical origin-correlation milestone, **not a redistributable release gate**.
 
+## Exact license/ThirdPartyNotice source-byte preservation — still incomplete
+
+The Windows FULL runner additionally requires the installed .NET SDK's
+`LICENSE.txt` and `ThirdPartyNotices.txt` to exist and preserves their **exact
+original bytes**, file lengths and SHA-256 checksums. If explicit text files
+exist in pinned .NET 10.0.13 runtime-pack or locked SQLite3MC/SQLitePCLRaw
+NuGet package folders, those are also preserved, but absent optional files
+remain unresolved rather than being invented from short SPDX metadata.
+Negative tests reject absent, duplicated, oversized, symlinked, non-UTF-8 or
+binary sources, and refuse to overwrite previous collection output.
+
+The temporary deterministically checked ZIP contains
+`notice-source-manifest.json` and a folder named
+`NOTICE-SOURCES-UNREVIEWED` with the source texts. This name is deliberate:
+the texts are evidence awaiting file-by-file applicability and rights review,
+**not** a complete, final third-party-notice package. In particular, an
+installed .NET SDK may include notices for components that are not in this
+application while failing to cover distinct SQLite3MC/SQLitePCLRaw/Windows SDK
+obligations. Passing this step is only source preservation. The manifest
+states `completeness=NOT_ESTABLISHED` and
+`distributionLicenseStatus=REVIEW_REQUIRED_NOT_AUTHORIZED`.
+
+A future separately verified candidate must replace this preliminary source
+collection with an accurate, complete and properly displayed/distributed
+license/notice set, including applicable Microsoft .NET Library License,
+Windows SDK license, MIT and Apache notices. **Do not lift the public
+upload/release or production database write holds merely because these
+preliminary files are present.**
+
 ## What is still needed before *any* candidate publication
 
 1. **Published file-by-file component manifest.** Identify the *actual* files in the sealed self-contained ZIP, including transitive assemblies, native `sqlite3mc` code and self-contained .NET/WindowsDesktop runtime files. A NuGet package list alone is insufficient to establish the exact contents.
