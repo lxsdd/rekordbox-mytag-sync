@@ -89,7 +89,11 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.401'
+          dotnet-version: '10.0.402'
+
+      - name: Verify patched .NET SDK/WindowsDesktop security runtime
+        shell: pwsh
+        run: '& ./scripts/Assert-PatchedDotNet.ps1'
 
       - name: Restore exact project inputs
         shell: pwsh
@@ -290,7 +294,7 @@ jobs:
           New-Item -ItemType Directory -Force artifacts | Out-Null
 
           function Publish-Candidate([string]$OutputPath) {
-            dotnet publish $env:PRODUCT_PROJECT -c Release -r win-x64 --self-contained true --no-restore -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:ContinuousIntegrationBuild=true -p:Deterministic=true -p:DeterministicSourcePaths=true -p:DebugType=None -p:DebugSymbols=false -p:PublishReadyToRun=false -p:SourceRevisionId=${{ env.SOURCE_SHA }} -o $OutputPath
+            dotnet publish $env:PRODUCT_PROJECT -c Release -r win-x64 --self-contained true --no-restore -p:RuntimeFrameworkVersion=10.0.13 -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:ContinuousIntegrationBuild=true -p:Deterministic=true -p:DeterministicSourcePaths=true -p:DebugType=None -p:DebugSymbols=false -p:PublishReadyToRun=false -p:SourceRevisionId=${{ env.SOURCE_SHA }} -o $OutputPath
             if ($LASTEXITCODE -ne 0) { throw "Publish failed for $OutputPath." }
           }
 
@@ -620,7 +624,10 @@ jobs:
           ref: ${{ needs.preflight.outputs.source_sha }}
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.401'
+          dotnet-version: '10.0.402'
+      - name: Verify patched .NET on Windows Server 2022
+        shell: pwsh
+        run: '& ./scripts/Assert-PatchedDotNet.ps1'
       - name: Older Windows source and dependency gate
         shell: pwsh
         run: |
@@ -654,7 +661,7 @@ jobs:
       - name: Publish and smoke older Windows portable, retain nothing
         shell: pwsh
         run: |
-          dotnet publish $env:PRODUCT_PROJECT -c Release -r win-x64 --self-contained true --no-restore -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:ContinuousIntegrationBuild=true -p:Deterministic=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o older-win-portable
+          dotnet publish $env:PRODUCT_PROJECT -c Release -r win-x64 --self-contained true --no-restore -p:RuntimeFrameworkVersion=10.0.13 -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:ContinuousIntegrationBuild=true -p:Deterministic=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o older-win-portable
           if ($LASTEXITCODE -ne 0) { throw "Older Windows portable publish failed." }
           $exe = (Resolve-Path "older-win-portable/rekordbox MyTagSync.exe").Path
           $process = Start-Process -FilePath $exe -ArgumentList "--ui-smoke" -Wait -PassThru
