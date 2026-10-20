@@ -22,6 +22,36 @@ DOTNET_NATIVE = {
     "presentationnative_cor3.dll", "vcruntime140_cor3.dll", "wpfgfx_cor3.dll"}
 SDK_NATIVE = {"d3dcompiler_47_cor3.dll"}
 MEDIA = {".mp3", ".flac", ".cue", ".wav", ".opus", ".wv", ".aiff", ".m4a"}
+# These are exact *names observed in the frozen WindowsDesktop 10.0.13
+# portable bundle*. Attribution hints, NOT verified ownership or license.
+WPF_MAIN = {
+    "accessibility.dll", "directwriteforwarder.dll", "penimc_cor3.dll",
+    "presentationcore.dll", "presentationframework.dll",
+    "presentationframework-systemcore.dll",
+    "presentationframework-systemdata.dll",
+    "presentationframework-systemdrawing.dll",
+    "presentationframework-systemxml.dll",
+    "presentationframework-systemxmllinq.dll",
+    "presentationframework.aero.dll", "presentationframework.aero2.dll",
+    "presentationframework.aerolite.dll",
+    "presentationframework.classic.dll", "presentationframework.fluent.dll",
+    "presentationframework.luna.dll", "presentationframework.royale.dll",
+    "presentationui.dll", "reachframework.dll", "uiautomationclient.dll",
+    "uiautomationclientsideproviders.dll", "uiautomationprovider.dll",
+    "uiautomationtypes.dll", "windowsbase.dll",
+}
+WPF_SATELLITE_BASES = {
+    "presentationcore", "presentationframework", "presentationui",
+    "reachframework", "uiautomationclient",
+    "uiautomationclientsideproviders", "uiautomationprovider",
+    "uiautomationtypes", "windowsbase",
+}
+WPF_LOCALES = {
+    "cs", "de", "es", "fr", "it", "ja", "ko", "pl", "pt-br",
+    "ru", "tr", "zh-hans", "zh-hant",
+}
+NET_SHIMS = {"mscorlib.dll", "netstandard.dll"}
+SQLITEPCLRAW_DLLS = {"sqlitepclraw.batteries_v2.dll", "sqlitepclraw.core.dll"}
 
 class BundleError(ValueError):
     pass
@@ -59,6 +89,17 @@ def category(path):
         return "MICROSOFT_WINDOWS_SDK_LICENSE_REVIEW"
     if "sqlite3mc" in base:
         return "THIRD_PARTY_SQLITE3MC_LICENSE_REVIEW"
+    if base in SQLITEPCLRAW_DLLS:
+        return "LOCKED_NUGET_SQLITEPCLRAW_ATTRIBUTION_PENDING"
+    if base in NET_SHIMS:
+        return "MICROSOFT_NET_RUNTIME_ATTRIBUTION_PENDING"
+    if base in WPF_MAIN:
+        return "MICROSOFT_WPF_PACK_ATTRIBUTION_PENDING"
+    parts = path.casefold().split("/")
+    if (len(parts) == 2 and parts[0] in WPF_LOCALES and
+        parts[1].endswith(".resources.dll") and
+        parts[1][:-len(".resources.dll")] in WPF_SATELLITE_BASES):
+        return "MICROSOFT_WPF_SATELLITE_ATTRIBUTION_PENDING"
     if base.startswith(("microsoft.", "system.")):
         return "MICROSOFT_COMPONENT_LICENSE_REVIEW"
     if base.endswith((".deps.json", ".runtimeconfig.json")):
@@ -212,6 +253,17 @@ def selftest():
         obj = inspect(path)
         assert obj["embeddedFileCount"] == 5
         assert obj["distributionLicenseStatus"] == "REVIEW_REQUIRED_NOT_AUTHORIZED"
+        assert category("de/PresentationCore.resources.dll") == (
+            "MICROSOFT_WPF_SATELLITE_ATTRIBUTION_PENDING")
+        assert category("PresentationFramework.Aero2.dll") == (
+            "MICROSOFT_WPF_PACK_ATTRIBUTION_PENDING")
+        assert category("mscorlib.dll") == (
+            "MICROSOFT_NET_RUNTIME_ATTRIBUTION_PENDING")
+        assert category("SQLitePCLRaw.core.dll") == (
+            "LOCKED_NUGET_SQLITEPCLRAW_ATTRIBUTION_PENDING")
+        for unknown in ("OtherVendor.dll", "de/Unknown.resources.dll",
+                        "other/PresentationCore.resources.dll"):
+            assert category(unknown) == "UNCLASSIFIED_REQUIRES_REVIEW"
         expected_sha = hashlib.sha256(b"FICTIONAL_SYNTHETIC").hexdigest()
         assert all(f["onDiskSha256"] == expected_sha and
                    f["onDiskBytes"] == 19 and f["onDiskEncoding"] == "RAW"
@@ -292,6 +344,17 @@ def main():
           f"external={result['externalFileCount']} "
           f"categories={dict(Counter(f['licenseReview'] for f in result['embeddedFiles']))} "
           "distribution=REVIEW_REQUIRED_NOT_AUTHORIZED")
+    # Exact names of still-unclassified payloads are needed to attribute
+    # copyrights/notices against the pinned SDK/runtime/NuGet pack. These
+    # are sanitized bundle member names from this synthetic public build,
+    # NOT user paths or extracted binaries. Never imply license approval.
+    unresolved = sorted(
+        (item["name"] for item in result["embeddedFiles"] + result["externalFiles"]
+         if item["licenseReview"] == "UNCLASSIFIED_REQUIRES_REVIEW"),
+        key=str.casefold)
+    print("MYTAGSYNC_NOTICE_REVIEW_UNCLASSIFIED_COUNT=" + str(len(unresolved)))
+    for name in unresolved:
+        print("MYTAGSYNC_NOTICE_REVIEW_COMPONENT=" + json.dumps(name, ensure_ascii=True))
 
 if __name__ == "__main__":
     try:

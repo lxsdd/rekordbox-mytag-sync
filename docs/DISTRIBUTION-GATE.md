@@ -131,6 +131,29 @@ upstream signature, clear Microsoft's .NET or Windows SDK redistribution
 conditions, authorize a public artifact, or qualify a delivery to the user.
 The blocking license status remains `REVIEW_REQUIRED_NOT_AUTHORIZED`.
 
+## Narrowed WindowsDesktop/SQLitePCLRaw attribution leads (not license approval)
+
+The actual sealed 10.0.13 self-contained Windows bundle enumerated **388
+embedded members and zero sidecars**, including 145 previously unclassified
+names. The exact-name evidence has now been traced to a bounded classification
+table: 13 language directories with WPF UI Automation/Presentation satellite
+assemblies, individual WPF themes/core assemblies and input dependencies,
+`mscorlib.dll`/`netstandard.dll`, and the **two** locked
+`SQLitePCLRaw` managed NuGet assemblies. Each is labeled only with an
+`*_ATTRIBUTION_PENDING` source-pack *lead*, not a verified license.
+
+The Python inventory tests explicitly reject unknown vendor assemblies and
+unknown language/resource combinations as `UNCLASSIFIED_REQUIRES_REVIEW`.
+Only exact enumerated names from this observed bundle receive hints, so
+future runtime updates introduce visible review requirements instead of
+silently inheriting an assumed copyright owner. The full on-disk member
+SHA-256s remain required to verify these leads against original SDK/runtime/
+NuGet source bytes. Microsoft's own Windows license inventory distinguishes
+its WindowsDesktop native exceptions; package hints do not replace complete
+corresponding copyright, MIT/Apache, .NET Library License and Windows SDK
+notices, nor do they authorize any redistribution or remove the private
+handoff constraint. Keep `REVIEW_REQUIRED_NOT_AUTHORIZED` unchanged.
+
 ## What is still needed before *any* candidate publication
 
 1. **Published file-by-file component manifest.** Identify the *actual* files in the sealed self-contained ZIP, including transitive assemblies, native `sqlite3mc` code and self-contained .NET/WindowsDesktop runtime files. A NuGet package list alone is insufficient to establish the exact contents.
