@@ -88,8 +88,8 @@ def inspect(path):
             (start, size, compressed, kind), index = number(mm, "<qqqB", index)
             name, index = read_string(mm, index)
             canonical = name.casefold()
-            if (not name or name.startswith(("/", "\")) or
-                "\" in name or ":" in name or
+            if (not name or name.startswith(("/", "\\")) or
+                "\\" in name or ":" in name or
                 any(x in ("", ".", "..") for x in name.split("/")) or
                 canonical in seen or
                 Path(name).suffix.lower() in MEDIA or kind > 5 or
