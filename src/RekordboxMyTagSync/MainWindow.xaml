@@ -24,6 +24,7 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <TextBlock x:Name="OperationStatusTextBlock"
+             AutomationProperties.LiveSetting="Polite"
                        Grid.Row="0"
                        Margin="0,0,8,8"
                        TextWrapping="Wrap"
@@ -71,18 +72,23 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <TextBox x:Name="BridgeDirectoryTextBox"
+                         AutomationProperties.Name="foobar2000 Bridge snapshot directory"
+                         AutomationProperties.HelpText="Folder containing bridge-state.tsv and digital-items.tsv.gz. Discovery and inspection are read-only."
+                         ToolTip="Choose the folder containing bridge-state.tsv and digital-items.tsv.gz. Use Find sources, then Inspect selected."
                                  VerticalContentAlignment="Center"
                                  MinHeight="30"/>
                         <Button x:Name="DiscoverSourceButton"
                                 Grid.Column="1"
                                 Margin="8,0,0,0"
                                 Padding="14,6"
-                                Content="Discover"/>
+                                Content="Find sources"
+                                ToolTip="Find available local foobar2000 Bridge snapshots without changing files."/>
                         <Button x:Name="InspectSourceButton"
                                 Grid.Column="2"
                                 Margin="8,0,0,0"
                                 Padding="14,6"
-                                Content="Inspect"/>
+                                Content="Inspect selected"
+                                ToolTip="Verify the selected Bridge snapshot without changing its files."/>
                     </Grid>
                     <TextBlock x:Name="SourceInspectionStatusTextBlock"
                                Grid.Row="2"
@@ -151,13 +157,17 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <TextBox x:Name="TargetDatabaseTextBox"
+                         AutomationProperties.Name="rekordbox master.db database path"
+                         AutomationProperties.HelpText="Choose rekordbox 6 or 7 master.db. Validate access before previewing; discovery never writes."
+                         ToolTip="Choose rekordbox master.db. Use Find libraries or Browse, then Validate access (read-only)."
                                  VerticalContentAlignment="Center"
                                  MinHeight="30"/>
                         <Button x:Name="DiscoverTargetButton"
                                 Grid.Column="1"
                                 Margin="8,0,0,0"
                                 Padding="14,6"
-                                Content="Discover"/>
+                                Content="Find libraries"
+                                ToolTip="Discover rekordbox 6 or 7 databases without modifying them."/>
                         <Button x:Name="BrowseTargetButton"
                                 Grid.Column="2"
                                 Margin="8,0,0,0"
@@ -253,11 +263,13 @@
                                 ToolTipService.ShowOnDisabled="True"/>
                     </StackPanel>
                     <TextBlock x:Name="PathAnalysisStatusTextBlock"
+                     AutomationProperties.LiveSetting="Polite"
                                Grid.Row="2"
                                TextWrapping="Wrap"
                                Margin="0,0,0,10"
                                Text="Path analysis not performed. Inspect Source and Validate target access first."/>
                     <TextBlock x:Name="PathVerificationStatusTextBlock"
+                     AutomationProperties.LiveSetting="Polite"
                                Grid.Row="3"
                                Margin="0,0,0,10"
                                TextWrapping="Wrap"
@@ -268,6 +280,8 @@
                                TextWrapping="Wrap"
                                Text="Entire mapping not checked against physical file IDs. No alias is approved."/>
                     <DataGrid x:Name="PathProposalsGrid"
+                     AutomationProperties.Name="Unverified folder root mapping proposals"
+                     AutomationProperties.HelpText="Select one pair of folder roots, then run read-only file identity checks. Suggestions never authorize writes."
                               EnableRowVirtualization="True"
                               EnableColumnVirtualization="True"
                               ScrollViewer.CanContentScroll="True"
@@ -349,6 +363,7 @@
                                    Text="No approved preview."/>
                     </StackPanel>
                     <TextBlock x:Name="PreviewRunStatusTextBlock"
+                     AutomationProperties.LiveSetting="Polite"
                                Grid.Row="1"
                                Margin="0,10,0,0"
                                TextWrapping="Wrap"
@@ -484,6 +499,8 @@
                                    TextWrapping="Wrap"
                                    Text="First qualify the selected database. No write is authorized by Preview alone."/>
                         <TextBox x:Name="WriteConsentTextBox"
+                         AutomationProperties.Name="One-operation database write confirmation"
+                         AutomationProperties.HelpText="Enter the exact database-specific confirmation shown above. Required separately for Apply or Restore; never stored."
                                  Margin="0,8,0,0"
                                  MinHeight="30"
                                  MaxLength="160"
