@@ -12,6 +12,26 @@ Diese Anleitung ist ein **Abnahmevertrag**, keine Freigabe zum produktiven Schre
 4. Auf dem Windows-11-Gerät im nichtadministrativen Benutzerkontext starten, ohne in produktive Dateien zu kopieren oder Windows-Rechte zu umgehen. Die UI ist nicht als Administrator auszuführen.
 5. rekordbox, rekordboxAgent und rbxport vor jeglichem möglichen Schreib-/Restore-Vorgang schließen. Die hier beschriebene Phase ist ausschließlich **read-only**; `Apply`, `Restore` und jede Eingabe einer Schreibbestätigung sind ausdrücklich **nicht** Bestandteil dieses Tests.
 
+## SHA-gebundener lokaler Vorabcheck (erst nach zulässiger privater Übergabe)
+
+Nach Erhalt des freigegebenen Kandidaten prüft
+`scripts/Verify-Win11Candidate.ps1` mit den **für denselben Source-Commit**
+bestätigten Argumenten `-CandidateZip`, `-ExpectedSourceSha` und
+`-ExpectedZipSha` zunächst den äußeren Kandidaten-ZIP-Hash, die SHA- und
+Plattform-Angaben des Manifests, sämtliche enthaltenen Datei-Hashes sowie
+Pfad-Traversal- und Duplikatprobleme. Erst **danach** extrahiert er in
+`%LOCALAPPDATA%\MyTagSync\qualification\<source-sha>` und führt den
+synthetischen `--ui-smoke` ohne Administratorrechte aus. Bereits bestehende
+Zielverzeichnisse werden nicht überschrieben.
+
+Dieser Vorabcheck benötigt kein installiertes .NET-SDK und greift nicht auf die
+echte rekordbox-Bibliothek zu. Der anonymisierte
+`READONLY-PREFLIGHT.json`-Bericht besagt ausdrücklich
+`realRekordboxAcceptance=PENDING`; die unten stehende reale read-only
+Geräteabnahme ist also anschließend weiterhin erforderlich. Der Prüfhelfer
+ist **kein** Ersatz für die noch ausstehende Verteilungsfreigabe und enthält
+keinen Downloadlink zu einem unveröffentlichten Programm.
+
 ## Einmalige read-only Prüfung auf dem DJ-Laptop
 
 | Bereich | Konkretes PASS-/FAIL-Kriterium |

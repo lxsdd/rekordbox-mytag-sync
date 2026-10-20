@@ -21,6 +21,28 @@ These are the locked NuGet dependencies from `src/RekordboxMyTagSync/packages.lo
 
 The native SQLite3 Multiple Ciphers project also declares MIT (license text: https://github.com/utelle/SQLite3MultipleCiphers/blob/main/LICENSE). This is favorable evidence: neither the listed MIT packages nor `SQLitePCLRaw.core` are automatically forbidden to redistribute simply because they provide database encryption.
 
+## Windows self-contained .NET runtime: separate licensing boundary
+
+The NuGet package metadata in the table above does **not** cover the full
+self-contained WPF executable. Microsoft's official .NET licensing guidance
+states that Windows .NET *product/runtime distributions* and self-contained
+apps are subject to the **Microsoft .NET Library License** and applicable
+third-party notices, even where individual library NuGet packages state MIT.
+The Microsoft license permits app-bound object-code distribution subject to
+its distribution requirements. This is not a blanket endorsement of the
+complete MyTagSync executable or its delivery mechanism.
+
+- Official model: https://github.com/dotnet/runtime/blob/main/docs/project/licensing-assets.md
+- .NET Windows licensing: https://dotnet.microsoft.com/en-us/dotnet_library_license.htm
+- Redistribution overview: https://github.com/dotnet/core/blob/main/license-information.md
+
+**Release gate:** Inspect the actual Windows runtime packs, native payloads,
+license files and `ThirdPartyNotices` corresponding to the exact portable
+publish output. Retain the required license/notice text in the candidate and
+prove the coverage with a file-by-file audit. A passing `license-audit.tsv`
+or a verified ZIP manifest only proves metadata/integrity, **not** that this
+legal obligation has been met. Keep public artifact and release jobs disabled.
+
 ## What is still needed before *any* candidate publication
 
 1. **Published file-by-file component manifest.** Identify the *actual* files in the sealed self-contained ZIP, including transitive assemblies, native `sqlite3mc` code and self-contained .NET/WindowsDesktop runtime files. A NuGet package list alone is insufficient to establish the exact contents.

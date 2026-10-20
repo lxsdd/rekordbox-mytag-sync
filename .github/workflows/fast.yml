@@ -20,6 +20,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate exact-SHA FAST dispatcher regression without GitHub requests
         run: python tests/test_recover_main_fast.py
+      - name: Verify Windows 11 candidate ZIP preflight with synthetic tampering
+        shell: pwsh
+        run: '& ./scripts/Verify-Win11Candidate.ps1 -SelfTest'
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.401'
