@@ -106,6 +106,21 @@ jobs:
               if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Recurse -Force }
             }
           }
+      - name: PR-only published .NET 10 single-file + sidecar inventory
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $publishRoot = Join-Path $env:RUNNER_TEMP 'mytagsync-actual-bundle-pr'
+          if (Test-Path -LiteralPath $publishRoot) { throw 'Refusing to reuse publish directory.' }
+          try {
+            dotnet publish $env:PRODUCT_PROJECT -c Release -r win-x64 --self-contained true --no-restore -p:RuntimeFrameworkVersion=10.0.13 -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishReadyToRun=false -o $publishRoot
+            if ($LASTEXITCODE -ne 0) { throw 'PR-only actual Windows publish failed.' }
+            python scripts/audit-single-file-bundle.py --exe (Join-Path $publishRoot 'rekordbox MyTagSync.exe') --publish-dir $publishRoot --output (Join-Path $env:RUNNER_TEMP 'mytagsync-bundle-pr.json')
+            if ($LASTEXITCODE -ne 0) { throw 'PR-only actual Windows embedded + sidecar inventory failed.' }
+          } finally {
+            if (Test-Path -LiteralPath $publishRoot) { Remove-Item -LiteralPath $publishRoot -Recurse -Force }
+          }
       - name: Smoke-test WPF startup
         shell: pwsh
         run: |
