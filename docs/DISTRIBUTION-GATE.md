@@ -12,8 +12,8 @@ These are the locked NuGet dependencies from `src/RekordboxMyTagSync/packages.lo
 
 | Package | Locked version | Declared license | Primary evidence |
 | --- | --- | --- | --- |
-| `Microsoft.Data.Sqlite.Core` | 10.0.12 | MIT | https://www.nuget.org/packages/Microsoft.Data.Sqlite.Core/10.0.12 |
-| `Microsoft.NET.ILLink.Tasks` | 10.0.12 | MIT | https://www.nuget.org/packages/Microsoft.NET.ILLink.Tasks/10.0.12 |
+| `Microsoft.Data.Sqlite.Core` | 10.0.13 | MIT | https://www.nuget.org/packages/Microsoft.Data.Sqlite.Core/10.0.13 |
+| `Microsoft.NET.ILLink.Tasks` | 10.0.13 | MIT | https://www.nuget.org/packages/Microsoft.NET.ILLink.Tasks/10.0.13 |
 | `SQLite3MC.PCLRaw.bundle` | 2.4.0 | MIT | https://www.nuget.org/packages/SQLite3MC.PCLRaw.bundle/2.4.0 |
 | `SQLite3MC.PCLRaw.lib` | 2.4.0 | MIT | https://www.nuget.org/packages/SQLite3MC.PCLRaw.lib/2.4.0 |
 | `SQLite3MC.PCLRaw.provider` | 2.4.0 | MIT | https://www.nuget.org/packages/SQLite3MC.PCLRaw.provider/2.4.0 |
@@ -72,13 +72,13 @@ distributable rights and third-party notices **as well as** runtime license
 notices. Do not assume the earlier NuGet license-audit.tsv addresses native
 single-file payloads. The public artifact and release gates remain disabled.
 
-**Known remaining dependency action:** the locked NuGet product package
-`Microsoft.Data.Sqlite.Core` and SDK-derived
-`Microsoft.NET.ILLink.Tasks` are still 10.0.12 in the old lock graphs;
-a tested lockfile regeneration/update may be necessary when the patched SDK
-is adopted. Do not fabricate or hand-edit NuGet SHA-512 content hashes.
-The old lockfiles and current candidate stay under the distribution HOLD
-until this is independently qualified.
+**NuGet lock status:** `Microsoft.Data.Sqlite.Core` and SDK-derived
+`Microsoft.NET.ILLink.Tasks` were updated to **10.0.13** using `dotnet restore
+--force-evaluate` on an actual Windows SDK 10.0.402 runner. Both committed
+product and self-test `packages.lock.json` files contain NuGet-generated
+SHA-512 `contentHash` values. Ordinary FAST/FULL must still prove the
+result with strict `--locked-mode` before qualification or merger.
+Distribution remains on HOLD pending the complete license/notice audit.
 
 ## What is still needed before *any* candidate publication
 
