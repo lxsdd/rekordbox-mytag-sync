@@ -101,10 +101,21 @@ def inspect(path):
             files.append(dict(name=name, fileType=kind, bytes=size,
                               compressedBytes=compressed,
                               licenseReview=category(name)))
-        # Direct proof of the product's advertised native WindowsDesktop and
-        # SQLCipher bundle members, not a license-approval shortcut.
-        if "coreclr.dll" not in names or "wpfgfx_cor3.dll" not in names:
-            raise BundleError("self-contained .NET/WindowsDesktop runtime missing")
+        # Never turn missing runtime members into a successful distribution
+        # audit. Supply bounded, source-relative evidence for the actual
+        # release payload so a Windows FULL regression can be repaired without
+        # guessing which binary did (or did not) get embedded.
+        required = {"coreclr.dll", "wpfgfx_cor3.dll"}
+        missing = sorted(required - names)
+        if missing:
+            native = sorted(f["name"] for f in files
+                            if f["fileType"] == 2
+                            and f["name"].lower().endswith(".dll"))
+            raise BundleError(
+                "self-contained .NET/WindowsDesktop runtime missing: "
+                + ",".join(missing)
+                + f"; embedded_entries={count}, native_dll_count={len(native)}, "
+                + "native_dll_sample=" + repr(native[:24]))
         if not any("sqlite3mc" in name for name in names):
             raise BundleError("expected native SQLite3MC library missing")
         return dict(schemaVersion=1, bundleMajorVersion=major,
@@ -166,6 +177,16 @@ def selftest():
             except BundleError:
                 continue
             raise AssertionError("invalid synthetic bundle was accepted")
+        # Diagnostic detail must never lower the positive embedded-runtime
+        # requirement, even when other native and SQLCipher members exist.
+        path.write_bytes(fixture(base[:1] + base[2:]))
+        try:
+            inspect(path)
+        except BundleError as exc:
+            assert "wpfgfx_cor3.dll" in str(exc)
+            assert "native_dll_count=" in str(exc)
+        else:
+            raise AssertionError("missing WPF runtime passed as distributable")
     print("MYTAGSYNC_REAL_BUNDLE_MANIFEST_AUDIT_SELFTEST=PASS")
 
 def main():
