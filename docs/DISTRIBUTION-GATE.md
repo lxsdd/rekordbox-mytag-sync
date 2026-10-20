@@ -131,6 +131,30 @@ upstream signature, clear Microsoft's .NET or Windows SDK redistribution
 conditions, authorize a public artifact, or qualify a delivery to the user.
 The blocking license status remains `REVIEW_REQUIRED_NOT_AUTHORIZED`.
 
+## Pinned source-pack byte provenance (evidence, not attribution approval)
+
+Windows FULL now additionally compares each **uncompressed (RAW)** embedded or
+published companion's actual SHA-256 **and its filename and byte count** to
+files in specifically version-pinned .NET 10.0.13 Windows runtime pack roots
+and locked SQLite3MC/SQLitePCLRaw/Microsoft.Data.Sqlite NuGet roots. This
+does not rely on filename similarity alone. Source matches identify the
+source-package label and source-relative path, without leaking runner-local
+absolute paths. The package identity and exact restored bytes still need their
+own license and notice review.
+
+The `sourceByteEvidence` inventory extension separates
+`MATCHED_EXACT_RAW_BYTES`, `UNMATCHED_REQUIRES_REVIEW` and
+`COMPRESSED_UNRESOLVED`; compressed bundle bytes are **not** treated as
+matching their uncompressed source automatically. Entire source categories
+may remain unmatched when their runtime packs are not present on the runner,
+and byte matches do not independently attest upstream package signatures,
+license permissions, assembly authorship or compliance with notices. Tests
+reject invalid/duplicate source labels, absent roots and misleading same-name
+or changed bytes. FULL compares this complete evidence from both independently
+published Windows candidates byte for byte, and still leaves
+`distributionLicenseStatus=REVIEW_REQUIRED_NOT_AUTHORIZED`. This is a
+technical origin-correlation milestone, **not a redistributable release gate**.
+
 ## What is still needed before *any* candidate publication
 
 1. **Published file-by-file component manifest.** Identify the *actual* files in the sealed self-contained ZIP, including transitive assemblies, native `sqlite3mc` code and self-contained .NET/WindowsDesktop runtime files. A NuGet package list alone is insufficient to establish the exact contents.
