@@ -18,6 +18,8 @@ jobs:
       TEST_PROJECT: tests/RekordboxMyTagSync.SelfTests/RekordboxMyTagSync.SelfTests.csproj
     steps:
       - uses: actions/checkout@v4
+      - name: Validate exact-SHA FAST dispatcher regression without GitHub requests
+        run: python tests/test_recover_main_fast.py
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.401'
