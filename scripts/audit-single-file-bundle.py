@@ -125,7 +125,13 @@ def inspect(path, publish_dir=None):
         # Some WindowsDesktop components can be loose sidecars. The bundle
         # manifest alone must not be mistaken for the entire publish folder.
         if "coreclr.dll" not in all_names:
-            raise BundleError("expected self-contained CoreCLR is missing")
+            # No local paths, only public build payload entry basenames.
+            evidence = sorted(all_names)
+            summary = ",".join(evidence[:60])
+            raise BundleError(
+                "expected self-contained CoreCLR is missing; "
+                f"embedded={len(names)} external={len(sidecars)} "
+                f"actual-component-names-first60={summary}")
         if not all_names.intersection({
                 "wpfgfx_cor3.dll", "presentationcore.dll",
                 "presentationframework.dll"}):
