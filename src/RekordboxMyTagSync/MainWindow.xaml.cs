@@ -69,6 +69,7 @@ public partial class MainWindow : Window
         SourceInitialized += (_, _) =>
         {
             WindowPlacementStore.Restore(this);
+            WindowPlacementStore.FitToPrimaryWorkArea(this);
             GridColumnWidthStore.Restore(persistentGrids);
         };
         Closing += (_, _) =>

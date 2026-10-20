@@ -24,6 +24,8 @@ internal static class WpfReadOnlyUiRegression
         {
             foreach (var (width, height) in new[]
             {
+                (900.0, 600.0),
+                (1008.0, 704.0),
                 (1050.0, 700.0),
                 (1280.0, 820.0)
             })
@@ -39,6 +41,17 @@ internal static class WpfReadOnlyUiRegression
                 AssertSingleRow(window, root, tabs, "Target Library",
                     "TargetDatabaseTextBox", "DiscoverTargetButton",
                     "BrowseTargetButton");
+
+                tabs.SelectedIndex = 2;
+                Measure(root, width, height);
+                AssertToolbar(window, root, tabs, "Path matching",
+                    "AnalyzePathsButton", "VerifyRootSampleButton",
+                    "VerifyPhysicalIdsButton", "CancelPhysicalIdsButton");
+                tabs.SelectedIndex = 4;
+                Measure(root, width, height);
+                AssertToolbar(window, root, tabs, "Preview / Changes",
+                    "BuildPreviewButton", "BuildVerifiedPreviewButton",
+                    "CancelVerifiedPreviewButton");
             }
 
             // Click the actual production discovery handler, not a mock.
@@ -134,4 +147,30 @@ internal static class WpfReadOnlyUiRegression
                     " and " + elementNames[i]);
         }
     }
+    private static void AssertToolbar(
+        MainWindow window, FrameworkElement root, TabControl tabs,
+        string area, params string[] names)
+    {
+        var bounds = Bounds(tabs, root);
+        var rects = names.Select(name => Bounds(
+            window.FindName(name) as FrameworkElement ??
+            throw new InvalidOperationException("Missing WPF action: " + name),
+            root)).ToArray();
+        for (var i = 0; i < rects.Length; i++)
+        {
+            var rect = rects[i];
+            if (rect.Left < bounds.Left - 2 || rect.Right > bounds.Right + 2 ||
+                rect.Top < bounds.Top - 2 || rect.Bottom > bounds.Bottom + 2)
+                throw new InvalidOperationException(
+                    area + ": action clipped on narrow desktop: " + names[i]);
+            for (var j = 0; j < i; j++)
+            {
+                var overlap = Rect.Intersect(rect, rects[j]);
+                if (!overlap.IsEmpty && overlap.Width > 1 && overlap.Height > 1)
+                    throw new InvalidOperationException(
+                        area + ": overlapping actions " + names[i] + "/" + names[j]);
+            }
+        }
+    }
+
 }

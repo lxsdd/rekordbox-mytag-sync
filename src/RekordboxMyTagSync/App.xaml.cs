@@ -666,6 +666,37 @@ public partial class App : Application
             // No host profile, master.db, media or tags are opened or written.
             WpfReadOnlyUiRegression.Run(window);
 
+            // Real graphical runner: 1024×720 work area. Keep the window
+            // reachable, but do not pull saved secondary-monitor windows home.
+            var savedLeft = window.Left;
+            var savedTop = window.Top;
+            var savedWidth = window.Width;
+            var savedHeight = window.Height;
+            window.Left = 120;
+            window.Top = 60;
+            window.Width = 1280;
+            window.Height = 820;
+            WindowPlacementStore.FitToWorkArea(window, new Rect(0, 0, 1024, 720));
+            if (window.MinWidth > 900 || window.MinHeight > 600 ||
+                window.Left < 8 || window.Top < 8 ||
+                window.Left + window.Width > 1016 ||
+                window.Top + window.Height > 712)
+                throw new InvalidOperationException(
+                    "Production WPF window clips a 1024×720 desktop.");
+            window.Left = 1500;
+            window.Top = 100;
+            window.Width = 1200;
+            window.Height = 760;
+            WindowPlacementStore.FitToWorkArea(window, new Rect(0, 0, 1024, 720));
+            if (window.Left != 1500 || window.Width != 1200 ||
+                window.Height != 760)
+                throw new InvalidOperationException(
+                    "Secondary monitor placement was unexpectedly relocated.");
+            window.Left = savedLeft;
+            window.Top = savedTop;
+            window.Width = savedWidth;
+            window.Height = savedHeight;
+
             // Regression gate: the same placement code used on closing/reopening
             // the real WPF window preserves size, position and maximize state.
             var placementPath = System.IO.Path.Combine(
