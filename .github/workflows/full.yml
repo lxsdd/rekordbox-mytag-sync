@@ -380,6 +380,43 @@ jobs:
           Write-Host "Exact RAW source matches=$($a.sourceByteEvidence.counts.MATCHED_EXACT_RAW_BYTES); "
           Write-Host "Unmatched=$($a.sourceByteEvidence.counts.UNMATCHED_REQUIRES_REVIEW); "
           Write-Host "Compressed=$($a.sourceByteEvidence.counts.COMPRESSED_UNRESOLVED). Distribution BLOCKED."
+      - name: Preserve exact pinned license and third-party notice source texts (still not release clearance)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/audit-notice-source-texts.py --self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Notice source negative tests failed.' }
+          $dotnet = Join-Path $env:ProgramFiles 'dotnet'
+          $nuget = Join-Path $env:USERPROFILE '.nuget/packages'
+          $sourceFiles = @(
+            @{id='DOTNET_INSTALLATION_LICENSE'; path=(Join-Path $dotnet 'LICENSE.txt')},
+            @{id='DOTNET_INSTALLATION_THIRDPARTY'; path=(Join-Path $dotnet 'ThirdPartyNotices.txt')},
+            @{id='NETCORE_RUNTIME_10_0_13_THIRDPARTY'; path=(Join-Path $nuget 'microsoft.netcore.app.runtime.win-x64/10.0.13/THIRD-PARTY-NOTICES.TXT')},
+            @{id='WINDOWSDESKTOP_RUNTIME_10_0_13_THIRDPARTY'; path=(Join-Path $nuget 'microsoft.windowsdesktop.app.runtime.win-x64/10.0.13/THIRD-PARTY-NOTICES.TXT')},
+            @{id='SQLITE3MC_LIB_2_4_0_LICENSE'; path=(Join-Path $nuget 'sqlite3mc.pclraw.lib/2.4.0/LICENSE.txt')},
+            @{id='SQLITEPCLRAW_CORE_3_0_2_LICENSE'; path=(Join-Path $nuget 'sqlitepclraw.core/3.0.2/LICENSE.txt')}
+          )
+          $sourceArgs = @()
+          $required = @('DOTNET_INSTALLATION_LICENSE', 'DOTNET_INSTALLATION_THIRDPARTY')
+          foreach ($item in $sourceFiles) {
+            if (Test-Path -LiteralPath $item.path -PathType Leaf) {
+              $sourceArgs += @('--source-file', ($item.id + '=' + $item.path))
+              $required = @($required | Where-Object { $_ -ne $item.id })
+            }
+          }
+          if ($required.Count -ne 0) {
+            throw "Mandatory .NET installation notice sources absent: $($required -join ',')"
+          }
+          python scripts/audit-notice-source-texts.py @sourceArgs --output-dir qualification/notice-source-texts --report qualification/notice-source-manifest.json
+          if ($LASTEXITCODE -ne 0) { throw 'Exact pinned notice source preservation failed.' }
+          $report = Get-Content qualification/notice-source-manifest.json -Raw | ConvertFrom-Json
+          if ($report.distributionLicenseStatus -cne 'REVIEW_REQUIRED_NOT_AUTHORIZED' -or
+              $report.completeness -cne 'NOT_ESTABLISHED' -or
+              @($report.sourceTexts).Count -lt 2) {
+            throw 'Notice-source inventory incorrectly claims license completion.'
+          }
+          Write-Host "Notice sources preserved=$(@($report.sourceTexts).Count); complete license review remains BLOCKED."
+
       - name: Smoke-test published WPF application
         shell: pwsh
         run: |
@@ -409,6 +446,8 @@ jobs:
           Copy-Item "qualification/repository-hygiene-audit.txt" $stage
           Copy-Item "qualification/license-audit.tsv" $stage
           Copy-Item "qualification/bundle-audit-a.json" (Join-Path $stage "embedded-bundle-inventory.json")
+          Copy-Item "qualification/notice-source-manifest.json" (Join-Path $stage "notice-source-manifest.json")
+          Copy-Item "qualification/notice-source-texts" (Join-Path $stage "NOTICE-SOURCES-UNREVIEWED") -Recurse
           Copy-Item "qualification/publish-sha256.txt" $stage
           Copy-Item "src/RekordboxMyTagSync/packages.lock.json" (Join-Path $stage "product-packages.lock.json")
           Copy-Item "tests/RekordboxMyTagSync.SelfTests/packages.lock.json" (Join-Path $stage "selftest-packages.lock.json")
@@ -566,6 +605,9 @@ jobs:
               "repository-hygiene-audit.txt",
               "license-audit.tsv",
               "embedded-bundle-inventory.json",
+              "notice-source-manifest.json",
+              "NOTICE-SOURCES-UNREVIEWED/DOTNET_INSTALLATION_LICENSE.txt",
+              "NOTICE-SOURCES-UNREVIEWED/DOTNET_INSTALLATION_THIRDPARTY.txt",
               "publish-sha256.txt",
               "product-packages.lock.json",
               "selftest-packages.lock.json")) {
