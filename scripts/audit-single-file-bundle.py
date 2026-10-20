@@ -137,7 +137,15 @@ def inspect(path, publish_dir=None):
         if not all_names.intersection({
                 "wpfgfx_cor3.dll", "presentationcore.dll",
                 "presentationframework.dll"}):
-            raise BundleError("expected WPF managed/native component is missing")
+            # Retain the previous main's bounded native FileType=2
+            # diagnostics; never downgrade a missing WPF runtime to PASS.
+            native = sorted(f["name"] for f in files
+                            if f["fileType"] == 2
+                            and f["name"].lower().endswith(".dll"))
+            raise BundleError(
+                "expected WPF managed/native component is missing; "
+                f"native_dll_count={len(native)}, "
+                "native_dll_sample=" + repr(native[:24]))
         if not any("sqlite3mc" in name for name in all_names):
             raise BundleError("expected SQLite3MC runtime component is missing")
         return dict(schemaVersion=1, bundleMajorVersion=major,
