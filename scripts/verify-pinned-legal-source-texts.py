@@ -39,6 +39,14 @@ SOURCE = {
         "licenses/source-texts/Microsoft-Data-Sqlite-Core-v10.0.13-MIT-LICENSE.txt",
         "a616ed188dfce68ee308f674350ad242d8588c2b",
         "dotnet/efcore@v10.0.13:LICENSE.txt"),
+    "MICROSOFT_DOTNET_LIBRARY_LICENSE": (
+        "licenses/source-texts/Microsoft-NET-Library-terms-SqlClient-NOTICE.txt",
+        "0b936c6bb60efa99c0c1e4c853cc516eb3f7835b",
+        "dotnet/SqlClient:NOTICE.txt (official original source; license-applicability review pending)"),
+    "WINDOWS_SDK_D3DCOMPILER_LICENSE": (
+        "licenses/source-texts/Microsoft-WindowsSDK-Win10-terms-win32metadata.txt",
+        "efaf451b29e15921362cdb5888da9ee8f67acd1b",
+        "microsoft/win32metadata:licenses/sdk_license.txt (WIN10SDK.RTM.AUG_2018; applicability review pending)"),
 }
 BLOCKED = "REVIEW_REQUIRED_NOT_AUTHORIZED"
 
@@ -74,6 +82,16 @@ def verify(root, stage):
             raise LegalEvidenceError("invalid source encoding: " + sid) from exc
         if git_blob_sha1(payload) != expected_blob:
             raise LegalEvidenceError("actual license/NOTICE differs from upstream tagged blob: " + sid)
+        if sid == "MICROSOFT_DOTNET_LIBRARY_LICENSE":
+            if (b"MICROSOFT .NET LIBRARY" not in payload or
+                    b"DISTRIBUTABLE CODE" not in payload or
+                    b"Distribution Requirements" not in payload):
+                raise LegalEvidenceError("Microsoft .NET Library terms are incomplete")
+        if sid == "WINDOWS_SDK_D3DCOMPILER_LICENSE":
+            if (b"MICROSOFT WINDOWS SOFTWARE DEVELOPMENT KIT" not in payload or
+                    b"REDIST.TXT" not in payload or
+                    b"Distribution Requirements" not in payload):
+                raise LegalEvidenceError("Windows SDK distribution terms are incomplete")
         prepared.append((sid, payload, upstream, expected_blob))
 
     stage.mkdir(parents=True, exist_ok=False)
