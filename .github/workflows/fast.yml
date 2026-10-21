@@ -53,6 +53,9 @@ jobs:
       - name: Assert FULL artifact and public release gates stay closed
         shell: pwsh
         run: python scripts/verify-public-artifact-hold.py
+      - name: Reject synthetic owner/private draft upload gate bypasses
+        shell: pwsh
+        run: '& ./scripts/Upload-OwnerPrivateDraft.ps1 -SelfTest'
       - name: Restore locked dependency graph
         shell: pwsh
         run: |
