@@ -271,6 +271,7 @@ def correlate_exact_sources(inventory, source_roots):
                     "UNMATCHED_REQUIRES_REVIEW")
         counts[decision] += 1
         evidence.append(dict(name=item["name"], status=decision,
+                             licenseReview=item["licenseReview"],
                              possibleSources=[dict(sourceId=i, relativePath=p)
                                               for i, p in candidates]))
     evidence.sort(key=lambda x: x["name"].casefold())
@@ -333,6 +334,10 @@ def selftest():
             obj, ["NETCORE_RUNTIME_10.0.13=" + str(source_root)])
         assert evidence["counts"]["MATCHED_EXACT_RAW_BYTES"] == 1
         assert evidence["counts"]["UNMATCHED_REQUIRES_REVIEW"] == 4
+        gaps = [x for x in evidence["components"]
+                if x["status"] != "MATCHED_EXACT_RAW_BYTES"]
+        assert {x["name"] for x in gaps} == set(base[1:])
+        assert all(x["licenseReview"] != "DISTRIBUTION_APPROVED" for x in gaps)
         core = next(x for x in evidence["components"]
                     if x["name"] == "System.Private.CoreLib.dll")
         assert core["possibleSources"] == [
@@ -443,6 +448,20 @@ def main():
     result = inspect(a.exe, a.publish_dir)
     if a.source_root:
         result["sourceByteEvidence"] = correlate_exact_sources(result, a.source_root)
+        # Source origin is not equivalent to redistribution/license clearance.
+        # These are sanitized original single-file manifest member names, not
+        # machine/user paths. Surface exact unmatched members from the real
+        # Windows publish so that follow-up investigations are falsifiable.
+        unresolved = [component for component in
+                      result["sourceByteEvidence"]["components"]
+                      if component["status"] != "MATCHED_EXACT_RAW_BYTES"]
+        print("MYTAGSYNC_SOURCE_BYTE_UNRESOLVED_COUNT=" + str(len(unresolved)))
+        for component in unresolved:
+            print("MYTAGSYNC_SOURCE_BYTE_UNRESOLVED_COMPONENT="
+                  + json.dumps(dict(name=component["name"],
+                                    sourceStatus=component["status"],
+                                    licenseReview=component["licenseReview"]),
+                               ensure_ascii=True, sort_keys=True))
     a.output.parent.mkdir(parents=True, exist_ok=True)
     a.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print("MYTAGSYNC_REAL_BUNDLE_MANIFEST_AUDIT=PASS "
