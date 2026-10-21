@@ -32,6 +32,11 @@ REQUIREMENTS = {
     "WINDOWS_SDK_D3DCOMPILER": ("WINDOWS_SDK_D3DCOMPILER_LICENSE",),
     "SQLITE3MC_MIT": ("SQLITE3MC_LIB_2_4_0_LICENSE",),
     "SQLITEPCLRAW_APACHE_2": ("SQLITEPCLRAW_CORE_3_0_2_LICENSE",),
+    # Conservative union: bundled Batteries implementation + packaging wrapper
+    # each needs human copyright/license applicability review.
+    "SQLITEPCLRAW_BATTERIES_BUNDLE": (
+        "SQLITEPCLRAW_CORE_3_0_2_LICENSE",
+        "SQLITE3MC_NUGET_2_4_0_LICENSE"),
     "MICROSOFT_SQLITE_NUGET_MIT": ("MICROSOFT_SQLITE_CORE_10_0_13_LICENSE",),
 }
 MICROSOFT_RUNTIME_CATEGORIES = {
@@ -64,6 +69,9 @@ FAMILY_ORIGIN_GROUPS = {
     "WINDOWS_SDK_D3DCOMPILER": {"WINDOWSDESKTOP"},
     "SQLITE3MC_MIT": {"SQLITE3MC"},
     "SQLITEPCLRAW_APACHE_2": {"SQLITEPCLRAW"},
+    # Batteries_V2 is actually staged by SQLite3MC.PCLRaw.bundle 2.4.0,
+    # not by the SQLitePCLRaw.core package. Do NOT generalize this alias.
+    "SQLITEPCLRAW_BATTERIES_BUNDLE": {"SQLITE3MC"},
     "MICROSOFT_SQLITE_NUGET_MIT": {"MICROSOFT_SQLITE"},
 }
 
@@ -75,6 +83,9 @@ def require_compatible_origins(family, origins, name):
     for origin in origins:
         require(ORIGIN_GROUPS.get(origin) in allowed,
                 "origin package contradicts license family: " + name)
+        if family == "SQLITEPCLRAW_BATTERIES_BUNDLE":
+            require(origin == "SQLITE3MC_BUNDLE_2.4.0",
+                    "Batteries DLL unexpectedly sourced from another package")
 
 class CoverageError(ValueError):
     pass
@@ -138,6 +149,10 @@ def family_for(member, candidate_sources):
         require(category == "MICROSOFT_COMPONENT_LICENSE_REVIEW",
                 "known Microsoft assembly changed legal category")
         return exact_library_families[canonical_name]
+    if member["name"].casefold() == "sqlitepclraw.batteries_v2.dll":
+        require(category == "LOCKED_NUGET_SQLITEPCLRAW_ATTRIBUTION_PENDING",
+                "bundled Batteries DLL changed expected attribution category")
+        return "SQLITEPCLRAW_BATTERIES_BUNDLE"
     if category == "MICROSOFT_WINDOWS_SDK_LICENSE_REVIEW":
         return "WINDOWS_SDK_D3DCOMPILER"
     if category == "MICROSOFT_DOTNET_LIBRARY_LICENSE_REVIEW":
@@ -289,6 +304,9 @@ def selftest():
          "SQLITEPCLRAW_CORE_3.0.2"),
         ("Microsoft.Data.Sqlite.dll", "MICROSOFT_COMPONENT_LICENSE_REVIEW",
          "MICROSOFT_SQLITE_CORE_10.0.13"),
+        ("SQLitePCLRaw.batteries_v2.dll",
+         "LOCKED_NUGET_SQLITEPCLRAW_ATTRIBUTION_PENDING",
+         "SQLITE3MC_BUNDLE_2.4.0"),
     ]
     entries = [member(n, k) for n, k, _ in samples]
     entries += [member(name, category) for name, category in app]
@@ -365,6 +383,12 @@ def selftest():
         "possibleSources"][0].update(sourceId="SQLITEPCLRAW_CORE_3.0.2"))
     bad(lambda b, s: b["sourceByteEvidence"]["components"][0][
         "possibleSources"][0].update(sourceId="UNKNOWN_PACK_1.2.3"))
+    # Only the specific Batteries_V2 DLL may be accepted from the bundle,
+    # and its wrapper+PCLRaw notice sources cannot be silently dropped.
+    bad(lambda b, s: b["sourceByteEvidence"]["components"][5][
+        "possibleSources"][0].update(sourceId="SQLITE3MC_LIB_2.4.0"))
+    bad(lambda b, s: b["embeddedFiles"][5].update(
+        name="SQLitePCLRaw.batteries_v3.dll"))
     bad(lambda b, s: b["sourceByteEvidence"]["components"][0][
         "possibleSources"].append(dict(sourceId="SQLITE3MC_LIB_2.4.0",
                                       relativePath="System.Private.CoreLib.dll")))
