@@ -371,6 +371,47 @@ continues to say `REVIEW_REQUIRED_NOT_AUTHORIZED` and
   behavior and deletion. The current public artifacts and release
   workflows remain disabled.
 
+## Complete original Microsoft license texts captured — applicability still unapproved
+
+Two complete original Microsoft-owned files are now preserved byte-exactly
+alongside the previously verified SQLite/MIT/Apache source material:
+
+| Source-ID required by 388-member notice matrix | Complete official source | Git blob SHA-1 (source identity only) |
+| --- | --- | --- |
+| `MICROSOFT_DOTNET_LIBRARY_LICENSE` | `dotnet/SqlClient:NOTICE.txt` containing the entire Microsoft .NET Library License for its native SNI components | `0b936c6bb60efa99c0c1e4c853cc516eb3f7835b` |
+| `WINDOWS_SDK_D3DCOMPILER_LICENSE` | `microsoft/win32metadata:licenses/sdk_license.txt`, the complete Windows 10 SDK terms, labeled `WIN10SDK.RTM.AUG_2018_en-US` | `efaf451b29e15921362cdb5888da9ee8f67acd1b` |
+
+The official [current .NET Library terms](https://dotnet.microsoft.com/en-us/dotnet_library_license.htm)
+and [Microsoft Windows SDK terms](https://learn.microsoft.com/en-us/legal/windows-sdk/license)
+are linked independently and should be compared **by a human** before
+any distribution. The first Git-hosted source is from the **SqlClient**
+project, not itself an attestation that all .NET 10.0.13 WindowsDesktop
+native runtime distribution conditions have been met. The Windows SDK
+source identifies an **August 2018** license, not proof that exactly
+that SDK build's agreement applies to WPF `D3DCompiler_47_cor3.dll`
+within .NET 10.0.13. Git blob identity proves fidelity of original
+source bytes, **not** legal applicability or a Microsoft signature.
+
+Windows FAST and FULL reject any mutation of these two complete files,
+and FULL requires their exact bytes, Git original identities and
+SHA-256 inside the preliminary `NOTICE-SOURCES-UNREVIEWED` folder.
+The 388-member coverage matrix can now report **zero missing *source
+text IDs*** if every input matches; that number should **never**
+be read as zero missing copyright/redistribution obligations.
+The actual redistribution-terms hold is independent and remains
+`completeness=NOT_ESTABLISHED`,
+`copyrightAndLicenseApplicability=HUMAN_REVIEW_PENDING` and
+`distributionLicenseStatus=REVIEW_REQUIRED_NOT_AUTHORIZED`.
+
+Outstanding before handoff: exact current Microsoft SDK REDIST
+applicability/terms and user/distributor agreement, .NET Library
+end-user protections/indemnity obligations, the relevant complete
+ThirdPartyNotices, product copyright/licensing provenance,
+and a separately verified owner-only delivery channel.
+Source capture does **not** lift the intentionally disabled public
+GitHub artifact upload, release/promotion, or the prohibition on
+real rekordbox/foobar/audio/tag/CUE writes.
+
 ## What is still needed before *any* candidate publication
 
 1. **Published file-by-file component manifest.** Identify the *actual* files in the sealed self-contained ZIP, including transitive assemblies, native `sqlite3mc` code and self-contained .NET/WindowsDesktop runtime files. A NuGet package list alone is insufficient to establish the exact contents.
