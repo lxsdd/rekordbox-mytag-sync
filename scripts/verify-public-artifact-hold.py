@@ -206,7 +206,9 @@ _OWNER_SCRIPT_REQUIRED = (
     "Invoke-RestMethod -Method Post -Uri \"$api/releases\"",
     "if ($release.draft -ne $true",
     "if ($final.draft -ne $true",
-    "if ([int]$anonymous.StatusCode -ne 404)",
+    "if ([int]$response.StatusCode -ne 404)",
+    "PRIVATE_DRAFT_PREUPLOAD_ANONYMOUS_DENY=PASS",
+    "Assert-Anonymous404 ([string]$asset.browser_download_url)",
 )
 for required in _OWNER_REQUIRED:
     if required not in _OWNER_TEXT:
@@ -214,6 +216,19 @@ for required in _OWNER_REQUIRED:
 for required in _OWNER_SCRIPT_REQUIRED:
     if required not in _OWNER_SCRIPT:
         sys.exit("FAIL private draft endpoint/sha/privacy/terms boundary missing: " + required)
+# The new draft's anonymous denial MUST precede the very first binary
+# upload. Checking only after upload could already expose a real executable.
+_preupload = _OWNER_SCRIPT.find("Assert-Anonymous404 ([string]$release.html_url)")
+_transfer = _OWNER_SCRIPT.find("Invoke-RestMethod -Method Post -Uri $upload")
+if not (0 <= _preupload < _transfer):
+    sys.exit("FAIL: fresh Draft anonymity was not checked BEFORE binary upload")
+if _OWNER_SCRIPT.find("Assert-Anonymous404 ([string]$asset.browser_download_url)") < _transfer:
+    sys.exit("FAIL: individual uploaded asset privacy check missing after upload")
+_mutated_script = _OWNER_SCRIPT.replace(
+    "Assert-Anonymous404 ([string]$release.html_url)", "# omitted before upload", 1)
+if "Assert-Anonymous404 ([string]$release.html_url)" in _mutated_script:
+    sys.exit("FAIL: owner pre-upload negative regression did not remove its guard")
+
 if ("actions/upload-artifact@" in _OWNER_TEXT or
     "gh release create" in _OWNER_TEXT or
     "gh release edit" in _OWNER_TEXT or
