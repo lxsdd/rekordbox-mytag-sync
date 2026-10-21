@@ -109,6 +109,11 @@ _ALLOWED_WORKFLOWS = {
     "promote-release.yml": (
         {"contents": "write", "actions": "read"},
         {"workflow_dispatch"}),
+    # Exceptional, single-owner manual transfer. No push/PR/workflow_run
+    # trigger and no Actions artifacts: upload ONLY through confirmed Draft.
+    "owner-private-readonly.yml": (
+        {"contents": "write", "actions": "read"},
+        {"workflow_dispatch"}),
 }
 
 
@@ -170,6 +175,60 @@ if _PRIV_ERRORS:
     sys.exit("FAIL MyTagSync workflow-token boundary:\n- " +
              "\n- ".join(_PRIV_ERRORS))
 
+
+
+# A manually dispatched write token is only tolerated for this very specific
+# SHA-bound, owner-only, draft-only transfer. Fail closed on changes to the
+# authenticated identity, source, legal confirmation, or draft upload path.
+_OWNER_NAME = "owner-private-readonly.yml"
+_OWNER_TEXT = _D_FILES[_OWNER_NAME]
+_OWNER_REQUIRED = (
+    "github.actor == 'lxsdd'",
+    "github.repository == 'lxsdd/rekordbox-mytag-sync'",
+    "github.ref == 'refs/heads/main'",
+    "Verify owner authorization and previous SHA-exact green FAST/FULL",
+    "PRIVATE_HANDOFF_QUALIFICATION=PASS",
+    "scripts/Upload-OwnerPrivateDraft.ps1",
+    "FULL-QUALIFICATION.json",
+    "persist-credentials: false",
+    "EXPECTED_ZIP:",
+    "OWNER_ACK:",
+)
+_OWNER_SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts/Upload-OwnerPrivateDraft.ps1"
+_OWNER_SCRIPT = _OWNER_SCRIPT_PATH.read_text(encoding="utf-8")
+_OWNER_SCRIPT_REQUIRED = (
+    "Assert-Inputs $SourceSha $ExpectedZipSha256 $Acknowledgement",
+    "I_ACCEPT_PRIVATE_MICROSOFT_DOTNET_AND_SDK_DISTRIBUTION_DUTIES",
+    "Get-FileHash -LiteralPath $zip -Algorithm SHA256",
+    "FULL-QUALIFICATION.json",
+    "if ($main.commit.sha -cne $SourceSha)",
+    "draft=$true",
+    "Invoke-RestMethod -Method Post -Uri \"$api/releases\"",
+    "if ($release.draft -ne $true",
+    "if ($final.draft -ne $true",
+    "if ([int]$anonymous.StatusCode -ne 404)",
+)
+for required in _OWNER_REQUIRED:
+    if required not in _OWNER_TEXT:
+        sys.exit("FAIL private draft owner/SHA boundary missing: " + required)
+for required in _OWNER_SCRIPT_REQUIRED:
+    if required not in _OWNER_SCRIPT:
+        sys.exit("FAIL private draft endpoint/sha/privacy/terms boundary missing: " + required)
+if ("actions/upload-artifact@" in _OWNER_TEXT or
+    "gh release create" in _OWNER_TEXT or
+    "gh release edit" in _OWNER_TEXT or
+    "--draft=false" in _OWNER_TEXT or
+    "draft=$false" in _OWNER_SCRIPT):
+    sys.exit("FAIL private draft workflow contains public/Actions publication escape")
+for required in _OWNER_REQUIRED:
+    if required not in _OWNER_TEXT.replace(required, "", 1):
+        continue
+# This exact filename may not silently become a public workflow.
+_synthetic_owner = _OWNER_TEXT.replace("github.actor == 'lxsdd'",
+                                       "github.actor != 'lxsdd'", 1)
+if all(r in _synthetic_owner for r in _OWNER_REQUIRED):
+    sys.exit("FAIL synthetic owner-auth bypass escaped the draft gate")
+print("PASS owner-only, terms-acknowledged, version/ZIP-qualified draft upload guard")
 
 def _reject_bad_capabilities(changed):
     trial = dict(_D_FILES)
