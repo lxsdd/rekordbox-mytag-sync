@@ -298,8 +298,6 @@ def selftest():
          "NETCORE_PACK_10.0.13"),
         ("D3DCompiler_47_cor3.dll", "MICROSOFT_WINDOWS_SDK_LICENSE_REVIEW",
          "WINDOWSDESKTOP_PACK_10.0.13"),
-        ("wpfgfx_cor3.dll", "MICROSOFT_DOTNET_LIBRARY_LICENSE_REVIEW",
-         "WINDOWSDESKTOP_PACK_10.0.13"),
         ("e_sqlite3mc.dll", "THIRD_PARTY_SQLITE3MC_LICENSE_REVIEW",
          "SQLITE3MC_LIB_2.4.0"),
         ("SQLitePCLRaw.core.dll", "LOCKED_NUGET_SQLITEPCLRAW_ATTRIBUTION_PENDING",
@@ -309,6 +307,8 @@ def selftest():
         ("SQLitePCLRaw.batteries_v2.dll",
          "LOCKED_NUGET_SQLITEPCLRAW_ATTRIBUTION_PENDING",
          "SQLITE3MC_BUNDLE_2.4.0"),
+        ("wpfgfx_cor3.dll", "MICROSOFT_DOTNET_LIBRARY_LICENSE_REVIEW",
+         "WINDOWSDESKTOP_PACK_10.0.13"),
     ]
     entries = [member(n, k) for n, k, _ in samples]
     entries += [member(name, category) for name, category in app]
