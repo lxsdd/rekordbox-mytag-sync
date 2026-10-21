@@ -126,6 +126,18 @@ def family_for(member, candidate_sources):
     if member["name"] in APP_NAMES:
         require(category in APP_CATEGORIES, "altered app output attribution")
         return "APPLICATION_RIGHTS"
+    # Unlike names inferred from generic "Microsoft./System." categories,
+    # these two known sealed DLLs have distinct, verified source owners.
+    # Their rights family cannot be re-selected by spoofing a candidate ID.
+    exact_library_families = {
+        "system.private.corelib.dll": "MICROSOFT_RUNTIME",
+        "microsoft.data.sqlite.dll": "MICROSOFT_SQLITE_NUGET_MIT",
+    }
+    canonical_name = member["name"].casefold()
+    if canonical_name in exact_library_families:
+        require(category == "MICROSOFT_COMPONENT_LICENSE_REVIEW",
+                "known Microsoft assembly changed legal category")
+        return exact_library_families[canonical_name]
     if category == "MICROSOFT_WINDOWS_SDK_LICENSE_REVIEW":
         return "WINDOWS_SDK_D3DCOMPILER"
     if category == "MICROSOFT_DOTNET_LIBRARY_LICENSE_REVIEW":
