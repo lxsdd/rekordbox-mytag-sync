@@ -32,6 +32,13 @@ jobs:
       - name: Verify fail-closed per-member notice obligation coverage
         shell: pwsh
         run: python scripts/audit-notice-coverage.py --self-test
+      - name: Verify five upstream release-tagged license and NOTICE source texts
+        shell: pwsh
+        run: |
+          python scripts/verify-pinned-legal-source-texts.py --self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen legal text fixture negative tests failed.' }
+          python scripts/verify-pinned-legal-source-texts.py --source-root . --stage-dir qualification/pinned-license-source-fast --output qualification/pinned-license-manifest-fast.json
+          if ($LASTEXITCODE -ne 0) { throw 'Actual upstream-tagged legal texts differ from verified Git blobs.' }
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.402'
