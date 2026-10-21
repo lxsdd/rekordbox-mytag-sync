@@ -46,3 +46,49 @@ Die [GitHub-Releases-API](https://docs.github.com/en/rest/releases/releases) dok
 **Entscheidung 3:** Später die echte, gebündelte **Windows 11 x64 read-only-Endabnahme** auf dem eigenen DJ-Laptop; keine vorgezogenen Einzeltests.
 
 Die automatisierte Quellenprüfung bleibt `distributionLicenseStatus=REVIEW_REQUIRED_NOT_AUTHORIZED` und `completeness=NOT_ESTABLISHED`. Weder dieser Entscheidungsstand noch die laufende Dokumentationsänderung aktiviert Releases, Testuploads, App-Writes oder zusätzliche Workflows.
+
+
+## E. Nach dem bestandenen anonymen Draft-Test: tatsächlicher Einmal-Transfer per GitHub Actions
+
+**Vorbereitung durch den Entwickler:** Der getrennte Workflow
+[`OWNER-PRIVATE-READONLY-CANDIDATE`](https://github.com/lxsdd/rekordbox-mytag-sync/actions/workflows/owner-private-readonly.yml)
+ist ausschließlich **manuell** vom Repository-Eigentümer `lxsdd` auf `main`
+auslösbar; GitHub gibt ihm für *diesen* manuellen Windows-Job den erforderlichen
+`contents: write`-Token, während FAST und FULL weiterhin ausschließlich
+lesende Rechte besitzen. Er übernimmt die schon bestehenden FULL-Prüfschritte
+(keinen unqualifizierten Schnell-Build), verwirft alle Fremd-Commits und
+verlangt drei erfolgreich durchlaufene FULL-Windows-Jobs auf exakt demselben
+aktuellen Main-SHA. GitHub-Actions-Artefakte werden **niemals** hochgeladen.
+
+Der Einmal-Lauf baut zunächst zweimal deterministisch, verifiziert die echten
+388-plus Bundle-/NOTICE-Dateien und die Read-only-WPF-Schreibsperre,
+vergleicht den **gesamten neu erstellten ZIP-SHA-256** mit dem zuvor
+protokollierten, erfolgreichen FULL-Lauf und legt **erst danach** einen neuen
+`draft=true`-Release an. In diesen werden ausschließlich ZIP,
+SHA-256-Sidecar und Qualifikations-JSON übertragen; ein öffentlicher Release
+wird weder angelegt noch veröffentlicht. Der Workflow prüft unmittelbar
+erneut `draft=true`, drei konkrete Asset-Identitäten und anonym `404` für
+Release-Seite und direkten ZIP-Download. Jede Abweichung stoppt den Vorgang.
+
+**Dein nächster notwendiger manueller Schritt, erst nach grünem aktuellem
+FAST/FULL:** Öffne den oben verlinkten Workflow und starte `Run workflow`
+mit `Branch=main`. Die vier Eingaben werden vorab hier im Chat anhand der
+konkreten GitHub-Ergebnisse genannt: `source_sha`, `full_run_id`,
+`expected_zip_sha256` und `legal_ack`.
+
+Für `legal_ack` ist ausschließlich der selbst eingetippte genaue Text
+`I_ACCEPT_PRIVATE_MICROSOFT_DOTNET_AND_SDK_DISTRIBUTION_DUTIES` zulässig.
+**Bitte nur angeben, wenn du die geltenden [Microsoft .NET Library-Bedingungen](https://dotnet.microsoft.com/en-us/dotnet_library_license.htm),
+[Windows-SDK-Vertragsbedingungen](https://learn.microsoft.com/en-us/legal/windows-sdk/license)
+und die oben erläuterten Schutz-, Copyright-, Export- und Haftungs-/Freistellungspflichten
+gelesen hast und als Weitergebender akzeptierst.** Der Assistent kann diese
+rechtsgeschäftliche Erklärung nicht für dich abgeben. Ohne sie verweigert
+der Workflow das Erstellen eines Releases.
+
+Die spätere private Draft-Löschung ist **manuell nach Download und Abnahme**
+erforderlich, weil GitHub-Drafts keine automatische Ablaufzeit besitzen.
+Der bereits getestete harmlose Draft
+`mytagsync-draft-access-test-20261021` ist separat und darf nicht
+versehentlich veröffentlicht werden; er kann nach der erfolgreichen
+Dokumentation gelöscht werden. `Apply`, `Restore`, produktive
+`master.db`-, CUE-, Musik- und Backup-Schreibzugriffe bleiben gesperrt.
