@@ -337,20 +337,55 @@ Both independently published Windows candidates must give identical
 documents. Those docs stay in `LEGAL-REVIEW-ORIGINAL-SOURCES` rather
 than being misrepresented as the required full license texts.
 
-The **two missing original legal-source IDs** are deliberately
-preserved: `MICROSOFT_DOTNET_LIBRARY_LICENSE` and
-`WINDOWS_SDK_D3DCOMPILER_LICENSE`. They are authoritative
-*agreements*, not the preceding software-source documents.
-Microsoft's [.NET Library terms](https://dotnet.microsoft.com/en-us/dotnet_library_license.htm)
-require applications (not standalone code), sufficiently protective
-end-user/distributor terms and distributor indemnification;
-the [Windows SDK terms](https://learn.microsoft.com/en-us/legal/windows-sdk/license)
-also require substantial primary functionality, end-user protections,
-valid copyright and adherence to redistribution restrictions.
-Before any private candidate delivery, these conditions and other
-third-party notices need actual human/legal review. All code
-continues to say `REVIEW_REQUIRED_NOT_AUTHORIZED` and
-`NOT_ESTABLISHED`.
+## Two Microsoft agreement originals captured — legal applicability still unproven
+
+The previously **missing source-text IDs** are now supplied using two
+complete, unmodified **Microsoft-owned Git originals** in the public
+source tree. Their exact blob hashes are frozen with the other six
+upstream legal/NOTICE sources; CI refuses any text modification and
+stages them solely as **unreviewed legal-source evidence**.
+
+| Original-source ID | Byte-exact source | Frozen Git blob |
+| --- | --- | --- |
+| `MICROSOFT_DOTNET_LIBRARY_LICENSE` | [`dotnet/SqlClient:NOTICE.txt`](https://github.com/dotnet/SqlClient/blob/main/NOTICE.txt) — this original SqlClient NOTICE contains the full Microsoft .NET Library agreement, but is **not a .NET 10.0.13 product-specific license document** | `0b936c6bb60efa99c0c1e4c853cc516eb3f7835b` |
+| `WINDOWS_SDK_D3DCOMPILER_LICENSE` | [`microsoft/win32metadata:licenses/sdk_license.txt`](https://github.com/microsoft/win32metadata/blob/main/licenses/sdk_license.txt) — full Microsoft Windows 10 SDK terms; source declares **EULAID `WIN10SDK.RTM.AUG_2018_en-US`**, not the precise SDK edition used when WPF's compiler binary was built | `efaf451b29e15921362cdb5888da9ee8f67acd1b` |
+
+**What this closes:** acquisition of the **actual full legal agreement
+text** from original Microsoft Git sources. Byte-identical copies are
+preserved under `licenses/source-texts`, and the eight-source frozen
+manifest and actual temporary Windows bundle include both (without
+publishing an executable or a ZIP). The 388-member NOTICE matrix may
+now have **zero missing source IDs**. That means only all required
+*source identifiers were captured*, **not** that distribution is permitted.
+
+**What remains:** the official current [.NET Library
+terms](https://dotnet.microsoft.com/en-us/dotnet_library_license.htm)
+and [Windows 10 SDK terms](https://learn.microsoft.com/en-us/legal/windows-sdk/license)
+must be checked against the exact Microsoft runtime/WPF 10.0.13 and
+renamed D3D compiler obtained in the locked pack, including the correct
+SDK `REDIST.TXT` edition. The original `win32metadata` text carries an
+**August 2018 EULA identifier**; the `SqlClient` NOTICE covers a
+distinct library's own redistributables. Their agreement-family and
+textual overlap is evidence, **not version/license applicability
+proof**, nor evidence of downstream/end-user terms, indemnity,
+copyright notices, permitted private handoff, or owner's legal
+acceptance. Do not silently treat a zero missing-source count as
+`completeness=ESTABLISHED`.
+
+The original-license text capture is verified by exact Git blob identity
+and SHA-256 in `verify-pinned-legal-source-texts.py`, cross-checked
+against the staged `NOTICE-SOURCES-UNREVIEWED` manifest. The
+source-specific `audit-microsoft-native-redist.py` report continues
+to set `agreementVersionApplicability=HUMAN_REVIEW_PENDING` and
+`copyrightAndEndUserTerms=HUMAN_REVIEW_PENDING`.
+
+**Hard gate persists:** `distributionLicenseStatus=REVIEW_REQUIRED_NOT_AUTHORIZED`,
+`completeness=NOT_ESTABLISHED`; no uploads, public Releases, actual
+DB writes, or personal library data. Consent to Microsoft's software
+terms or redistribution contract **cannot be given automatically by CI
+or ChatGPT**. Before transferring a candidate, the distributor/owner
+must independently assess the applicable obligations and establish a
+permitted intended-recipient-only channel.
 
 ### Preliminary delivery-channel comparison (no binary delivery authorized)
 
