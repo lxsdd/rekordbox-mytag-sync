@@ -207,6 +207,29 @@ Windows SDK license, MIT and Apache notices. **Do not lift the public
 upload/release or production database write holds merely because these
 preliminary files are present.**
 
+## Exact unresolved sealed-bundle member diagnostics
+
+The real Windows FULL byte-origin audit now prints a small sanitized
+`MYTAGSYNC_SOURCE_BYTE_UNRESOLVED_COMPONENT` record for every **actual**
+bundle file whose stored bytes cannot yet be matched exactly to the
+version-pinned .NET/WindowsDesktop or locked NuGet inputs, including its
+source status and still-pending license-review category. This is limited to
+single-file manifest **relative member names**; no local source-directory or
+personal music paths are printed. The validator counts every embedded/loose
+member and fails closed if the origin result omits one. The source search now
+also checks the explicitly locked `SQLite3MC.PCLRaw.bundle 2.4.0` package,
+in addition to its lib/provider packages. Synthetic tests require unmatched
+items to retain their review classifications.
+
+Source correlation is necessarily different from compliant redistribution.
+For example, the tool's own generated assembly or .NET runtimeconfig may
+remain unmatched to an external NuGet package and should instead be assigned
+to an accurately supported application/build-output category. Never silently
+relabel an unknown **native or third-party binary** as first-party to make
+the match count 100%. The actual unaccounted-for names from Windows FULL
+must determine the next specific fix; all permissions and notice obligations
+remain under review and the public distribution gate stays disabled.
+
 ## What is still needed before *any* candidate publication
 
 1. **Published file-by-file component manifest.** Identify the *actual* files in the sealed self-contained ZIP, including transitive assemblies, native `sqlite3mc` code and self-contained .NET/WindowsDesktop runtime files. A NuGet package list alone is insufficient to establish the exact contents.
