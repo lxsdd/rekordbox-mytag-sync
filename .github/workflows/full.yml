@@ -377,6 +377,12 @@ jobs:
               $a.sourceByteEvidence.pinnedSourceIds.Count -eq 0) {
             throw 'Pinned source-byte evidence is missing or incorrectly approves distribution.'
           }
+          if ($a.applicationOutputEvidence.status -cne 'APPLICATION_OUTPUT_IDENTITY_REVIEW_REQUIRED' -or
+              $a.applicationOutputEvidence.distributionLicenseStatus -cne 'REVIEW_REQUIRED_NOT_AUTHORIZED' -or
+              $a.applicationOutputEvidence.unexpectedUnmatchedCount -ne 0 -or
+              @($a.applicationOutputEvidence.applicationOutputs).Count -ne 3) {
+            throw 'Unexpected unmatched sealed binary or missing app-output evidence.'
+          }
           Write-Host "Windows embedded component inventory PASS ($($a.embeddedFileCount) entries)."
           Write-Host "Exact RAW source matches=$($a.sourceByteEvidence.counts.MATCHED_EXACT_RAW_BYTES); "
           Write-Host "Unmatched=$($a.sourceByteEvidence.counts.UNMATCHED_REQUIRES_REVIEW); "
