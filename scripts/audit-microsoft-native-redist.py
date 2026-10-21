@@ -133,6 +133,7 @@ def inspect(bundle, originals):
         item = indexed[filename]
         origin = exact[filename]
         require(item["licenseReview"] == "MICROSOFT_DOTNET_LIBRARY_LICENSE_REVIEW"
+                and origin["licenseReview"] == item["licenseReview"]
                 and origin["status"] == "MATCHED_EXACT_RAW_BYTES",
                 "Windows native .NET Library file incorrectly treated as MIT")
         labels = sorted({c["sourceId"] for c in origin.get("possibleSources", [])})
@@ -245,6 +246,13 @@ def selftest(root):
     reject(lambda b: b["embeddedFiles"].pop())
     reject(lambda b: b["embeddedFiles"][-1].update(
         licenseReview="MICROSOFT_COMPONENT_LICENSE_REVIEW"))
+    # A source-origin ledger that disagrees with the sealed DLL's legal
+    # family is not valid provenance, even when its raw bytes/source ID match.
+    # This regression used to pass because only the sealed member's category
+    # was checked for native .NET Library exceptions.
+    reject(lambda b: next(x for x in b["sourceByteEvidence"]["components"]
+                          if x["name"] == "wpfgfx_cor3.dll").update(
+        licenseReview="MICROSOFT_WINDOWS_SDK_LICENSE_REVIEW"))
     reject(lambda b: b["sourceByteEvidence"]["components"][0].update(
         status="UNMATCHED_REQUIRES_REVIEW"))
     reject(lambda b: b["sourceByteEvidence"]["components"][0]["possibleSources"][0].update(
