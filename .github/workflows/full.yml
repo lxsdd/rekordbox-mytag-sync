@@ -479,6 +479,31 @@ jobs:
           }
           Write-Host "Actual sealed notice coverage=$($coverage.coveredMemberCount) components;"
           Write-Host "missing notice-source identifiers=$(@($coverage.missingNoticeSourceIds).Count); distribution BLOCKED."
+      - name: Qualify exact WPF native compiler rename and .NET Library origin evidence
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/audit-microsoft-native-redist.py --self-test --source-root .
+          if ($LASTEXITCODE -ne 0) { throw 'Microsoft SDK/WPF native source negative tests failed.' }
+          python scripts/audit-microsoft-native-redist.py --source-root . --bundle qualification/bundle-audit-a.json --output qualification/microsoft-native-redist-a.json
+          if ($LASTEXITCODE -ne 0) { throw 'Actual Windows A native redist review failed.' }
+          python scripts/audit-microsoft-native-redist.py --source-root . --bundle qualification/bundle-audit-b.json --output qualification/microsoft-native-redist-b.json
+          if ($LASTEXITCODE -ne 0) { throw 'Actual Windows B native redist review failed.' }
+          if ((Get-Content qualification/microsoft-native-redist-a.json -Raw) -cne
+              (Get-Content qualification/microsoft-native-redist-b.json -Raw)) {
+            throw 'Two deterministic publishes disagree on original Microsoft native licensing evidence.'
+          }
+          $r = Get-Content qualification/microsoft-native-redist-a.json -Raw | ConvertFrom-Json
+          if ($r.distributionLicenseStatus -cne 'REVIEW_REQUIRED_NOT_AUTHORIZED' -or
+              $r.completeness -cne 'NOT_ESTABLISHED' -or
+              $r.copyrightAndEndUserTerms -cne 'HUMAN_REVIEW_PENDING' -or
+              $r.observedBundleMembers -ne 388 -or
+              @($r.originEvidence).Count -ne 2 -or
+              @($r.missingFullLicenseSourceIds).Count -ne 2) {
+            throw 'Microsoft redist technical evidence incorrectly grants legal approval.'
+          }
+          Write-Host "Microsoft native-WPF source relationship PASS; 388 sealed members; final end-user/SDK redist rights still BLOCKED."
+
       - name: Smoke-test published WPF application
         shell: pwsh
         run: |
@@ -511,6 +536,10 @@ jobs:
           Copy-Item "qualification/notice-source-manifest.json" (Join-Path $stage "notice-source-manifest.json")
           Copy-Item "qualification/pinned-license-source-manifest.json" (Join-Path $stage "pinned-license-source-manifest.json")
           Copy-Item "qualification/notice-coverage-report.json" (Join-Path $stage "notice-coverage-report.json")
+          Copy-Item "qualification/microsoft-native-redist-a.json" (Join-Path $stage "microsoft-native-redist-evidence.json")
+          New-Item -ItemType Directory -Force (Join-Path $stage "LEGAL-REVIEW-ORIGINAL-SOURCES") | Out-Null
+          Copy-Item "licenses/source-texts/WPF-v10.0.13-redistributables.md" (Join-Path $stage "LEGAL-REVIEW-ORIGINAL-SOURCES/WPF-v10.0.13-redistributables.md")
+          Copy-Item "licenses/source-texts/dotnet-core-windows-license-map.md" (Join-Path $stage "LEGAL-REVIEW-ORIGINAL-SOURCES/dotnet-core-windows-license-map.md")
           Copy-Item "qualification/notice-source-texts" (Join-Path $stage "NOTICE-SOURCES-UNREVIEWED") -Recurse
           Copy-Item "qualification/publish-sha256.txt" $stage
           Copy-Item "src/RekordboxMyTagSync/packages.lock.json" (Join-Path $stage "product-packages.lock.json")
@@ -672,6 +701,9 @@ jobs:
               "notice-source-manifest.json",
               "pinned-license-source-manifest.json",
               "notice-coverage-report.json",
+              "microsoft-native-redist-evidence.json",
+              "LEGAL-REVIEW-ORIGINAL-SOURCES/WPF-v10.0.13-redistributables.md",
+              "LEGAL-REVIEW-ORIGINAL-SOURCES/dotnet-core-windows-license-map.md",
               "NOTICE-SOURCES-UNREVIEWED/SQLITE3MC_LIB_2_4_0_LICENSE.txt",
               "NOTICE-SOURCES-UNREVIEWED/SQLITE3MC_NUGET_2_4_0_LICENSE.txt",
               "NOTICE-SOURCES-UNREVIEWED/SQLITEPCLRAW_CORE_3_0_2_LICENSE.txt",
