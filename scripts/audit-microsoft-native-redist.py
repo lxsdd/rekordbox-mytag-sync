@@ -152,6 +152,16 @@ def inspect(bundle, originals):
     # The existing sealed-bundle audit requires the managed CoreLib identity.
     require("system.private.corelib.dll" in indexed,
             "CoreLib runtime identity missing from sealed member inventory")
+    corelib = indexed["system.private.corelib.dll"]
+    corelib_origin = exact["system.private.corelib.dll"]
+    require(valid_sha(corelib.get("onDiskSha256", corelib.get("sha256"))),
+            "sealed CoreLib runtime member lacks valid SHA-256")
+    require(corelib_origin.get("status") == "MATCHED_EXACT_RAW_BYTES",
+            "CoreLib runtime origin not verified against pinned source bytes")
+    corelib_sources = {c["sourceId"] for c in
+                       corelib_origin.get("possibleSources", [])}
+    require(corelib_sources and corelib_sources <= LIBRARY_PACKS,
+            "sealed CoreLib runtime origin outside .NET 10.0.13 packs")
     require(bool(observed_native &
                  {"wpfgfx_cor3.dll", "presentationnative_cor3.dll"}),
             "WPF native renderer/interop evidence missing; observed=" +
