@@ -423,7 +423,8 @@ jobs:
             @{id='SQLITE3MC_NUGET_2_4_0_LICENSE'; path='licenses/source-texts/SQLite3MC-NuGet-v2.4.0-LICENSE.txt'},
             @{id='SQLITEPCLRAW_CORE_3_0_2_LICENSE'; path='licenses/source-texts/SQLitePCLRaw-v3.0.2-LICENSE.txt'},
             @{id='SQLITEPCLRAW_CORE_3_0_2_NOTICE'; path='licenses/source-texts/SQLitePCLRaw-v3.0.2-NOTICE.txt'},
-            @{id='DOTNET_CORE_MIT_LICENSE'; path='licenses/source-texts/dotnet-core-MIT-LICENSE.txt'}
+            @{id='DOTNET_CORE_MIT_LICENSE'; path='licenses/source-texts/dotnet-core-MIT-LICENSE.txt'},
+            @{id='MICROSOFT_SQLITE_CORE_10_0_13_LICENSE'; path='licenses/source-texts/Microsoft-Data-Sqlite-Core-v10.0.13-MIT-LICENSE.txt'}
           )
           $sourceArgs = @()
           $required = @('DOTNET_INSTALLATION_LICENSE', 'DOTNET_INSTALLATION_THIRDPARTY')
@@ -447,7 +448,7 @@ jobs:
           $pinned = Get-Content qualification/pinned-license-source-manifest.json -Raw | ConvertFrom-Json
           if ($pinned.completeness -cne 'NOT_ESTABLISHED' -or
               $pinned.distributionLicenseStatus -cne 'REVIEW_REQUIRED_NOT_AUTHORIZED' -or
-              @($pinned.frozenSourceTexts).Count -ne 5) {
+              @($pinned.frozenSourceTexts).Count -ne 6) {
             throw 'Frozen upstream notice-source manifest claims unauthorized clearance.'
           }
           foreach ($item in @($pinned.frozenSourceTexts)) {
@@ -457,7 +458,7 @@ jobs:
               throw "Original legal source bytes differ from staged notice manifest for $($item.sourceId)"
             }
           }
-          Write-Host "Five release-tagged license and NOTICE source texts verified; all legal terms still REQUIRE REVIEW."
+          Write-Host "Six pinned MIT/Apache license and NOTICE source texts verified; all legal terms still REQUIRE REVIEW."
           Write-Host "Notice sources preserved=$(@($report.sourceTexts).Count); complete license review remains BLOCKED."
 
       - name: Validate sealed member-to-notice obligations (unreviewed; no release permission)
@@ -676,6 +677,7 @@ jobs:
               "NOTICE-SOURCES-UNREVIEWED/SQLITEPCLRAW_CORE_3_0_2_LICENSE.txt",
               "NOTICE-SOURCES-UNREVIEWED/SQLITEPCLRAW_CORE_3_0_2_NOTICE.txt",
               "NOTICE-SOURCES-UNREVIEWED/DOTNET_CORE_MIT_LICENSE.txt",
+              "NOTICE-SOURCES-UNREVIEWED/MICROSOFT_SQLITE_CORE_10_0_13_LICENSE.txt",
               "NOTICE-SOURCES-UNREVIEWED/DOTNET_INSTALLATION_LICENSE.txt",
               "NOTICE-SOURCES-UNREVIEWED/DOTNET_INSTALLATION_THIRDPARTY.txt",
               "publish-sha256.txt",
