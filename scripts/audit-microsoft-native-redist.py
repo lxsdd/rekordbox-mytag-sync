@@ -141,15 +141,18 @@ def inspect(bundle, originals):
         digest = item.get("onDiskSha256", item.get("sha256"))
         require(valid_sha(digest), "no sealed SHA-256 for .NET Library native DLL")
         natives.append(dict(name=item["name"], sealedSha256=digest, pinnedSources=labels))
-    # WPF publishes may omit an unused native WPF satellite; do not demand
-    # every licensed runtime exception as if the bundle had to ship all of them.
-    # Demand the actual managed CLR runtime plus at least one WPF-native
-    # rendering/interop member. Every native that DOES ship is still checked
-    # byte-for-byte for its source and correct Microsoft Library review class.
+    # Single-file .NET 10 can carry the native CLR runtime as prelinked
+    # host payload rather than a separately manifest-indexed coreclr.dll.
+    # Never infer that this eliminates .NET Library terms: the report's
+    # container-wide singleFileHostLicenseTerms explicitly remains pending.
+    # Enforce the WPF renderer/interop evidence that DOES occur as individual
+    # FileEntries, and check every listed Library-native module's actual
+    # byte-origin and license family above. Other sealed foreign modules are
+    # already independently rejected by the comprehensive bundle auditor.
     observed_native = {v["name"].casefold() for v in natives}
-    require("coreclr.dll" in observed_native and
-            bool(observed_native & {"wpfgfx_cor3.dll", "presentationnative_cor3.dll"}),
-            "core runtime/WPF native evidence missing; observed=" +
+    require(bool(observed_native & {"wpfgfx_cor3.dll",
+                                   "presentationnative_cor3.dll"}),
+            "no source-attested native WPF renderer/interop; observed=" +
             ",".join(sorted(observed_native)))
     return dict(schemaVersion=1,
                 observedBundleMembers=len(items),
@@ -204,6 +207,20 @@ def selftest(root):
         if x["name"] != "presentationnative_cor3.dll"]
     optional["embeddedFileCount"] -= 1
     assert inspect(optional, original)["distributionLicenseStatus"] == BLOCKED
+    # The real Windows single-file manifest does not expose a separate
+    # coreclr.dll, even though core runtime / host distribution rights still
+    # apply to the packaged executable. This is not a missing-license waiver.
+    prelinked = json.loads(json.dumps(bundle))
+    prelinked["embeddedFiles"] = [x for x in prelinked["embeddedFiles"]
+                                   if x["name"] != "coreclr.dll"]
+    prelinked["sourceByteEvidence"]["components"] = [
+        x for x in prelinked["sourceByteEvidence"]["components"]
+        if x["name"] != "coreclr.dll"]
+    prelinked["embeddedFileCount"] -= 1
+    report = inspect(prelinked, original)
+    assert report["singleFileHostLicenseTerms"] == (
+        "DOTNET_LIBRARY_MANUAL_END_USER_REVIEW_PENDING")
+    assert report["distributionLicenseStatus"] == BLOCKED
     # Absence of ALL native WPF renderer/interop is a real negative case.
     optional["embeddedFiles"] = [x for x in optional["embeddedFiles"]
                                   if x["name"] != "wpfgfx_cor3.dll"]
