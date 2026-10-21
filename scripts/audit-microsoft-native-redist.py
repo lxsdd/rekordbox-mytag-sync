@@ -169,8 +169,13 @@ def inspect(bundle, originals):
                 netLibraryBinaryExceptions=natives,
                 singleFileHostLicenseTerms="DOTNET_LIBRARY_MANUAL_END_USER_REVIEW_PENDING",
                 termsUrl="https://dotnet.microsoft.com/en-us/dotnet_library_license.htm",
-                missingFullLicenseSourceIds=["MICROSOFT_DOTNET_LIBRARY_LICENSE",
-                                             "WINDOWS_SDK_D3DCOMPILER_LICENSE"],
+                # Originals are now staged as review *candidates* and
+                # independently frozen by verify-pinned-legal-source-texts.
+                # No proof of applicable exact WPF/SDK edition, end-user
+                # contract, copyright satisfaction or distributor acceptance.
+                capturedAgreementSourceIds=["MICROSOFT_DOTNET_LIBRARY_LICENSE",
+                                            "WINDOWS_SDK_D3DCOMPILER_LICENSE"],
+                agreementVersionApplicability="HUMAN_REVIEW_PENDING",
                 copyrightAndEndUserTerms="HUMAN_REVIEW_PENDING",
                 completeness="NOT_ESTABLISHED",
                 distributionLicenseStatus=BLOCKED)
@@ -197,6 +202,9 @@ def selftest(root):
                   sourceByteEvidence=dict(status=BLOCKED, components=proofs))
     assert inspect(bundle, original)["windowsSdkBinary"]["name"] == COMPILER
     assert inspect(bundle, original)["completeness"] == "NOT_ESTABLISHED"
+    assert inspect(bundle, original)["agreementVersionApplicability"] == "HUMAN_REVIEW_PENDING"
+    assert inspect(bundle, original)["capturedAgreementSourceIds"] == [
+        "MICROSOFT_DOTNET_LIBRARY_LICENSE", "WINDOWS_SDK_D3DCOMPILER_LICENSE"]
     # Explicitly prove that the optional PresentationNative member may be
     # absent from the actual (trimmed/version-specific) publish manifest,
     # provided coreclr and a WPF renderer remain exact-source verified.
