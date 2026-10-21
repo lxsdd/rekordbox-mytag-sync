@@ -35,6 +35,10 @@ SOURCE = {
         "licenses/source-texts/dotnet-core-MIT-LICENSE.txt",
         "984713a49622a96da110443c15477613bc12656b",
         "dotnet/core:LICENSE.TXT (source blob frozen; branch tag not fixed)"),
+    "MICROSOFT_SQLITE_CORE_10_0_13_LICENSE": (
+        "licenses/source-texts/Microsoft-Data-Sqlite-Core-v10.0.13-MIT-LICENSE.txt",
+        "a616ed188dfce68ee308f674350ad242d8588c2b",
+        "dotnet/efcore@v10.0.13:LICENSE.txt"),
 }
 BLOCKED = "REVIEW_REQUIRED_NOT_AUTHORIZED"
 
