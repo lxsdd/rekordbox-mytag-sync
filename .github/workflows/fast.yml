@@ -121,6 +121,20 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'PR-only actual Windows publish failed.' }
             python scripts/audit-single-file-bundle.py --exe (Join-Path $publishRoot 'rekordbox MyTagSync.exe') --publish-dir $publishRoot --output (Join-Path $env:RUNNER_TEMP 'mytagsync-bundle-pr.json')
             if ($LASTEXITCODE -ne 0) { throw 'PR-only actual Windows embedded + sidecar inventory failed.' }
+            $audit = Get-Content (Join-Path $env:RUNNER_TEMP 'mytagsync-bundle-pr.json') -Raw | ConvertFrom-Json
+            if ($audit.distributionLicenseStatus -cne 'REVIEW_REQUIRED_NOT_AUTHORIZED') {
+              throw 'Audit may never authorize redistribution.'
+            }
+            # Audit already bounds and normalizes embedded relative filenames.
+            # Do not log source filesystem paths, bytes, secrets or user media.
+            $unresolved = @($audit.embeddedFiles) + @($audit.externalFiles) |
+              Where-Object { $_.licenseReview -eq 'UNCLASSIFIED_REQUIRES_REVIEW' } |
+              Sort-Object name
+            Write-Host "MYTAGSYNC_PR_UNCLASSIFIED_COUNT=$($unresolved.Count)"
+            foreach ($entry in $unresolved) {
+              Write-Host ("MYTAGSYNC_PR_UNCLASSIFIED_NAME=" + $entry.name)
+            }
+
           } finally {
             if (Test-Path -LiteralPath $publishRoot) { Remove-Item -LiteralPath $publishRoot -Recurse -Force }
           }
