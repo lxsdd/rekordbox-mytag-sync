@@ -91,3 +91,115 @@ _D_MUTATION["test-unreviewed-upload.yml"] = (
 if not _scan_publication_surface(_D_MUTATION, _D_EXPECTED):
     sys.exit("FAIL: an unreviewed binary upload bypassed the audit")
 print(f"PASS: {_D_DIR} workflow audit including new-workflow bypass regression")
+
+
+# Third boundary: a new workflow, job-level token override, or privilege increase
+# must never silently make GitHub's public-repo publication safeguards irrelevant.
+# Deliberately narrow: not a generic YAML validator or a license approval.
+_ALLOWED_WORKFLOWS = {
+    "fast.yml": (
+        {"contents": "read"},
+        {"push", "pull_request", "workflow_dispatch"}),
+    "full.yml": (
+        {"contents": "read", "actions": "read"},
+        {"workflow_dispatch", "workflow_run"}),
+    "recover-main-fast.yml": (
+        {"contents": "read", "actions": "write"},
+        {"schedule", "workflow_dispatch"}),
+    "promote-release.yml": (
+        {"contents": "write", "actions": "read"},
+        {"workflow_dispatch"}),
+}
+
+
+def _audit_workflow_capabilities(_files):
+    import re as _re
+
+    errors = []
+    if set(_files) != set(_ALLOWED_WORKFLOWS):
+        errors.append("unreviewed, missing, or renamed GitHub workflow")
+    for name, (expected_permissions, expected_events) in _ALLOWED_WORKFLOWS.items():
+        if name not in _files:
+            continue
+        lines = _files[name].splitlines()
+        permission_headers = [
+            i for i, s in enumerate(lines)
+            if _re.match(r"^permissions\s*:\s*(?:#.*)?$", s)]
+        if len(permission_headers) != 1:
+            errors.append(name + ": missing/duplicate explicit top-level permissions")
+            continue
+        start = permission_headers[0]
+        permissions = {}
+        for line in lines[start + 1:]:
+            if line.strip() == "" or line.lstrip().startswith("#"):
+                continue
+            if not line[0].isspace():
+                break
+            match = _re.fullmatch(r"  ([a-z][a-z-]*): (read|write|none)\s*", line)
+            if not match or match.group(1) in permissions:
+                errors.append(name + ": ambiguous/duplicate permission")
+                break
+            permissions[match.group(1)] = match.group(2)
+        if permissions != expected_permissions:
+            errors.append(name + ": token capabilities exceed the reviewed baseline")
+        if any(_re.match(r"^\s+permissions\s*:", s) for s in lines):
+            errors.append(name + ": job-level permissions override is prohibited")
+
+        event_headers = [
+            i for i, s in enumerate(lines)
+            if _re.match(r"^on:\s*(?:#.*)?$", s)]
+        if len(event_headers) != 1:
+            errors.append(name + ": ambiguous workflow triggers")
+            continue
+        events = []
+        for line in lines[event_headers[0] + 1:]:
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            if not line[0].isspace():
+                break
+            match = _re.match(r"^  ([a-z_]+):", line)
+            if match:
+                events.append(match.group(1))
+        if set(events) != expected_events or len(events) != len(expected_events):
+            errors.append(name + ": unreviewed or missing trigger")
+    return errors
+
+
+_PRIV_ERRORS = _audit_workflow_capabilities(_D_FILES)
+if _PRIV_ERRORS:
+    sys.exit("FAIL MyTagSync workflow-token boundary:\n- " +
+             "\n- ".join(_PRIV_ERRORS))
+
+
+def _reject_bad_capabilities(changed):
+    trial = dict(_D_FILES)
+    trial.update(changed)
+    if not _audit_workflow_capabilities(trial):
+        sys.exit("FAIL: synthetic privilege/escalation bypassed workflow audit")
+
+
+# Every exception is explicit and bound to a single reviewed workflow:
+# recover FAST needs actions:write to dispatch, but never contents:write.
+# Disabled PROMOTE is the only workflow whose contents:write is permitted.
+_recover = _D_FILES["recover-main-fast.yml"]
+_fast = _D_FILES["fast.yml"]
+_promote = _D_FILES["promote-release.yml"]
+if "  actions: write" not in _recover or "  contents: write" not in _promote:
+    sys.exit("FAIL: workflow baseline changed; update reviewed negative fixtures")
+_reject_bad_capabilities({"fast.yml": _fast.replace(
+    "  contents: read", "  contents: write", 1)})
+_reject_bad_capabilities({"recover-main-fast.yml": _recover.replace(
+    "  actions: write", "  contents: write", 1)})
+_reject_bad_capabilities({"promote-release.yml": _promote.replace(
+    "  contents: write", "  contents: read", 1)})
+_reject_bad_capabilities({"fast.yml": _fast.replace(
+    "jobs:\n", "jobs:\n  unreviewed:\n    permissions:\n"
+              "      contents: write\n    runs-on: ubuntu-latest\n", 1)})
+_reject_bad_capabilities({"fast.yml": _fast.replace(
+    "on:\n", "on:\n  pull_request_target:\n", 1)})
+_reject_bad_capabilities({"unreviewed.yml": (
+    "name: publish\non:\n  workflow_dispatch:\n"
+    "permissions:\n  contents: write\njobs:\n  publish:\n"
+    "    runs-on: ubuntu-latest\n    steps: []\n")})
+print("PASS: exact GitHub workflow allowlist, token scopes, triggers and "
+      "negative privilege-escalation fixtures")
