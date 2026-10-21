@@ -280,6 +280,51 @@ def correlate_exact_sources(inventory, source_roots):
                 pinnedSourceIds=sorted(seen_ids),
                 counts=counts, components=evidence)
 
+
+EXPECTED_APPLICATION_OUTPUTS = {
+    "rekordbox MyTagSync.dll": "APPLICATION_OWNERSHIP_REVIEW",
+    "rekordbox MyTagSync.deps.json": "APP_METADATA",
+    "rekordbox MyTagSync.runtimeconfig.json": "APP_METADATA",
+}
+
+
+def audit_remaining_application_outputs(inventory):
+    """Only the THREE observed self-produced outputs may lack a pinned package
+    byte match. Record their stored hashes, never infer license clearance.
+    Every other unmatched/foreign member is a build-stopping regression.
+    """
+    members = {x["name"]: x for x in
+               inventory["embeddedFiles"] + inventory["externalFiles"]}
+    evidence = inventory["sourceByteEvidence"]["components"]
+    all_evidence = {x["name"]: x for x in evidence}
+    if len(all_evidence) != len(evidence) or set(all_evidence) != set(members):
+        raise BundleError("source origin inventory does not cover sealed members")
+    attested = []
+    for name, category_name in sorted(EXPECTED_APPLICATION_OUTPUTS.items()):
+        item = members.get(name)
+        row = all_evidence.get(name)
+        if item is None or row is None or item["licenseReview"] != category_name:
+            raise BundleError("required application output identity is missing/altered: " + name)
+        if row["licenseReview"] != category_name or row["status"] == "COMPRESSED_UNRESOLVED":
+            raise BundleError("unsafe application output evidence: " + name)
+        if row["status"] not in ("MATCHED_EXACT_RAW_BYTES", "UNMATCHED_REQUIRES_REVIEW"):
+            raise BundleError("unexpected application source match status: " + name)
+        attested.append(dict(name=name, sha256=(
+            item["sha256"] if "sha256" in item else item["onDiskSha256"]),
+            sourceStatus=row["status"], category=category_name))
+    unexpected = sorted(x["name"] for x in evidence if
+                        x["status"] != "MATCHED_EXACT_RAW_BYTES"
+                        and x["name"] not in EXPECTED_APPLICATION_OUTPUTS)
+    if unexpected:
+        raise BundleError("unexpected third-party/unrecognized unmatched sealed members: "
+                          + ",".join(unexpected))
+    return dict(status="APPLICATION_OUTPUT_IDENTITY_REVIEW_REQUIRED",
+                distributionLicenseStatus="REVIEW_REQUIRED_NOT_AUTHORIZED",
+                inputsCompared="SEALED_BYTES_TO_PINNED_SOURCE_AND_EXACT_APP_OUTPUT_NAMES",
+                applicationOutputs=attested,
+                unexpectedUnmatchedCount=0)
+
+
 def seven(n):
     buf = bytearray()
     while n >= 128:
@@ -352,6 +397,52 @@ def selftest():
         assert correlate_exact_sources(
             obj, ["NETCORE_RUNTIME_10.0.13=" + str(source_root)]
         )["counts"]["MATCHED_EXACT_RAW_BYTES"] == 0
+        # Synthetic positive: pinned third-party code and only the three
+        # own, deterministic app outputs stay unmatched, never "licensed".
+        expected = dict(
+            embeddedFiles=[
+                dict(name=name, licenseReview=category_name,
+                     onDiskSha256="a" * 64)
+                for name, category_name in EXPECTED_APPLICATION_OUTPUTS.items()
+            ],
+            externalFiles=[],
+        )
+        expected["sourceByteEvidence"] = dict(components=[
+            dict(name=x["name"], licenseReview=x["licenseReview"],
+                 status="UNMATCHED_REQUIRES_REVIEW")
+            for x in expected["embeddedFiles"]
+        ])
+        attested = audit_remaining_application_outputs(expected)
+        assert attested["unexpectedUnmatchedCount"] == 0
+        assert attested["distributionLicenseStatus"] == "REVIEW_REQUIRED_NOT_AUTHORIZED"
+        assert len(attested["applicationOutputs"]) == 3
+        # A missing/renamed output, altered ownership category, compressed
+        # app member, or unmatched unknown vendor binary must fail closed.
+        for altered in ("missing", "wrong_owner", "compressed", "foreign"):
+            sample = json.loads(json.dumps(expected))
+            if altered == "missing":
+                sample["embeddedFiles"].pop()
+            elif altered == "wrong_owner":
+                sample["embeddedFiles"][0]["licenseReview"] = "UNKNOWN_OWNER"
+            elif altered == "compressed":
+                sample["sourceByteEvidence"]["components"][0]["status"] = (
+                    "COMPRESSED_UNRESOLVED")
+            else:
+                sample["embeddedFiles"].append(
+                    dict(name="VendorUnknown.dll",
+                         licenseReview="UNCLASSIFIED_REQUIRES_REVIEW",
+                         onDiskSha256="b" * 64))
+                sample["sourceByteEvidence"]["components"].append(
+                    dict(name="VendorUnknown.dll",
+                         licenseReview="UNCLASSIFIED_REQUIRES_REVIEW",
+                         status="UNMATCHED_REQUIRES_REVIEW"))
+            try:
+                audit_remaining_application_outputs(sample)
+            except BundleError:
+                pass
+            else:
+                raise AssertionError("unsafe unaccounted-for sealed member passed")
+
         for invalid in ["badid=" + str(source_root),
                         "NETCORE_RUNTIME_10.0.13=/nonexistent/pinned-source"]:
             try:
@@ -448,6 +539,7 @@ def main():
     result = inspect(a.exe, a.publish_dir)
     if a.source_root:
         result["sourceByteEvidence"] = correlate_exact_sources(result, a.source_root)
+        result["applicationOutputEvidence"] = audit_remaining_application_outputs(result)
         # Source origin is not equivalent to redistribution/license clearance.
         # These are sanitized original single-file manifest member names, not
         # machine/user paths. Surface exact unmatched members from the real
