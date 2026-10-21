@@ -32,6 +32,9 @@ jobs:
       - name: Verify fail-closed per-member notice obligation coverage
         shell: pwsh
         run: python scripts/audit-notice-coverage.py --self-test
+      - name: Verify source-authentic Microsoft WPF 10.0.13 native distribution evidence
+        shell: pwsh
+        run: python scripts/audit-microsoft-native-redist.py --self-test --source-root .
       - name: Verify six pinned MIT and Apache original license and NOTICE source texts
         shell: pwsh
         run: |
