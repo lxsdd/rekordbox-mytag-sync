@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Source-tagged Microsoft WPF/Windows native redist evidence, NEVER clearance.
 
-Only the two original pinned Git source documents and the actual sealed
+Only three original pinned Git source documents and the actual sealed
 Windows bundle are checked. External live REDIST.TXT and Microsoft license
 terms are linked as review leads, not reproduced or asserted satisfied.
 """
@@ -14,6 +14,14 @@ import tempfile
 
 BLOCKED = "REVIEW_REQUIRED_NOT_AUTHORIZED"
 SOURCES = {
+    # Exact runtime release source (not a different Microsoft library's NOTICE).
+    # Microsoft distinguishes its Windows product runtime packs from ordinary
+    # MIT library packages; this is authoritative licensing *classification*,
+    # not proof that a distributor has agreed to or fulfilled the terms.
+    "NET_RUNTIME_10_0_13_PRODUCT_LICENSING": (
+        "licenses/source-texts/dotnet-runtime-v10.0.13-licensing-assets.md",
+        "d0484f8733fc87d785b096ce770fa94453b64dfa",
+        "dotnet/runtime@v10.0.13:docs/project/licensing-assets.md"),
     "NET_WINDOWS_LICENSE_CLASSIFICATION": (
         "licenses/source-texts/dotnet-core-windows-license-map.md",
         "bbba73b9a0b553b1dffd2b4299fc5eb203e195fb",
@@ -74,6 +82,14 @@ def freeze_sources(root):
                            upstream=upstream, gitBlobSha1=blob_sha,
                            sha256=hashlib.sha256(data).hexdigest(),
                            bytes=len(data), status="SOURCE_FACTS_ONLY"))
+    licensing = texts["NET_RUNTIME_10_0_13_PRODUCT_LICENSING"]
+    for required in ("each .net binary distribution must carry:",
+                     "its license", "third party notice",
+                     "on windows, the license should be",
+                     ".net library license", "product distributions",
+                     "runtime packs"):
+        require(required in licensing,
+                "release-tagged Windows .NET licensing model incomplete")
     mapping = texts["NET_WINDOWS_LICENSE_CLASSIFICATION"]
     wpf = texts["WPF_10_0_13_RENAME_AND_REDIST"]
     for required in ("coreclr.dll", "wpfgfx_cor3.dll",
@@ -158,6 +174,10 @@ def inspect(bundle, originals):
     return dict(schemaVersion=1,
                 observedBundleMembers=len(items),
                 originEvidence=originals,
+                netRuntimeProductLicenseModel=(
+                    "UPSTREAM_DOTNET_RUNTIME_V10_0_13_WINDOWS_PRODUCT_LICENSE_FAMILY_CONFIRMED"),
+                # Confirms which *family* applies, never contractual discharge.
+                netRuntimeRedistributionConditions="HUMAN_END_USER_REVIEW_PENDING",
                 windowsSdkBinary=dict(name=compiler["name"],
                     sealedSha256=sdk_sha, pinnedSources=origin_labels,
                     upstreamOriginal="d3dcompiler_47.dll",
@@ -202,6 +222,8 @@ def selftest(root):
                   sourceByteEvidence=dict(status=BLOCKED, components=proofs))
     assert inspect(bundle, original)["windowsSdkBinary"]["name"] == COMPILER
     assert inspect(bundle, original)["completeness"] == "NOT_ESTABLISHED"
+    assert inspect(bundle, original)["netRuntimeProductLicenseModel"] == (
+        "UPSTREAM_DOTNET_RUNTIME_V10_0_13_WINDOWS_PRODUCT_LICENSE_FAMILY_CONFIRMED")
     assert inspect(bundle, original)["agreementVersionApplicability"] == "HUMAN_REVIEW_PENDING"
     assert inspect(bundle, original)["capturedAgreementSourceIds"] == [
         "MICROSOFT_DOTNET_LIBRARY_LICENSE", "WINDOWS_SDK_D3DCOMPILER_LICENSE"]
@@ -280,6 +302,15 @@ def selftest(root):
             pass
         else:
             raise AssertionError("mutated Microsoft upstream Git blob was accepted")
+        model = Path(temp) / SOURCES["NET_RUNTIME_10_0_13_PRODUCT_LICENSING"][0]
+        model.write_bytes(model.read_bytes().replace(
+            b".NET Library License", b"MIT only LicenseXX"))
+        try:
+            freeze_sources(temp)
+        except ReviewError:
+            pass
+        else:
+            raise AssertionError("altered .NET 10.0.13 license model was accepted")
     print("MYTAGSYNC_MS_NATIVE_REDIST_EVIDENCE_SELFTEST=PASS")
 
 
