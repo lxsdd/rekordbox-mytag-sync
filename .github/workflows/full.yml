@@ -397,6 +397,15 @@ jobs:
           if ($observedTotal -ne $expectedTotal) {
             throw 'Sealed byte-origin audit did not classify every bundled file.'
           }
+      - name: Pin exact original SQLite3MC and SQLitePCLRaw license/NOTICE text bytes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/verify-pinned-legal-source-texts.py --self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned legal source negative tests failed.' }
+          python scripts/verify-pinned-legal-source-texts.py --source-root . --stage-dir qualification/pinned-license-source-texts --output qualification/pinned-license-source-manifest.json
+          if ($LASTEXITCODE -ne 0) { throw 'Actual pinned upstream legal source Git blob mismatch.' }
+
       - name: Preserve exact pinned license and third-party notice source texts (still not release clearance)
         shell: pwsh
         run: |
@@ -410,8 +419,11 @@ jobs:
             @{id='DOTNET_INSTALLATION_THIRDPARTY'; path=(Join-Path $dotnet 'ThirdPartyNotices.txt')},
             @{id='NETCORE_RUNTIME_10_0_13_THIRDPARTY'; path=(Join-Path $nuget 'microsoft.netcore.app.runtime.win-x64/10.0.13/THIRD-PARTY-NOTICES.TXT')},
             @{id='WINDOWSDESKTOP_RUNTIME_10_0_13_THIRDPARTY'; path=(Join-Path $nuget 'microsoft.windowsdesktop.app.runtime.win-x64/10.0.13/THIRD-PARTY-NOTICES.TXT')},
-            @{id='SQLITE3MC_LIB_2_4_0_LICENSE'; path=(Join-Path $nuget 'sqlite3mc.pclraw.lib/2.4.0/LICENSE.txt')},
-            @{id='SQLITEPCLRAW_CORE_3_0_2_LICENSE'; path=(Join-Path $nuget 'sqlitepclraw.core/3.0.2/LICENSE.txt')}
+            @{id='SQLITE3MC_LIB_2_4_0_LICENSE'; path='licenses/source-texts/SQLite3MC-v2.4.0-LICENSE.txt'},
+            @{id='SQLITE3MC_NUGET_2_4_0_LICENSE'; path='licenses/source-texts/SQLite3MC-NuGet-v2.4.0-LICENSE.txt'},
+            @{id='SQLITEPCLRAW_CORE_3_0_2_LICENSE'; path='licenses/source-texts/SQLitePCLRaw-v3.0.2-LICENSE.txt'},
+            @{id='SQLITEPCLRAW_CORE_3_0_2_NOTICE'; path='licenses/source-texts/SQLitePCLRaw-v3.0.2-NOTICE.txt'},
+            @{id='DOTNET_CORE_MIT_LICENSE'; path='licenses/source-texts/dotnet-core-MIT-LICENSE.txt'}
           )
           $sourceArgs = @()
           $required = @('DOTNET_INSTALLATION_LICENSE', 'DOTNET_INSTALLATION_THIRDPARTY')
@@ -432,6 +444,20 @@ jobs:
               @($report.sourceTexts).Count -lt 2) {
             throw 'Notice-source inventory incorrectly claims license completion.'
           }
+          $pinned = Get-Content qualification/pinned-license-source-manifest.json -Raw | ConvertFrom-Json
+          if ($pinned.completeness -cne 'NOT_ESTABLISHED' -or
+              $pinned.distributionLicenseStatus -cne 'REVIEW_REQUIRED_NOT_AUTHORIZED' -or
+              @($pinned.frozenSourceTexts).Count -ne 5) {
+            throw 'Frozen upstream notice-source manifest claims unauthorized clearance.'
+          }
+          foreach ($item in @($pinned.frozenSourceTexts)) {
+            $actual = @($report.sourceTexts | Where-Object { $_.sourceId -ceq $item.sourceId })
+            if ($actual.Count -ne 1 -or $actual[0].sha256 -cne $item.sha256 -or
+                $actual[0].bytes -ne $item.bytes) {
+              throw "Original legal source bytes differ from staged notice manifest for $($item.sourceId)"
+            }
+          }
+          Write-Host "Five release-tagged license and NOTICE source texts verified; all legal terms still REQUIRE REVIEW."
           Write-Host "Notice sources preserved=$(@($report.sourceTexts).Count); complete license review remains BLOCKED."
 
       - name: Validate sealed member-to-notice obligations (unreviewed; no release permission)
@@ -482,6 +508,7 @@ jobs:
           Copy-Item "qualification/license-audit.tsv" $stage
           Copy-Item "qualification/bundle-audit-a.json" (Join-Path $stage "embedded-bundle-inventory.json")
           Copy-Item "qualification/notice-source-manifest.json" (Join-Path $stage "notice-source-manifest.json")
+          Copy-Item "qualification/pinned-license-source-manifest.json" (Join-Path $stage "pinned-license-source-manifest.json")
           Copy-Item "qualification/notice-coverage-report.json" (Join-Path $stage "notice-coverage-report.json")
           Copy-Item "qualification/notice-source-texts" (Join-Path $stage "NOTICE-SOURCES-UNREVIEWED") -Recurse
           Copy-Item "qualification/publish-sha256.txt" $stage
@@ -642,7 +669,13 @@ jobs:
               "license-audit.tsv",
               "embedded-bundle-inventory.json",
               "notice-source-manifest.json",
+              "pinned-license-source-manifest.json",
               "notice-coverage-report.json",
+              "NOTICE-SOURCES-UNREVIEWED/SQLITE3MC_LIB_2_4_0_LICENSE.txt",
+              "NOTICE-SOURCES-UNREVIEWED/SQLITE3MC_NUGET_2_4_0_LICENSE.txt",
+              "NOTICE-SOURCES-UNREVIEWED/SQLITEPCLRAW_CORE_3_0_2_LICENSE.txt",
+              "NOTICE-SOURCES-UNREVIEWED/SQLITEPCLRAW_CORE_3_0_2_NOTICE.txt",
+              "NOTICE-SOURCES-UNREVIEWED/DOTNET_CORE_MIT_LICENSE.txt",
               "NOTICE-SOURCES-UNREVIEWED/DOTNET_INSTALLATION_LICENSE.txt",
               "NOTICE-SOURCES-UNREVIEWED/DOTNET_INSTALLATION_THIRDPARTY.txt",
               "publish-sha256.txt",
