@@ -503,7 +503,9 @@ jobs:
               $r.completeness -cne 'NOT_ESTABLISHED' -or
               $r.copyrightAndEndUserTerms -cne 'HUMAN_REVIEW_PENDING' -or
               $r.observedBundleMembers -ne 388 -or
-              @($r.originEvidence).Count -ne 2 -or
+              @($r.originEvidence).Count -ne 3 -or
+    $r.netRuntimeProductLicenseModel -cne 'UPSTREAM_DOTNET_RUNTIME_V10_0_13_WINDOWS_PRODUCT_LICENSE_FAMILY_CONFIRMED' -or
+    $r.netRuntimeRedistributionConditions -cne 'HUMAN_END_USER_REVIEW_PENDING' -or
               (@($r.capturedAgreementSourceIds).Count -ne 2 -or
                $r.capturedAgreementSourceIds -cnotcontains 'MICROSOFT_DOTNET_LIBRARY_LICENSE' -or
                $r.capturedAgreementSourceIds -cnotcontains 'WINDOWS_SDK_D3DCOMPILER_LICENSE' -or
