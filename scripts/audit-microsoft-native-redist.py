@@ -147,9 +147,14 @@ def inspect(bundle, originals):
     # rendering/interop member. Every native that DOES ship is still checked
     # byte-for-byte for its source and correct Microsoft Library review class.
     observed_native = {v["name"].casefold() for v in natives}
-    require("coreclr.dll" in observed_native and
-            bool(observed_native & {"wpfgfx_cor3.dll", "presentationnative_cor3.dll"}),
-            "core runtime/WPF native evidence missing; observed=" +
+    # A self-contained .NET10 Windows single-file host may prelink CoreCLR
+    # rather than seal a separate coreclr.dll. This is NOT a license waiver.
+    # The existing sealed-bundle audit requires the managed CoreLib identity.
+    require("system.private.corelib.dll" in indexed,
+            "CoreLib runtime identity missing from sealed member inventory")
+    require(bool(observed_native &
+                 {"wpfgfx_cor3.dll", "presentationnative_cor3.dll"}),
+            "WPF native renderer/interop evidence missing; observed=" +
             ",".join(sorted(observed_native)))
     return dict(schemaVersion=1,
                 observedBundleMembers=len(items),
@@ -163,6 +168,8 @@ def inspect(bundle, originals):
                     licenseTerms="https://learn.microsoft.com/en-us/legal/windows-sdk/license",
                     listAndTermsCompliance="MANUAL_REDIST_AND_END_USER_REVIEW_PENDING"),
                 netLibraryBinaryExceptions=natives,
+                coreclrInSealedManifest=("coreclr.dll" in observed_native),
+                prelinkedHostLicenseStatus="MANUAL_DOTNET_LIBRARY_REVIEW_REQUIRED",
                 singleFileHostLicenseTerms="DOTNET_LIBRARY_MANUAL_END_USER_REVIEW_PENDING",
                 termsUrl="https://dotnet.microsoft.com/en-us/dotnet_library_license.htm",
                 missingFullLicenseSourceIds=["MICROSOFT_DOTNET_LIBRARY_LICENSE",
@@ -174,7 +181,7 @@ def inspect(bundle, originals):
 
 def selftest(root):
     original = freeze_sources(root)
-    names = sorted(NATIVE_LIBRARY | {COMPILER})
+    names = sorted(NATIVE_LIBRARY | {COMPILER, "System.Private.CoreLib.dll"})
     members = []
     proofs = []
     for name in names:
@@ -193,6 +200,18 @@ def selftest(root):
                   sourceByteEvidence=dict(status=BLOCKED, components=proofs))
     assert inspect(bundle, original)["windowsSdkBinary"]["name"] == COMPILER
     assert inspect(bundle, original)["completeness"] == "NOT_ESTABLISHED"
+    # Exact actual-FULL regression: CoreCLR is prelinked into the host, not
+    # a separate sealed native member. WPF native byte proofs still required.
+    prelinked = json.loads(json.dumps(bundle))
+    prelinked["embeddedFiles"] = [x for x in prelinked["embeddedFiles"]
+                                  if x["name"] != "coreclr.dll"]
+    prelinked["sourceByteEvidence"]["components"] = [
+        x for x in prelinked["sourceByteEvidence"]["components"]
+        if x["name"] != "coreclr.dll"]
+    prelinked["embeddedFileCount"] -= 1
+    result = inspect(prelinked, original)
+    assert result["coreclrInSealedManifest"] is False
+    assert result["prelinkedHostLicenseStatus"] == "MANUAL_DOTNET_LIBRARY_REVIEW_REQUIRED"
     # Explicitly prove that the optional PresentationNative member may be
     # absent from the actual (trimmed/version-specific) publish manifest,
     # provided coreclr and a WPF renderer remain exact-source verified.
@@ -226,6 +245,14 @@ def selftest(root):
             return
         raise AssertionError("untrusted .NET/SDK license evidence was accepted")
     reject(lambda b: b["embeddedFiles"].pop())
+    def remove_corelib(b):
+        b["embeddedFiles"] = [x for x in b["embeddedFiles"]
+                              if x["name"] != "System.Private.CoreLib.dll"]
+        b["sourceByteEvidence"]["components"] = [
+            x for x in b["sourceByteEvidence"]["components"]
+            if x["name"] != "System.Private.CoreLib.dll"]
+        b["embeddedFileCount"] -= 1
+    reject(remove_corelib)
     reject(lambda b: b["embeddedFiles"][-1].update(
         licenseReview="MICROSOFT_COMPONENT_LICENSE_REVIEW"))
     reject(lambda b: b["sourceByteEvidence"]["components"][0].update(
