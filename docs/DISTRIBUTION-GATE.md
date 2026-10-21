@@ -296,6 +296,25 @@ where appropriate. `completeness=NOT_ESTABLISHED` and
 `distributionLicenseStatus=REVIEW_REQUIRED_NOT_AUTHORIZED` are unchanged,
 and upload/release remain disabled.
 
+## Exact .NET 10.0.13 Windows runtime product licensing model — source-authentic
+
+Microsoft's own `dotnet/runtime@v10.0.13:docs/project/licensing-assets.md`
+(Git blob `d0484f8733fc87d785b096ce770fa94453b64dfa`) now provides a
+**version-exact source link**: runtime packs and other Windows *product
+distributions* use the **.NET Library License**, whereas ordinary library
+packages may be MIT. This original is byte-frozen in
+`licenses/source-texts/dotnet-runtime-v10.0.13-licensing-assets.md`,
+checked by `audit-microsoft-native-redist.py`, and preserved only in the
+ephemeral Windows FULL evidence ZIP.
+
+This closes the **license-family identification** gap, *not* the obligation to
+apply the actual Microsoft end-user, redistribution, indemnification and SDK
+terms to our distribution. Do not treat product-family source text as consent
+or turn `REVIEW_REQUIRED_NOT_AUTHORIZED` into `APPROVED`. The available
+single-owner handoff design, contractual decision points, and no-public-asset
+negative test are collected in
+[the German owner decision](PRIVATE-CANDIDATE-HANDOFF-DE.md).
+
 ## Microsoft WPF 10.0.13 SDK-native source/redist evidence — not legal approval
 
 The **exact original WPF v10.0.13** source
