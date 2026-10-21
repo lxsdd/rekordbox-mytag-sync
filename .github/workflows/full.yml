@@ -478,7 +478,8 @@ jobs:
           if ($coverage.coveredMemberCount -ne ($actual.embeddedFileCount + $actual.externalFileCount) -or
               $coverage.distributionLicenseStatus -cne 'REVIEW_REQUIRED_NOT_AUTHORIZED' -or
               $coverage.completeness -cne 'NOT_ESTABLISHED' -or
-              $coverage.copyrightAndLicenseApplicability -cne 'HUMAN_REVIEW_PENDING') {
+              $coverage.copyrightAndLicenseApplicability -cne 'HUMAN_REVIEW_PENDING' -or
+              @($coverage.missingNoticeSourceIds).Count -ne 0) {
             throw 'Notice matrix lost a bundled file or incorrectly lifted license hold.'
           }
           Write-Host "Actual sealed notice coverage=$($coverage.coveredMemberCount) components;"
@@ -503,7 +504,10 @@ jobs:
               $r.copyrightAndEndUserTerms -cne 'HUMAN_REVIEW_PENDING' -or
               $r.observedBundleMembers -ne 388 -or
               @($r.originEvidence).Count -ne 2 -or
-              @($r.missingFullLicenseSourceIds).Count -ne 2) {
+              (@($r.capturedAgreementSourceIds).Count -ne 2 -or
+               $r.capturedAgreementSourceIds -cnotcontains 'MICROSOFT_DOTNET_LIBRARY_LICENSE' -or
+               $r.capturedAgreementSourceIds -cnotcontains 'WINDOWS_SDK_D3DCOMPILER_LICENSE' -or
+               $r.agreementVersionApplicability -cne 'HUMAN_REVIEW_PENDING')) {
             throw 'Microsoft redist technical evidence incorrectly grants legal approval.'
           }
           Write-Host "Microsoft native-WPF source relationship PASS; 388 sealed members; final end-user/SDK redist rights still BLOCKED."
