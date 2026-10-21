@@ -141,9 +141,16 @@ def inspect(bundle, originals):
         digest = item.get("onDiskSha256", item.get("sha256"))
         require(valid_sha(digest), "no sealed SHA-256 for .NET Library native DLL")
         natives.append(dict(name=item["name"], sealedSha256=digest, pinnedSources=labels))
-    require({"coreclr.dll", "wpfgfx_cor3.dll", "presentationnative_cor3.dll"} <=
-            {v["name"].casefold() for v in natives},
-            "core runtime/WPF native library evidence missing")
+    # WPF publishes may omit an unused native WPF satellite; do not demand
+    # every licensed runtime exception as if the bundle had to ship all of them.
+    # Demand the actual managed CLR runtime plus at least one WPF-native
+    # rendering/interop member. Every native that DOES ship is still checked
+    # byte-for-byte for its source and correct Microsoft Library review class.
+    observed_native = {v["name"].casefold() for v in natives}
+    require("coreclr.dll" in observed_native and
+            bool(observed_native & {"wpfgfx_cor3.dll", "presentationnative_cor3.dll"}),
+            "core runtime/WPF native evidence missing; observed=" +
+            ",".join(sorted(observed_native)))
     return dict(schemaVersion=1,
                 observedBundleMembers=len(items),
                 originEvidence=originals,
@@ -186,6 +193,30 @@ def selftest(root):
                   sourceByteEvidence=dict(status=BLOCKED, components=proofs))
     assert inspect(bundle, original)["windowsSdkBinary"]["name"] == COMPILER
     assert inspect(bundle, original)["completeness"] == "NOT_ESTABLISHED"
+    # Explicitly prove that the optional PresentationNative member may be
+    # absent from the actual (trimmed/version-specific) publish manifest,
+    # provided coreclr and a WPF renderer remain exact-source verified.
+    optional = json.loads(json.dumps(bundle))
+    optional["embeddedFiles"] = [x for x in optional["embeddedFiles"]
+                                  if x["name"] != "presentationnative_cor3.dll"]
+    optional["sourceByteEvidence"]["components"] = [
+        x for x in optional["sourceByteEvidence"]["components"]
+        if x["name"] != "presentationnative_cor3.dll"]
+    optional["embeddedFileCount"] -= 1
+    assert inspect(optional, original)["distributionLicenseStatus"] == BLOCKED
+    # Absence of ALL native WPF renderer/interop is a real negative case.
+    optional["embeddedFiles"] = [x for x in optional["embeddedFiles"]
+                                  if x["name"] != "wpfgfx_cor3.dll"]
+    optional["sourceByteEvidence"]["components"] = [
+        x for x in optional["sourceByteEvidence"]["components"]
+        if x["name"] != "wpfgfx_cor3.dll"]
+    optional["embeddedFileCount"] -= 1
+    try:
+        inspect(optional, original)
+    except ReviewError:
+        pass
+    else:
+        raise AssertionError("missing all WPF native members falsely accepted")
     def reject(mutator):
         broken = json.loads(json.dumps(bundle))
         mutator(broken)
