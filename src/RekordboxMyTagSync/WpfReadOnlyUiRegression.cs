@@ -82,6 +82,63 @@ internal static class WpfReadOnlyUiRegression
             if (window.ApplyButton.IsEnabled || window.RestoreButton.IsEnabled)
                 throw new InvalidOperationException(
                     "Failed synthetic source discovery unexpectedly permitted a database write.");
+            
+            // A click on Inspect with no selected source must always produce a
+            // visible, *synchronous* failure and restore the clickable action.
+            // This exercises the actual Click wiring without touching a real
+            // foobar snapshot, starting an async I/O operation, or pumping the
+            // WPF dispatcher behind the smoke-test runner.
+            window.BridgeDirectoryTextBox.Text = string.Empty;
+            if (window.FindName("InspectSourceButton") is not Button inspect ||
+                !inspect.IsEnabled)
+                throw new InvalidOperationException(
+                    "Inspect selected must be available before qualification.");
+            inspect.RaiseEvent(new RoutedEventArgs(
+                System.Windows.Controls.Primitives.ButtonBase.ClickEvent, inspect));
+            if (!window.SourceInspectionStatusTextBlock.Text.StartsWith(
+                    "Source verification failed:", StringComparison.Ordinal) ||
+                !window.SourceInspectionStatusTextBlock.Text.Contains(
+                    "No bridge source directory", StringComparison.OrdinalIgnoreCase) ||
+                !window.OperationStatusTextBlock.Text.StartsWith(
+                    "Inspect failed", StringComparison.Ordinal) ||
+                window.OperationProgressBar.Visibility != Visibility.Collapsed ||
+                !inspect.IsEnabled ||
+                window.ApplyButton.IsEnabled || window.RestoreButton.IsEnabled)
+                throw new InvalidOperationException(
+                    "Inspect selected click was silent, remained stuck busy, " +
+                    "or permitted a write without a verified source.");
+
+            // No more silently ignored clicks: the real discovery controls
+            // must visibly disable during an existing read-only operation and
+            // become available again after it completes. This is intentionally
+            // synthetic; there is no actual disk or database operation.
+            var discoveryActions = new[]
+            {
+                "DiscoverSourceButton", "InspectSourceButton",
+                "DiscoverTargetButton", "BrowseTargetButton",
+                "ValidateDatabaseAccessButton", "RefreshDiagnosticsButton"
+            }.Select(name => window.FindName(name) as Button ??
+                throw new InvalidOperationException(
+                    "Missing busy-aware production action: " + name)).ToArray();
+            window.SetOperationStatus("Synthetic busy-state UI check", busy: true);
+            window.UpdateWorkflowGate();
+            try
+            {
+                if (discoveryActions.Any(action => action.IsEnabled) ||
+                    window.ApplyButton.IsEnabled || window.RestoreButton.IsEnabled)
+                    throw new InvalidOperationException(
+                        "A read-only busy operation left a misleading clickable " +
+                        "discovery action or a dangerous write action enabled.");
+            }
+            finally
+            {
+                window.SetOperationStatus("Ready — synthetic busy check complete.");
+                window.UpdateWorkflowGate();
+            }
+            if (discoveryActions.Any(action => !action.IsEnabled) ||
+                window.OperationProgressBar.Visibility != Visibility.Collapsed)
+                throw new InvalidOperationException(
+                    "Discovery actions did not recover from the busy operation.");
         }
         finally
         {

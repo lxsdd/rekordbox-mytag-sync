@@ -1257,7 +1257,7 @@ public partial class MainWindow : Window
         PreviewCountsTextBlock.Text = "Add 0 · Remove 0 · Correct 0 · Conflicts 0 · Unmatched 0";
     }
 
-    private void UpdateWorkflowGate()
+    internal void UpdateWorkflowGate()
     {
         var settingsValid = true;
         try
@@ -1280,6 +1280,17 @@ public partial class MainWindow : Window
             PreviewFresh: _previewFresh,
             BackupAvailable: _backupAvailable,
             BackupMatchesTarget: _backupMatchesTarget));
+
+        // A long-running read-only operation must disable *all* discovery
+        // controls. Previously these buttons stayed visually clickable while
+        // their handlers silently returned on _operationBusy, appearing broken.
+        // Cancellation buttons retain their separate explicit busy policy.
+        DiscoverSourceButton.IsEnabled = !_operationBusy;
+        InspectSourceButton.IsEnabled = !_operationBusy;
+        DiscoverTargetButton.IsEnabled = !_operationBusy;
+        BrowseTargetButton.IsEnabled = !_operationBusy;
+        ValidateDatabaseAccessButton.IsEnabled = !_operationBusy;
+        RefreshDiagnosticsButton.IsEnabled = !_operationBusy;
 
         BuildPreviewButton.IsEnabled = !_operationBusy && state.CanBuildPreview;
         BuildVerifiedPreviewButton.IsEnabled = !_operationBusy && state.CanBuildPreview;
@@ -1357,7 +1368,7 @@ public partial class MainWindow : Window
         UpdateWorkflowGate();
     }
 
-    private void SetOperationStatus(string message, bool busy = false, bool error = false)
+    internal void SetOperationStatus(string message, bool busy = false, bool error = false)
     {
         _operationBusy = busy;
         OperationStatusTextBlock.Text = message;
