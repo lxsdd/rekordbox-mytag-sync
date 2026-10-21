@@ -230,6 +230,35 @@ the match count 100%. The actual unaccounted-for names from Windows FULL
 must determine the next specific fix; all permissions and notice obligations
 remain under review and the public distribution gate stays disabled.
 
+## Exact provenance result from real Windows FULL (2026-10-21)
+
+The fully sealed, deterministic Windows publish at source
+`9350edac932763b479ef4195c595851600d5fdce`
+reported **388 embedded, zero sidecars, 385 exact raw external-package
+matches, zero compressed files**. The only remaining three package-
+unmatched entries are `rekordbox MyTagSync.dll`,
+`rekordbox MyTagSync.deps.json`, and
+`rekordbox MyTagSync.runtimeconfig.json` — the application assembly
+and build-generated app metadata. This resolves the earlier question
+whether a foreign native library remained outside source attribution.
+It **does not** validate the intellectual-property provenance or
+distribution notices for those three application outputs.
+
+A new fail-closed attestation requires these **exact three names and
+expected app-output categories** in the embedded bundle, preserves their
+per-file sealed SHA-256, verifies all other embedded components have
+an exact approved-source-*candidate* byte match, and rejects any new
+unmatched native/third-party assembly, incomplete inventory, changed
+ownership label or unexpected compressed app entry. The output status
+is deliberately `APPLICATION_OUTPUT_IDENTITY_REVIEW_REQUIRED`.
+That word “identity” is important: package-byte equality and
+deterministic build do **not** by themselves convey license rights,
+copyright ownership or a signed release.
+
+Public binaries, candidate upload, automated promotion, and real-user
+database modifications remain prohibited pending the complete terms,
+copyright notices, and permitted private handoff.
+
 ## What is still needed before *any* candidate publication
 
 1. **Published file-by-file component manifest.** Identify the *actual* files in the sealed self-contained ZIP, including transitive assemblies, native `sqlite3mc` code and self-contained .NET/WindowsDesktop runtime files. A NuGet package list alone is insufficient to establish the exact contents.
