@@ -302,3 +302,7 @@ synthetic positive/negative tests; FULL audits every actual sealed member and
 retains the evidence report **only inside its ephemeral ZIP**. This is not a
 redistribution gate approval, private delivery permission, user-hardware
 qualification, or change to the existing public-upload and release holds.
+
+## Unresolved exact Windows SDK cor3 redistribution evidence
+
+Microsoft's published Windows SDK REDIST list names `d3dcompiler_47.dll` but not the separately identified .NET WindowsDesktop `D3DCompiler_47_cor3.dll`. A filename similarity, a pinned byte origin, or a Q&A response is not sufficient to prove the exact redistributable right. Require version-applicable authoritative confirmation of the `_cor3` binary's permitted redistribution and preserve the corresponding SDK terms before any candidate handoff. See https://learn.microsoft.com/en-us/legal/windows-sdk/redist and https://github.com/dotnet/core/blob/main/license-information-windows.md . The distribution hold remains unchanged.
