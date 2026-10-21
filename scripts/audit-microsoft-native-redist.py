@@ -141,9 +141,18 @@ def inspect(bundle, originals):
         digest = item.get("onDiskSha256", item.get("sha256"))
         require(valid_sha(digest), "no sealed SHA-256 for .NET Library native DLL")
         natives.append(dict(name=item["name"], sealedSha256=digest, pinnedSources=labels))
-    require({"coreclr.dll", "wpfgfx_cor3.dll", "presentationnative_cor3.dll"} <=
-            {v["name"].casefold() for v in natives},
-            "core runtime/WPF native library evidence missing")
+    # .NET 10 Windows self-contained single-file can prelink CoreCLR into
+    # the apphost rather than storing coreclr.dll as a sealed member. Likewise
+    # the precise WPF native member set is publish-specific. Never invent a
+    # missing DLL, its source hash, or a corresponding license exemption.
+    observed = {v["name"].casefold() for v in natives}
+    require("system.private.corelib.dll" in indexed,
+            "sealed CoreLib identity missing")
+    require(set(indexed).intersection({
+        "presentationcore.dll", "presentationframework.dll",
+        "wpfgfx_cor3.dll", "presentationnative_cor3.dll"}),
+        "sealed WPF runtime identity missing")
+    return dict(schemaVersion=1,
     return dict(schemaVersion=1,
                 observedBundleMembers=len(items),
                 originEvidence=originals,
@@ -156,6 +165,10 @@ def inspect(bundle, originals):
                     licenseTerms="https://learn.microsoft.com/en-us/legal/windows-sdk/license",
                     listAndTermsCompliance="MANUAL_REDIST_AND_END_USER_REVIEW_PENDING"),
                 netLibraryBinaryExceptions=natives,
+                # Unlisted native code is not byte-proven by this manifest.
+                # Particularly coreclr.dll may be prelinked inside apphost.
+                nativeExceptionsNotPresentInManifest=sorted(NATIVE_LIBRARY - observed),
+                unlistedNativeLicenseInterpretation="NOT_A_LICENSE_EXEMPTION_REVIEW_REQUIRED",
                 singleFileHostLicenseTerms="DOTNET_LIBRARY_MANUAL_END_USER_REVIEW_PENDING",
                 termsUrl="https://dotnet.microsoft.com/en-us/dotnet_library_license.htm",
                 missingFullLicenseSourceIds=["MICROSOFT_DOTNET_LIBRARY_LICENSE",
@@ -167,7 +180,8 @@ def inspect(bundle, originals):
 
 def selftest(root):
     original = freeze_sources(root)
-    names = sorted(NATIVE_LIBRARY | {COMPILER})
+    names = sorted(NATIVE_LIBRARY | {COMPILER, "System.Private.CoreLib.dll",
+                                      "PresentationFramework.dll"})
     members = []
     proofs = []
     for name in names:
@@ -186,6 +200,16 @@ def selftest(root):
                   sourceByteEvidence=dict(status=BLOCKED, components=proofs))
     assert inspect(bundle, original)["windowsSdkBinary"]["name"] == COMPILER
     assert inspect(bundle, original)["completeness"] == "NOT_ESTABLISHED"
+    # Reproduce a prelinked .NET10 host: no separate coreclr.dll member.
+    prelinked = json.loads(json.dumps(bundle))
+    prelinked["embeddedFiles"] = [m for m in prelinked["embeddedFiles"]
+                                 if m["name"] != "coreclr.dll"]
+    prelinked["sourceByteEvidence"]["components"] = [
+        m for m in prelinked["sourceByteEvidence"]["components"]
+        if m["name"] != "coreclr.dll"]
+    prelinked["embeddedFileCount"] -= 1
+    assert "coreclr.dll" in inspect(
+        prelinked, original)["nativeExceptionsNotPresentInManifest"]
     def reject(mutator):
         broken = json.loads(json.dumps(bundle))
         mutator(broken)
@@ -195,6 +219,21 @@ def selftest(root):
             return
         raise AssertionError("untrusted .NET/SDK license evidence was accepted")
     reject(lambda b: b["embeddedFiles"].pop())
+    # Never silently lose the managed runtime/WPF identity just because
+    # some native runtime DLLs may be linked into apphost instead.
+    def drop_member(b, name):
+        b["embeddedFiles"] = [m for m in b["embeddedFiles"]
+                              if m["name"].casefold() != name.casefold()]
+        b["sourceByteEvidence"]["components"] = [
+            m for m in b["sourceByteEvidence"]["components"]
+            if m["name"].casefold() != name.casefold()]
+        b["embeddedFileCount"] -= 1
+    reject(lambda b: drop_member(b, "System.Private.CoreLib.dll"))
+    def drop_all_wpf(b):
+        for n in ("PresentationFramework.dll", "wpfgfx_cor3.dll",
+                  "presentationnative_cor3.dll"):
+            drop_member(b, n)
+    reject(drop_all_wpf)
     reject(lambda b: b["embeddedFiles"][-1].update(
         licenseReview="MICROSOFT_COMPONENT_LICENSE_REVIEW"))
     reject(lambda b: b["sourceByteEvidence"]["components"][0].update(
