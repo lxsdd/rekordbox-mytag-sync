@@ -259,6 +259,59 @@ Public binaries, candidate upload, automated promotion, and real-user
 database modifications remain prohibited pending the complete terms,
 copyright notices, and permitted private handoff.
 
+## Component-to-license obligations grounded in the sealed bytes (2026-10-21)
+
+The new `scripts/audit-bundle-license-obligations.py` checks **every**
+embedded and loose member of the **two actual Windows publishes**, comparing
+`sourceByteEvidence` (exact name, length and SHA-256 provenance) to the
+application-output attestation, the corresponding known locked source-pack
+IDs and the byte-verified actual notice-source manifest. It refuses a
+missing source member, unrecognized source package, altered application
+output, missing SDK/.NET-native exception or modified source text. Both
+independent publishes must produce **identical** reviews. The
+`component-license-obligations.json` report is mandatory inside the
+reproducible candidate ZIP and protected by the candidate's manifest/hash.
+
+This *rights-review matrix*, **not a license clearance**, distinguishes:
+
+- Microsoft .NET Windows **Library License** conditions, including the
+  **single-file native runtime host** that may be prelinked rather than
+  represented by an individual `coreclr.dll` FileEntry;
+- Microsoft's **Windows SDK** distribution terms for
+  `D3DCompiler_47_cor3.dll` (the SDK REDIST.TXT/distributable-code
+  decision remains a separate explicit review);
+- Microsoft/.NET **MIT** copyright obligations for other applicable
+  runtime assemblies and the Microsoft.Data.Sqlite NuGet dependency;
+- **SQLite3 Multiple Ciphers MIT** attribution and its NuGet-wrapped
+  libraries, including potential **SQLitePCLRaw Apache-2.0** obligations
+  when a bundle includes transitive SQLitePCLRaw code;
+- the three **application-owned/generated outputs**, still subject to
+  source/copyright ownership review, not automatically licensed simply
+  because we built them.
+
+Microsoft official file exceptions:
+https://github.com/dotnet/core/blob/main/license-information-windows.md .
+.NET Library distribution conditions:
+https://dotnet.microsoft.com/en-us/dotnet_library_license.htm .
+Windows SDK terms:
+https://learn.microsoft.com/en-us/legal/windows-sdk/license .
+SQLite3MC upstream copyright:
+https://github.com/utelle/SQLite3MultipleCiphers/blob/main/LICENSE .
+SQLitePCLRaw Apache-2.0 text and NOTICE:
+https://github.com/ericsink/SQLitePCL.raw/blob/main/LICENSE.TXT and
+https://github.com/ericsink/SQLitePCL.raw/blob/main/NOTICE.TXT .
+
+A SOURCE file's unchanged text or SPDX metadata is **not** verification
+of all applicable sublicense notices, copyright authors, Windows SDK
+redistribution eligibility, downstream end-user terms, or the actual
+target transfer channel. Every group remains in
+`outstandingReviewGroups`; results say
+`noticeCompleteness=NOT_ESTABLISHED` and
+`distributionLicenseStatus=REVIEW_REQUIRED_NOT_AUTHORIZED`.
+Unknown new binaries/pack IDs cause CI failure rather than silently getting
+MIT assigned. This stage does **not** enable artifact uploads or release
+promotion and does not authorize a Windows 11 user handoff.
+
 ## What is still needed before *any* candidate publication
 
 1. **Published file-by-file component manifest.** Identify the *actual* files in the sealed self-contained ZIP, including transitive assemblies, native `sqlite3mc` code and self-contained .NET/WindowsDesktop runtime files. A NuGet package list alone is insufficient to establish the exact contents.
