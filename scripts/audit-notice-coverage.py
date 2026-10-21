@@ -53,7 +53,10 @@ def require(condition, message):
 
 
 def clean_member(value):
-    require(isinstance(value, str) and SAFE_NAME.fullmatch(value) is not None,
+    # Only the three verified, exactly spelled application output names may
+    # contain spaces; do not relax the path/foreign-member character policy.
+    require(isinstance(value, str) and
+            (value in APP_NAMES or SAFE_NAME.fullmatch(value) is not None),
             "invalid embedded member name")
     require(not value.startswith("/") and
             all(p not in ("", ".", "..") for p in value.split("/")),
