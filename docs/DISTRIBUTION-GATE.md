@@ -296,6 +296,81 @@ where appropriate. `completeness=NOT_ESTABLISHED` and
 `distributionLicenseStatus=REVIEW_REQUIRED_NOT_AUTHORIZED` are unchanged,
 and upload/release remain disabled.
 
+## Microsoft WPF 10.0.13 SDK-native source/redist evidence — not legal approval
+
+The **exact original WPF v10.0.13** source
+`dotnet/wpf@v10.0.13:Documentation/redistributables.md` (Git blob
+`b90e9ce29b7500d3ebf83649cb552c0a6049b131`) explains
+that Microsoft bundles the redistributable
+`d3dcompiler_47.dll` as `d3dcompiler_47_cor3.dll` alongside WPF,
+with import-table renaming to avoid applications' own versions.
+The official `dotnet/core:license-information-windows.md`
+(Git blob `bbba73b9a0b553b1dffd2b4299fc5eb203e195fb`) labels
+this renamed library under the **Windows SDK License**, and the native
+Windows/WPF runtime exceptions under the **.NET Library License**.
+Both complete official source-documents are retained byte-exactly
+under `licenses/source-texts`; they are attribution/technical
+documentation, **not** the full Microsoft licensing agreement.
+
+Crucially, Microsoft's current Windows SDK
+[REDIST.TXT list](https://learn.microsoft.com/en-us/legal/windows-sdk/redist)
+explicitly includes `Windows Kits/10/Redist/D3D/x64/d3dcompiler_47.dll`
+and specifies it may accompany **classic Windows applications, not
+Universal Windows apps**, subject to the SDK
+[license terms](https://learn.microsoft.com/en-us/legal/windows-sdk/license).
+The WPF v10.0.13 source describes the rename from that original DLL.
+This is a strong, bounded official relationship, **not** a signed
+assertion that every prelinked runtime's SDK, Microsoft .NET Library
+distribution condition, end-user terms or copyright obligation has
+been fulfilled.
+
+New `audit-microsoft-native-redist.py` verifies the two original
+Git-blob identities on every Windows CI checkout and joins the **real
+sealed `D3DCompiler_47_cor3.dll`** and native .NET Library exceptions
+to exact, locked WindowsDesktop/.NET runtime source-pack names and
+the member's SHA-256. It refuses mislabeled SDK/Library native
+binaries, missing/foreign source roots, missing byte evidence,
+altered documentation and falsely permitted release status.
+Both independently published Windows candidates must give identical
+`microsoft-native-redist-evidence.json`, staged inside the
+**ephemeral-only** candidate alongside the two original source
+documents. Those docs stay in `LEGAL-REVIEW-ORIGINAL-SOURCES` rather
+than being misrepresented as the required full license texts.
+
+The **two missing original legal-source IDs** are deliberately
+preserved: `MICROSOFT_DOTNET_LIBRARY_LICENSE` and
+`WINDOWS_SDK_D3DCOMPILER_LICENSE`. They are authoritative
+*agreements*, not the preceding software-source documents.
+Microsoft's [.NET Library terms](https://dotnet.microsoft.com/en-us/dotnet_library_license.htm)
+require applications (not standalone code), sufficiently protective
+end-user/distributor terms and distributor indemnification;
+the [Windows SDK terms](https://learn.microsoft.com/en-us/legal/windows-sdk/license)
+also require substantial primary functionality, end-user protections,
+valid copyright and adherence to redistribution restrictions.
+Before any private candidate delivery, these conditions and other
+third-party notices need actual human/legal review. All code
+continues to say `REVIEW_REQUIRED_NOT_AUTHORIZED` and
+`NOT_ESTABLISHED`.
+
+### Preliminary delivery-channel comparison (no binary delivery authorized)
+
+- A **public GitHub Actions artifact** is not private: GitHub's
+  [Actions artifact API](https://docs.github.com/en/rest/actions/artifacts)
+  allows access to public-repository artifacts by readers.
+- A **draft GitHub release** is listed by the Releases API only to
+  users with push access (per
+  [GitHub's Releases API documentation](https://docs.github.com/en/rest/releases/releases)).
+  It is a *candidate design for a sole-owner private handoff*, not
+  a verified asset-download security test; accidentally publishing
+  the draft would immediately reveal its contents. Creation may
+  also require a tag and content-write permissions.
+- Do not create drafts/tags, change workflow rights, upload any binary,
+  generate a secret link, or transfer source/vendor files as a workaround.
+  A future **separately user-authorized**, exact-SHA-bound proposal must
+  prove access controls, owner-only asset access, free storage, hold
+  behavior and deletion. The current public artifacts and release
+  workflows remain disabled.
+
 ## What is still needed before *any* candidate publication
 
 1. **Published file-by-file component manifest.** Identify the *actual* files in the sealed self-contained ZIP, including transitive assemblies, native `sqlite3mc` code and self-contained .NET/WindowsDesktop runtime files. A NuGet package list alone is insufficient to establish the exact contents.
