@@ -82,6 +82,34 @@ internal static class WpfReadOnlyUiRegression
             if (window.ApplyButton.IsEnabled || window.RestoreButton.IsEnabled)
                 throw new InvalidOperationException(
                     "Failed synthetic source discovery unexpectedly permitted a database write.");
+
+            // A recipient candidate must NEVER accept live writes, including
+            // direct programmatic Clicks that bypass WPF IsEnabled.
+            if (!MainWindow.LiveWritesHardLocked ||
+                window.WriteConsentTextBox.IsEnabled ||
+                !window.WriteConsentChallengeTextBlock.Text.Contains(
+                    "permanently disabled", StringComparison.OrdinalIgnoreCase) ||
+                !window.PreviewStatusTextBlock.Text.Contains(
+                    "READ-ONLY", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    "Owner-only candidate lost its irreversible read-only UI hold.");
+            window.WriteConsentTextBox.Text = "SYNTHETIC-WRONG-CONSENT";
+            window.ApplyButton.RaiseEvent(new RoutedEventArgs(
+                System.Windows.Controls.Primitives.ButtonBase.ClickEvent,
+                window.ApplyButton));
+            if (window.ApplyStatusTextBox.Text != MainWindow.LiveWriteHoldMessage ||
+                !string.IsNullOrEmpty(window.WriteConsentTextBox.Text))
+                throw new InvalidOperationException(
+                    "Direct Apply Click escaped the read-only candidate hold.");
+            window.WriteConsentTextBox.Text = "SYNTHETIC-WRONG-CONSENT";
+            window.RestoreButton.RaiseEvent(new RoutedEventArgs(
+                System.Windows.Controls.Primitives.ButtonBase.ClickEvent,
+                window.RestoreButton));
+            if (window.ApplyStatusTextBox.Text != MainWindow.LiveWriteHoldMessage ||
+                !string.IsNullOrEmpty(window.WriteConsentTextBox.Text) ||
+                window.ApplyButton.IsEnabled || window.RestoreButton.IsEnabled)
+                throw new InvalidOperationException(
+                    "Direct Restore Click escaped the read-only candidate hold.");
             
             // A click on Inspect with no selected source must always produce a
             // visible, *synchronous* failure and restore the clickable action.
