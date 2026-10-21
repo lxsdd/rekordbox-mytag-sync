@@ -32,7 +32,7 @@ jobs:
       - name: Verify fail-closed per-member notice obligation coverage
         shell: pwsh
         run: python scripts/audit-notice-coverage.py --self-test
-      - name: Verify five upstream release-tagged license and NOTICE source texts
+      - name: Verify six pinned MIT and Apache original license and NOTICE source texts
         shell: pwsh
         run: |
           python scripts/verify-pinned-legal-source-texts.py --self-test

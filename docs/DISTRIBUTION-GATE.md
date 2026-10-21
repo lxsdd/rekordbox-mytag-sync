@@ -261,7 +261,7 @@ copyright notices, and permitted private handoff.
 
 ## Frozen original upstream license/NOTICE text evidence (not final legal clearance)
 
-Five additional **complete original source texts** are now included as
+Six **complete original source texts** are now included as
 public, textual legal evidence (never as public executables), each compared
 against the precise **Git blob SHA-1**, not a filename or claimed SPDX label:
 
@@ -272,13 +272,14 @@ against the precise **Git blob SHA-1**, not a filename or claimed SPDX label:
 | SQLite3 Multiple Ciphers 2.4.0 | `utelle/SQLite3MultipleCiphers@v2.4.0:LICENSE` | Native MIT and 2019–2026 copyright |
 | SQLite3MC NuGet 2.4.0 | `utelle/SQLite3MultipleCiphers-NuGet@v2.4.0:LICENSE` | Wrapper MIT and 2023–2025 copyright |
 | Microsoft .NET MIT | `dotnet/core:LICENSE.TXT` original Git blob | .NET Foundation MIT source; source tag is not version-pinned |
+| Microsoft.Data.Sqlite.Core 10.0.13 | `dotnet/efcore@v10.0.13:LICENSE.txt` | Exact release-tagged EF Core MIT source; distinct original byte identity |
 
 Git blob SHA-1 is used **only as exact Git object identity** (Git's
 `blob <length>\0<bytes>` representation); the archived original source
 bytes also receive independently checked SHA-256 hashes. The new
 `verify-pinned-legal-source-texts.py` rejects missing/modified/truncated/
 binary text, duplicate/unsafe evidence and output reuse. The Windows
-FAST and FULL run negative tests, and FULL requires that all five verified
+FAST and FULL run negative tests, and FULL requires that all six verified
 sources match the bytes and SHA-256 of the corresponding staged
 `NOTICE-SOURCES-UNREVIEWED` entries. A separate
 `pinned-license-source-manifest.json` accompanies the deterministic
@@ -288,8 +289,7 @@ texts and the frozen provenance manifest.
 This closes a **source-document acquisition gap**, not the redistribution
 rights gate. The .NET Library License for prelinked native single-file
 runtime; Windows SDK D3DCompiler redistributable conditions/REDIST.TXT;
-all transitive author notices and Microsoft.Data.Sqlite.Core 10.0.13
-copyright; correct end-user conditions; and an exclusively
+all transitive author notices copyright and applicable additional bundled native notices; correct end-user conditions; and an exclusively
 user-accessible permitted candidate handoff still require verification.
 The per-member coverage report continues to report missing obligations
 where appropriate. `completeness=NOT_ESTABLISHED` and
