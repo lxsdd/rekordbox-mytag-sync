@@ -424,10 +424,13 @@ jobs:
             @{id='SQLITEPCLRAW_CORE_3_0_2_LICENSE'; path='licenses/source-texts/SQLitePCLRaw-v3.0.2-LICENSE.txt'},
             @{id='SQLITEPCLRAW_CORE_3_0_2_NOTICE'; path='licenses/source-texts/SQLitePCLRaw-v3.0.2-NOTICE.txt'},
             @{id='DOTNET_CORE_MIT_LICENSE'; path='licenses/source-texts/dotnet-core-MIT-LICENSE.txt'},
-            @{id='MICROSOFT_SQLITE_CORE_10_0_13_LICENSE'; path='licenses/source-texts/Microsoft-Data-Sqlite-Core-v10.0.13-MIT-LICENSE.txt'}
+            @{id='MICROSOFT_SQLITE_CORE_10_0_13_LICENSE'; path='licenses/source-texts/Microsoft-Data-Sqlite-Core-v10.0.13-MIT-LICENSE.txt'},
+            @{id='MICROSOFT_DOTNET_LIBRARY_LICENSE'; path='licenses/source-texts/Microsoft-NET-Library-terms-SqlClient-NOTICE.txt'},
+            @{id='WINDOWS_SDK_D3DCOMPILER_LICENSE'; path='licenses/source-texts/Microsoft-WindowsSDK-Win10-terms-win32metadata.txt'}
           )
           $sourceArgs = @()
-          $required = @('DOTNET_INSTALLATION_LICENSE', 'DOTNET_INSTALLATION_THIRDPARTY')
+          $required = @('DOTNET_INSTALLATION_LICENSE', 'DOTNET_INSTALLATION_THIRDPARTY',
+                         'MICROSOFT_DOTNET_LIBRARY_LICENSE', 'WINDOWS_SDK_D3DCOMPILER_LICENSE')
           foreach ($item in $sourceFiles) {
             if (Test-Path -LiteralPath $item.path -PathType Leaf) {
               $sourceArgs += @('--source-file', ($item.id + '=' + $item.path))
@@ -448,7 +451,7 @@ jobs:
           $pinned = Get-Content qualification/pinned-license-source-manifest.json -Raw | ConvertFrom-Json
           if ($pinned.completeness -cne 'NOT_ESTABLISHED' -or
               $pinned.distributionLicenseStatus -cne 'REVIEW_REQUIRED_NOT_AUTHORIZED' -or
-              @($pinned.frozenSourceTexts).Count -ne 6) {
+              @($pinned.frozenSourceTexts).Count -ne 8) {
             throw 'Frozen upstream notice-source manifest claims unauthorized clearance.'
           }
           foreach ($item in @($pinned.frozenSourceTexts)) {
@@ -458,7 +461,7 @@ jobs:
               throw "Original legal source bytes differ from staged notice manifest for $($item.sourceId)"
             }
           }
-          Write-Host "Six pinned MIT/Apache license and NOTICE source texts verified; all legal terms still REQUIRE REVIEW."
+          Write-Host "Eight full upstream source texts (including Microsoft SDK/.NET Library agreements) verified; rights and version applicability STILL REQUIRE REVIEW."
           Write-Host "Notice sources preserved=$(@($report.sourceTexts).Count); complete license review remains BLOCKED."
 
       - name: Validate sealed member-to-notice obligations (unreviewed; no release permission)
@@ -710,6 +713,8 @@ jobs:
               "NOTICE-SOURCES-UNREVIEWED/SQLITEPCLRAW_CORE_3_0_2_NOTICE.txt",
               "NOTICE-SOURCES-UNREVIEWED/DOTNET_CORE_MIT_LICENSE.txt",
               "NOTICE-SOURCES-UNREVIEWED/MICROSOFT_SQLITE_CORE_10_0_13_LICENSE.txt",
+              "NOTICE-SOURCES-UNREVIEWED/MICROSOFT_DOTNET_LIBRARY_LICENSE.txt",
+              "NOTICE-SOURCES-UNREVIEWED/WINDOWS_SDK_D3DCOMPILER_LICENSE.txt",
               "NOTICE-SOURCES-UNREVIEWED/DOTNET_INSTALLATION_LICENSE.txt",
               "NOTICE-SOURCES-UNREVIEWED/DOTNET_INSTALLATION_THIRDPARTY.txt",
               "publish-sha256.txt",
