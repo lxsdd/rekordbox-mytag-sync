@@ -154,7 +154,8 @@ def report_coverage(bundle, manifest):
             require(len(source_ids) > 0, "source match has no source identity")
         else:
             require(len(source_ids) == 0, "unmatched bytes reported as matched")
-        exact[name] = (record["status"], sorted(set(source_ids)))
+        exact[name] = (record["status"], sorted(set(source_ids)),
+                       record.get("licenseReview"))
 
     observed = {}
     rows = []
@@ -171,7 +172,9 @@ def report_coverage(bundle, manifest):
         require(isinstance(checksum, str) and HEX256.fullmatch(checksum) is not None,
                 "missing actual sealed member checksum")
         require(name in exact, "bundle member lacks byte-origin evidence")
-        status, origins = exact[name]
+        status, origins, source_license = exact[name]
+        require(source_license == item["licenseReview"],
+                "sealed member contradicts source-byte license attribution")
         if name not in APP_NAMES:
             require(status == "MATCHED_EXACT_RAW_BYTES",
                     "unknown foreign packaged bytes cannot be covered by notices")
@@ -242,14 +245,14 @@ def selftest():
     ]
     entries = [member(n, k) for n, k, _ in samples]
     entries += [member(name, category) for name, category in app]
-    def origin(n, source):
-        return dict(name=n,
+    def origin(n, source, classification):
+        return dict(name=n, licenseReview=classification,
                     status="MATCHED_EXACT_RAW_BYTES" if source else
                            "UNMATCHED_REQUIRES_REVIEW",
                     possibleSources=([dict(sourceId=source, relativePath=n)]
                                      if source else []))
-    origin_rows = [origin(n, sid) for n, _, sid in samples]
-    origin_rows += [origin(n, None) for n, _ in app]
+    origin_rows = [origin(n, sid, category) for n, category, sid in samples]
+    origin_rows += [origin(n, None, category) for n, category in app]
     bundle = dict(distributionLicenseStatus=BLOCKED, bundleSha256="b" * 64,
                   embeddedFileCount=len(entries), externalFileCount=0,
                   embeddedFiles=entries, externalFiles=[],
@@ -288,6 +291,12 @@ def selftest():
     bad(lambda b, s: b["embeddedFiles"][0].update(name="../private.mp3"))
     bad(lambda b, s: b["embeddedFiles"][0].update(licenseReview="SOME_VENDOR"))
     bad(lambda b, s: b["embeddedFiles"][0].update(onDiskSha256="not-a-hash"))
+    # Raw byte identity alone must not allow a contradictory legal-family
+    # source ledger, whether the entry is third-party or first-party output.
+    bad(lambda b, s: b["sourceByteEvidence"]["components"][0].update(
+        licenseReview="MICROSOFT_WINDOWS_SDK_LICENSE_REVIEW"))
+    bad(lambda b, s: b["sourceByteEvidence"]["components"][-1].update(
+        licenseReview="THIRD_PARTY_SQLITE3MC_LICENSE_REVIEW"))
     bad(lambda b, s: b["sourceByteEvidence"]["components"][0].update(
         status="UNMATCHED_REQUIRES_REVIEW", possibleSources=[]))
     bad(lambda b, s: s.update(completeness="COMPLETE"))
