@@ -334,6 +334,7 @@ def selftest():
     assert set(report["missingNoticeSourceIds"]) == {
         "WINDOWS_SDK_D3DCOMPILER_LICENSE",
         "SQLITE3MC_LIB_2_4_0_LICENSE",
+        "SQLITE3MC_NUGET_2_4_0_LICENSE",
         "SQLITEPCLRAW_CORE_3_0_2_LICENSE",
         "MICROSOFT_SQLITE_CORE_10_0_13_LICENSE"}
     assert report["distributionLicenseStatus"] == BLOCKED
