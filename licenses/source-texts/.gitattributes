@@ -1,0 +1,3 @@
+# Legal source texts are preserved as byte-for-byte upstream Git objects.
+# Disable Windows autocrlf conversion; legal evidence must never be rewritten.
+* -text
