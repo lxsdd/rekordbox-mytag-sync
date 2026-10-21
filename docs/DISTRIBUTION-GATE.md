@@ -272,3 +272,33 @@ copyright notices, and permitted private handoff.
 Any future change to the two disabled upload/promotion gates must be a separately reviewed, SHA-bound PR demonstrating (1) actual bundle contents and notices, (2) no secrets/vendor binaries, (3) a cost-free permitted handoff path and storage limits, (4) successful FAST/FULL and (5) the appropriate explicit user approval. **This document does not authorize relaxing the hold**, nor does dependency MIT licensing alone make the complete package or its delivery safe.
 
 Historical FULL software candidate: `71939b9d91258f6bb40ef7509e7744a8c7c8d5e7`; ZIP inner SHA-256 `bb82d68ff36300efee274017ac09af347c2e43843d53bc6199c6b43a860d2cf0`; no published artifact.
+
+## Per-member actual sealed bundle → required source-text notice matrix
+
+The Windows FULL workflow now builds a separate `notice-coverage-report.json`
+from the **actual** pinned source-byte bundle inventory and captured unreviewed
+license/ThirdPartyNotice source manifest. Every embedded or sidecar component
+is assigned to a narrowly scoped review family: Microsoft .NET runtime/WPF;
+native .NET Library License; Windows SDK D3DCompiler; SQLite3MC MIT;
+SQLitePCLRaw Apache-2.0; Microsoft.Data.Sqlite NuGet MIT; or three strictly
+named application-generated outputs requiring application copyright review.
+
+For each member this report records the sanitized relative bundle member name,
+stored member SHA-256, actual byte-origin labels, required version-specific
+notice-source IDs, and the text sources still missing. A captured text remains
+`NOTICE_SOURCE_CAPTURED_APPLICABILITY_REVIEW_REQUIRED` and never means its
+rights, conditions, completeness or correct application have been verified.
+General SDK ThirdPartyNotices cannot be substituted automatically for an
+absent distinct Windows SDK, .NET Library, SQLite3MC, SQLitePCLRaw or Microsoft
+SQLite source file.
+
+The matrix explicitly preserves `completeness=NOT_ESTABLISHED`,
+`copyrightAndLicenseApplicability=HUMAN_REVIEW_PENDING` and
+`distributionLicenseStatus=REVIEW_REQUIRED_NOT_AUTHORIZED`. It refuses
+foreign/unmatched binaries, duplicate or omitted member or evidence rows,
+unsafe paths, missing/invalid source hashes, unrecognized categories, and
+manifests that falsely claim license completion. FAST and FULL run isolated
+synthetic positive/negative tests; FULL audits every actual sealed member and
+retains the evidence report **only inside its ephemeral ZIP**. This is not a
+redistribution gate approval, private delivery permission, user-hardware
+qualification, or change to the existing public-upload and release holds.

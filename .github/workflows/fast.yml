@@ -29,6 +29,9 @@ jobs:
       - name: Verify exact license/notice source capture rejects tampering
         shell: pwsh
         run: python scripts/audit-notice-source-texts.py --self-test
+      - name: Verify fail-closed per-member notice obligation coverage
+        shell: pwsh
+        run: python scripts/audit-notice-coverage.py --self-test
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.402'
