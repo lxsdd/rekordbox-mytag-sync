@@ -259,6 +259,43 @@ Public binaries, candidate upload, automated promotion, and real-user
 database modifications remain prohibited pending the complete terms,
 copyright notices, and permitted private handoff.
 
+## Frozen original upstream license/NOTICE text evidence (not final legal clearance)
+
+Five additional **complete original source texts** are now included as
+public, textual legal evidence (never as public executables), each compared
+against the precise **Git blob SHA-1**, not a filename or claimed SPDX label:
+
+| Actual locked dependency/source | Exact upstream tag/file | Evidence |
+| --- | --- | --- |
+| SQLitePCLRaw 3.0.2 | `ericsink/SQLitePCL.raw@v3.0.2:LICENSE.TXT` | Full Apache License 2.0 |
+| SQLitePCLRaw 3.0.2 | `ericsink/SQLitePCL.raw@v3.0.2:NOTICE.TXT` | Project copyright and SQLite-related notices |
+| SQLite3 Multiple Ciphers 2.4.0 | `utelle/SQLite3MultipleCiphers@v2.4.0:LICENSE` | Native MIT and 2019–2026 copyright |
+| SQLite3MC NuGet 2.4.0 | `utelle/SQLite3MultipleCiphers-NuGet@v2.4.0:LICENSE` | Wrapper MIT and 2023–2025 copyright |
+| Microsoft .NET MIT | `dotnet/core:LICENSE.TXT` original Git blob | .NET Foundation MIT source; source tag is not version-pinned |
+
+Git blob SHA-1 is used **only as exact Git object identity** (Git's
+`blob <length>\0<bytes>` representation); the archived original source
+bytes also receive independently checked SHA-256 hashes. The new
+`verify-pinned-legal-source-texts.py` rejects missing/modified/truncated/
+binary text, duplicate/unsafe evidence and output reuse. The Windows
+FAST and FULL run negative tests, and FULL requires that all five verified
+sources match the bytes and SHA-256 of the corresponding staged
+`NOTICE-SOURCES-UNREVIEWED` entries. A separate
+`pinned-license-source-manifest.json` accompanies the deterministic
+temporary candidate; the ZIP completion auditor requires both original
+texts and the frozen provenance manifest.
+
+This closes a **source-document acquisition gap**, not the redistribution
+rights gate. The .NET Library License for prelinked native single-file
+runtime; Windows SDK D3DCompiler redistributable conditions/REDIST.TXT;
+all transitive author notices and Microsoft.Data.Sqlite.Core 10.0.13
+copyright; correct end-user conditions; and an exclusively
+user-accessible permitted candidate handoff still require verification.
+The per-member coverage report continues to report missing obligations
+where appropriate. `completeness=NOT_ESTABLISHED` and
+`distributionLicenseStatus=REVIEW_REQUIRED_NOT_AUTHORIZED` are unchanged,
+and upload/release remain disabled.
+
 ## What is still needed before *any* candidate publication
 
 1. **Published file-by-file component manifest.** Identify the *actual* files in the sealed self-contained ZIP, including transitive assemblies, native `sqlite3mc` code and self-contained .NET/WindowsDesktop runtime files. A NuGet package list alone is insufficient to establish the exact contents.
