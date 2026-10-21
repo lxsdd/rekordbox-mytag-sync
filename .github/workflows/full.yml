@@ -434,6 +434,24 @@ jobs:
           }
           Write-Host "Notice sources preserved=$(@($report.sourceTexts).Count); complete license review remains BLOCKED."
 
+      - name: Validate sealed member-to-notice obligations (unreviewed; no release permission)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/audit-notice-coverage.py --self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Notice coverage negative tests failed.' }
+          python scripts/audit-notice-coverage.py --bundle qualification/bundle-audit-a.json --notices qualification/notice-source-manifest.json --output qualification/notice-coverage-report.json
+          if ($LASTEXITCODE -ne 0) { throw 'Actual embedded payload notice coverage evidence failed.' }
+          $coverage = Get-Content qualification/notice-coverage-report.json -Raw | ConvertFrom-Json
+          $actual = Get-Content qualification/bundle-audit-a.json -Raw | ConvertFrom-Json
+          if ($coverage.coveredMemberCount -ne ($actual.embeddedFileCount + $actual.externalFileCount) -or
+              $coverage.distributionLicenseStatus -cne 'REVIEW_REQUIRED_NOT_AUTHORIZED' -or
+              $coverage.completeness -cne 'NOT_ESTABLISHED' -or
+              $coverage.copyrightAndLicenseApplicability -cne 'HUMAN_REVIEW_PENDING') {
+            throw 'Notice matrix lost a bundled file or incorrectly lifted license hold.'
+          }
+          Write-Host "Actual sealed notice coverage=$($coverage.coveredMemberCount) components;"
+          Write-Host "missing notice-source identifiers=$(@($coverage.missingNoticeSourceIds).Count); distribution BLOCKED."
       - name: Smoke-test published WPF application
         shell: pwsh
         run: |
@@ -464,6 +482,7 @@ jobs:
           Copy-Item "qualification/license-audit.tsv" $stage
           Copy-Item "qualification/bundle-audit-a.json" (Join-Path $stage "embedded-bundle-inventory.json")
           Copy-Item "qualification/notice-source-manifest.json" (Join-Path $stage "notice-source-manifest.json")
+          Copy-Item "qualification/notice-coverage-report.json" (Join-Path $stage "notice-coverage-report.json")
           Copy-Item "qualification/notice-source-texts" (Join-Path $stage "NOTICE-SOURCES-UNREVIEWED") -Recurse
           Copy-Item "qualification/publish-sha256.txt" $stage
           Copy-Item "src/RekordboxMyTagSync/packages.lock.json" (Join-Path $stage "product-packages.lock.json")
@@ -623,6 +642,7 @@ jobs:
               "license-audit.tsv",
               "embedded-bundle-inventory.json",
               "notice-source-manifest.json",
+              "notice-coverage-report.json",
               "NOTICE-SOURCES-UNREVIEWED/DOTNET_INSTALLATION_LICENSE.txt",
               "NOTICE-SOURCES-UNREVIEWED/DOTNET_INSTALLATION_THIRDPARTY.txt",
               "publish-sha256.txt",
