@@ -43,6 +43,39 @@ MICROSOFT_RUNTIME_CATEGORIES = {
 APP_CATEGORIES = {"APPLICATION_OWNERSHIP_REVIEW", "APP_METADATA"}
 
 
+
+# Locked inputs from FULL's exact .NET 10.0.13 / SQLite package-source roots.
+# This links a claimed legal family to the *actual* byte-identical package
+# origin, rather than trusting a mutable licenseReview string alone.
+ORIGIN_GROUPS = {
+    "NETCORE_RUNTIME_10.0.13": "DOTNET",
+    "NETCORE_PACK_10.0.13": "DOTNET",
+    "WINDOWSDESKTOP_RUNTIME_10.0.13": "WINDOWSDESKTOP",
+    "WINDOWSDESKTOP_PACK_10.0.13": "WINDOWSDESKTOP",
+    "SQLITE3MC_BUNDLE_2.4.0": "SQLITE3MC",
+    "SQLITE3MC_LIB_2.4.0": "SQLITE3MC",
+    "SQLITE3MC_PROVIDER_2.4.0": "SQLITE3MC",
+    "SQLITEPCLRAW_CORE_3.0.2": "SQLITEPCLRAW",
+    "MICROSOFT_SQLITE_CORE_10.0.13": "MICROSOFT_SQLITE",
+}
+FAMILY_ORIGIN_GROUPS = {
+    "MICROSOFT_RUNTIME": {"DOTNET", "WINDOWSDESKTOP"},
+    "MICROSOFT_DOTNET_LIBRARY": {"DOTNET", "WINDOWSDESKTOP"},
+    "WINDOWS_SDK_D3DCOMPILER": {"WINDOWSDESKTOP"},
+    "SQLITE3MC_MIT": {"SQLITE3MC"},
+    "SQLITEPCLRAW_APACHE_2": {"SQLITEPCLRAW"},
+    "MICROSOFT_SQLITE_NUGET_MIT": {"MICROSOFT_SQLITE"},
+}
+
+
+def require_compatible_origins(family, origins, name):
+    allowed = FAMILY_ORIGIN_GROUPS.get(family)
+    require(allowed is not None and origins,
+            "missing allowed origin family or provenance: " + name)
+    for origin in origins:
+        require(ORIGIN_GROUPS.get(origin) in allowed,
+                "origin package contradicts license family: " + name)
+
 class CoverageError(ValueError):
     pass
 
@@ -93,6 +126,18 @@ def family_for(member, candidate_sources):
     if member["name"] in APP_NAMES:
         require(category in APP_CATEGORIES, "altered app output attribution")
         return "APPLICATION_RIGHTS"
+    # Unlike names inferred from generic "Microsoft./System." categories,
+    # these two known sealed DLLs have distinct, verified source owners.
+    # Their rights family cannot be re-selected by spoofing a candidate ID.
+    exact_library_families = {
+        "system.private.corelib.dll": "MICROSOFT_RUNTIME",
+        "microsoft.data.sqlite.dll": "MICROSOFT_SQLITE_NUGET_MIT",
+    }
+    canonical_name = member["name"].casefold()
+    if canonical_name in exact_library_families:
+        require(category == "MICROSOFT_COMPONENT_LICENSE_REVIEW",
+                "known Microsoft assembly changed legal category")
+        return exact_library_families[canonical_name]
     if category == "MICROSOFT_WINDOWS_SDK_LICENSE_REVIEW":
         return "WINDOWS_SDK_D3DCOMPILER"
     if category == "MICROSOFT_DOTNET_LIBRARY_LICENSE_REVIEW":
@@ -183,6 +228,8 @@ def report_coverage(bundle, manifest):
                     status == "MATCHED_EXACT_RAW_BYTES",
                     "application output identity is not qualified")
         family = family_for(item, origins)
+        if family != "APPLICATION_RIGHTS":
+            require_compatible_origins(family, origins, name)
         needed = list(REQUIREMENTS.get(family, ()))
         if family == "APPLICATION_RIGHTS":
             require(name in APP_NAMES, "unlisted application right")
@@ -277,6 +324,13 @@ def selftest():
         source["sourceTexts"].append(captured(sid))
     assert not report_coverage(bundle, source)["missingNoticeSourceIds"]
     assert report_coverage(bundle, source)["completeness"] == "NOT_ESTABLISHED"
+    # The same exact assembly may appear in a runtime and targeting pack;
+    # multiple byte-identical candidates within the same rights group pass.
+    aligned = json.loads(json.dumps(bundle))
+    aligned["sourceByteEvidence"]["components"][0]["possibleSources"].append(
+        dict(sourceId="NETCORE_RUNTIME_10.0.13",
+             relativePath="System.Private.CoreLib.dll"))
+    assert report_coverage(aligned, source)["distributionLicenseStatus"] == BLOCKED
     def bad(mutator):
         b = json.loads(json.dumps(bundle))
         s = json.loads(json.dumps(source))
@@ -297,6 +351,23 @@ def selftest():
         licenseReview="MICROSOFT_WINDOWS_SDK_LICENSE_REVIEW"))
     bad(lambda b, s: b["sourceByteEvidence"]["components"][-1].update(
         licenseReview="THIRD_PARTY_SQLITE3MC_LICENSE_REVIEW"))
+    # A forged package ID can match a member's textual license category,
+    # yet point to a different vendor/version and therefore wrong notices.
+    bad(lambda b, s: b["sourceByteEvidence"]["components"][0][
+        "possibleSources"][0].update(sourceId="SQLITEPCLRAW_CORE_3.0.2"))
+    bad(lambda b, s: b["sourceByteEvidence"]["components"][1][
+        "possibleSources"][0].update(sourceId="NETCORE_RUNTIME_10.0.13"))
+    bad(lambda b, s: b["sourceByteEvidence"]["components"][2][
+        "possibleSources"][0].update(sourceId="MICROSOFT_SQLITE_CORE_10.0.13"))
+    bad(lambda b, s: b["sourceByteEvidence"]["components"][3][
+        "possibleSources"][0].update(sourceId="SQLITE3MC_PROVIDER_2.4.0"))
+    bad(lambda b, s: b["sourceByteEvidence"]["components"][4][
+        "possibleSources"][0].update(sourceId="SQLITEPCLRAW_CORE_3.0.2"))
+    bad(lambda b, s: b["sourceByteEvidence"]["components"][0][
+        "possibleSources"][0].update(sourceId="UNKNOWN_PACK_1.2.3"))
+    bad(lambda b, s: b["sourceByteEvidence"]["components"][0][
+        "possibleSources"].append(dict(sourceId="SQLITE3MC_LIB_2.4.0",
+                                      relativePath="System.Private.CoreLib.dll")))
     bad(lambda b, s: b["sourceByteEvidence"]["components"][0].update(
         status="UNMATCHED_REQUIRES_REVIEW", possibleSources=[]))
     bad(lambda b, s: s.update(completeness="COMPLETE"))
