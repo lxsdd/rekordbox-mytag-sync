@@ -298,6 +298,8 @@ def selftest():
          "NETCORE_PACK_10.0.13"),
         ("D3DCompiler_47_cor3.dll", "MICROSOFT_WINDOWS_SDK_LICENSE_REVIEW",
          "WINDOWSDESKTOP_PACK_10.0.13"),
+        ("wpfgfx_cor3.dll", "MICROSOFT_DOTNET_LIBRARY_LICENSE_REVIEW",
+         "WINDOWSDESKTOP_PACK_10.0.13"),
         ("e_sqlite3mc.dll", "THIRD_PARTY_SQLITE3MC_LICENSE_REVIEW",
          "SQLITE3MC_LIB_2.4.0"),
         ("SQLitePCLRaw.core.dll", "LOCKED_NUGET_SQLITEPCLRAW_ATTRIBUTION_PENDING",
@@ -333,6 +335,7 @@ def selftest():
     assert report["coveredMemberCount"] == len(entries)
     assert set(report["missingNoticeSourceIds"]) == {
         "WINDOWS_SDK_D3DCOMPILER_LICENSE",
+        "MICROSOFT_DOTNET_LIBRARY_LICENSE",
         "SQLITE3MC_LIB_2_4_0_LICENSE",
         "SQLITE3MC_NUGET_2_4_0_LICENSE",
         "SQLITEPCLRAW_CORE_3_0_2_LICENSE",
@@ -343,6 +346,8 @@ def selftest():
         source["sourceTexts"].append(captured(sid))
     assert not report_coverage(bundle, source)["missingNoticeSourceIds"]
     assert report_coverage(bundle, source)["completeness"] == "NOT_ESTABLISHED"
+    assert report_coverage(bundle, source)["copyrightAndLicenseApplicability"] == (
+        "HUMAN_REVIEW_PENDING")
     # The same exact assembly may appear in a runtime and targeting pack;
     # multiple byte-identical candidates within the same rights group pass.
     aligned = json.loads(json.dumps(bundle))
