@@ -548,6 +548,7 @@ jobs:
           New-Item -ItemType Directory -Force (Join-Path $stage "LEGAL-REVIEW-ORIGINAL-SOURCES") | Out-Null
           Copy-Item "licenses/source-texts/WPF-v10.0.13-redistributables.md" (Join-Path $stage "LEGAL-REVIEW-ORIGINAL-SOURCES/WPF-v10.0.13-redistributables.md")
           Copy-Item "licenses/source-texts/dotnet-core-windows-license-map.md" (Join-Path $stage "LEGAL-REVIEW-ORIGINAL-SOURCES/dotnet-core-windows-license-map.md")
+          Copy-Item "licenses/source-texts/dotnet-runtime-v10.0.13-licensing-assets.md" (Join-Path $stage "LEGAL-REVIEW-ORIGINAL-SOURCES/dotnet-runtime-v10.0.13-licensing-assets.md")
           Copy-Item "qualification/notice-source-texts" (Join-Path $stage "NOTICE-SOURCES-UNREVIEWED") -Recurse
           Copy-Item "qualification/publish-sha256.txt" $stage
           Copy-Item "src/RekordboxMyTagSync/packages.lock.json" (Join-Path $stage "product-packages.lock.json")
@@ -712,6 +713,7 @@ jobs:
               "microsoft-native-redist-evidence.json",
               "LEGAL-REVIEW-ORIGINAL-SOURCES/WPF-v10.0.13-redistributables.md",
               "LEGAL-REVIEW-ORIGINAL-SOURCES/dotnet-core-windows-license-map.md",
+              "LEGAL-REVIEW-ORIGINAL-SOURCES/dotnet-runtime-v10.0.13-licensing-assets.md",
               "NOTICE-SOURCES-UNREVIEWED/SQLITE3MC_LIB_2_4_0_LICENSE.txt",
               "NOTICE-SOURCES-UNREVIEWED/SQLITE3MC_NUGET_2_4_0_LICENSE.txt",
               "NOTICE-SOURCES-UNREVIEWED/SQLITEPCLRAW_CORE_3_0_2_LICENSE.txt",
