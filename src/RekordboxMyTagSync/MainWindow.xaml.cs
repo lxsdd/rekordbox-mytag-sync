@@ -14,6 +14,13 @@ namespace RekordboxMyTagSync;
 
 public partial class MainWindow : Window
 {
+    // All one-recipient acceptance candidates are permanently read-only.
+    // Never derive write authority from preview, consent text, live settings,
+    // command-line arguments, environment, or restored UI state.
+    internal const bool LiveWritesHardLocked = true;
+    internal const string LiveWriteHoldMessage =
+        "Apply / Restore blocked: this Windows 11 acceptance candidate is READ-ONLY.";
+
     private readonly string _settingsPath = AppSettingsStore.DefaultPath;
     private readonly ObservableCollection<MappingRow> _mappings = new();
     private readonly ObservableCollection<AliasRow> _aliases = new();
@@ -934,6 +941,13 @@ public partial class MainWindow : Window
 
     private void ApplyApprovedPreview()
     {
+        if (LiveWritesHardLocked)
+        {
+            WriteConsentTextBox.Clear();
+            ApplyStatusTextBox.Text = LiveWriteHoldMessage;
+            AppendDiagnostic("Apply refused: read-only acceptance build.");
+            return;
+        }
         if (_databaseSnapshot is null || _approvedPreview is null ||
             !LiveWriteConsent.Matches(LiveWriteOperation.Apply,
                 _databaseSnapshot.Identity, _approvedPreview.FingerprintSha256,
@@ -1062,6 +1076,13 @@ public partial class MainWindow : Window
 
     private void RestoreRollingBackup()
     {
+        if (LiveWritesHardLocked)
+        {
+            WriteConsentTextBox.Clear();
+            ApplyStatusTextBox.Text = LiveWriteHoldMessage;
+            AppendDiagnostic("Restore refused: read-only acceptance build.");
+            return;
+        }
         if (_databaseSnapshot is null || _qualifiedRestoreImageSha256 is null ||
             !LiveWriteConsent.Matches(LiveWriteOperation.Restore,
                 _databaseSnapshot.Identity, _qualifiedRestoreImageSha256,
@@ -1307,12 +1328,12 @@ public partial class MainWindow : Window
         SaveSettingsButton.IsEnabled = !_operationBusy;
         AddAliasButton.IsEnabled = !_operationBusy;
         RemoveAliasButton.IsEnabled = !_operationBusy;
-        var applyCode = state.CanApply && _databaseSnapshot is not null &&
+        var applyCode = !LiveWritesHardLocked && state.CanApply && _databaseSnapshot is not null &&
             _approvedPreview is not null && _approvedPhysicalAuthority is not null
             ? LiveWriteConsent.Challenge(LiveWriteOperation.Apply,
                 _databaseSnapshot.Identity, _approvedPreview.FingerprintSha256)
             : null;
-        var restoreCode = state.CanRestore && _databaseSnapshot is not null &&
+        var restoreCode = !LiveWritesHardLocked && state.CanRestore && _databaseSnapshot is not null &&
             _qualifiedRestoreImageSha256 is not null
             ? LiveWriteConsent.Challenge(LiveWriteOperation.Restore,
                 _databaseSnapshot.Identity, _qualifiedRestoreImageSha256)
@@ -1322,20 +1343,26 @@ public partial class MainWindow : Window
             string.Equals(WriteConsentTextBox.Text, applyCode, StringComparison.Ordinal);
         RestoreButton.IsEnabled = !_operationBusy && restoreCode is not null &&
             string.Equals(WriteConsentTextBox.Text, restoreCode, StringComparison.Ordinal);
-        WriteConsentChallengeTextBlock.Text =
-            "No write is authorized by Preview alone. The local operator must type exactly ONE code for ONE operation:" +
+        WriteConsentTextBox.IsEnabled = !LiveWritesHardLocked && !_operationBusy;
+        WriteConsentChallengeTextBlock.Text = LiveWritesHardLocked
+            ? "READ-ONLY candidate. Apply and Restore are permanently disabled; no confirmation code can authorize a write."
+            : "No write is authorized by Preview alone. The local operator must type exactly ONE code for ONE operation:" +
             (applyCode is null ? "" : Environment.NewLine + "Apply: " + applyCode) +
             (restoreCode is null ? "" : Environment.NewLine + "Restore: " + restoreCode) +
             (applyCode is null && restoreCode is null
                 ? Environment.NewLine + "First validate the target and fresh Preview or rolling backup." : "");
 
-        PreviewStatusTextBlock.Text = state.CanApply
+        PreviewStatusTextBlock.Text = LiveWritesHardLocked
+            ? "READ-ONLY: Verified preview is available; Apply and Restore remain prohibited."
+            : state.CanApply
             ? "Fresh conflict-free preview available — local one-operation confirmation still required."
             : state.CanBuildPreview
                 ? "Ready to build a fresh preview."
                 : "Preview blocked by safety prerequisites.";
 
-        ApplyStatusTextBox.Text = state.Blockers.Count == 0
+        ApplyStatusTextBox.Text = LiveWritesHardLocked
+            ? LiveWriteHoldMessage
+            : state.Blockers.Count == 0
             ? "No write authorized without exact one-operation local confirmation."
             : string.Join(Environment.NewLine, state.Blockers.Select(x => "• " + x));
     }
