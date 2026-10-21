@@ -121,6 +121,9 @@ if ($release.draft -ne $true -or $release.tag_name -cne $tag -or [int64]$release
 }
 $id = [int64]$release.id
 Write-Host "PRIVATE_DRAFT_CREATED id=$id draft=true"
+# From this point onward, a failed upload must not leave a long-lived,
+# partially populated binary-bearing draft behind when safe cleanup is possible.
+try {
 # Critical: verify this particular fresh Draft is anonymous-inaccessible
 # BEFORE sending any executable bytes, not only after the ZIP upload.
 Assert-Anonymous404 ([string]$release.html_url)
@@ -180,3 +183,27 @@ Write-Host "PRIVATE_DRAFT_ANONYMOUS_DENY=PASS endpoints=2"
 Write-Host "PRIVATE_DRAFT_OWNER_URL=$($final.html_url)"
 Write-Host "PRIVATE_DRAFT_SOURCE_SHA=$SourceSha"
 Write-Host "PRIVATE_DRAFT_ZIP_SHA256=$actual"
+} catch {
+    $failure = $_.Exception.Message
+    $cleaned = $false
+    try {
+        $current = Invoke-RestMethod -Uri "$api/releases/$id" -Headers $headers
+        # Delete only the uniquely identified draft just created by THIS run.
+        # Never delete a public release, another draft, or a real Git tag.
+        if ($current.draft -eq $true -and [long]$current.id -eq $id -and
+            $current.tag_name -cne $tag) {
+            Write-Warning 'Owner Draft tag changed: manual inspection required.'
+        } elseif ($current.draft -eq $true -and [long]$current.id -eq $id -and
+                  $current.tag_name -ceq $tag) {
+            Invoke-RestMethod -Method Delete -Uri "$api/releases/$id" -Headers $headers | Out-Null
+            $cleaned = $true
+            Write-Host "PRIVATE_DRAFT_ABORT_CLEANUP=PASS id=$id"
+        } else {
+            Write-Warning "Unsafe to automatically remove release id=$id; manual inspection required."
+        }
+    } catch {
+        Write-Warning "Failed to verify/delete the newly created private draft id=$id; manual inspection required."
+    }
+    if (-not $cleaned) { Write-Warning "Unverified private draft may remain: release id=$id" }
+    throw "Owner-only private Draft handoff failed (never retry blindly): $failure"
+}
