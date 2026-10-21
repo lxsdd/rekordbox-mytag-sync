@@ -1,0 +1,798 @@
+name: OWNER-PRIVATE-READONLY-CANDIDATE
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: 'Exact green main commit (40 lowercase hexadecimal characters)'
+        required: true
+        type: string
+      full_run_id:
+        description: 'Exact successful main FULL run ID (all Windows jobs green)'
+        required: true
+        type: string
+      expected_zip_sha256:
+        description: 'Full 64-character lower-case ZIP SHA256 copied from THAT FULL log'
+        required: true
+        type: string
+      legal_ack:
+        description: 'Read docs/PRIVATE-CANDIDATE-HANDOFF-DE.md and Microsoft terms, then type required exact acknowledgement'
+        required: true
+        type: string
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: owner-private-handoff-only
+  cancel-in-progress: false
+jobs:
+  owner-private-candidate:
+    if: github.actor == 'lxsdd' && github.repository == 'lxsdd/rekordbox-mytag-sync' && github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      PRODUCT_PROJECT: src/RekordboxMyTagSync/RekordboxMyTagSync.csproj
+      TEST_PROJECT: tests/RekordboxMyTagSync.SelfTests/RekordboxMyTagSync.SelfTests.csproj
+    steps:
+      - name: Verify owner authorization and previous SHA-exact green FAST/FULL
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER_ACK: ${{ inputs.legal_ack }}
+          FULL_RUN_ID: ${{ inputs.full_run_id }}
+          EXPECTED_ZIP: ${{ inputs.expected_zip_sha256 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_ACTOR -cne 'lxsdd' -or $env:GITHUB_REPOSITORY -cne 'lxsdd/rekordbox-mytag-sync' -or $env:GITHUB_REF -cne 'refs/heads/main') { throw 'Non-owner handoff forbidden.' }
+          if ($env:OWNER_ACK -cne 'I_ACCEPT_PRIVATE_MICROSOFT_DOTNET_AND_SDK_DISTRIBUTION_DUTIES') { throw 'Distributor has not acknowledged actual Microsoft/end-user obligations.' }
+          if ($env:SOURCE_SHA -cnotmatch '\A[0-9a-f]{40}\z' -or $env:EXPECTED_ZIP -cnotmatch '\A[0-9a-f]{64}\z' -or $env:FULL_RUN_ID -cnotmatch '\A[0-9]+\z') { throw 'Invalid input digest, commit, or FULL run.' }
+          $repo = $env:GITHUB_REPOSITORY
+          $mainSha = (& gh api "repos/$repo/branches/main" --jq '.commit.sha').Trim()
+          if ($mainSha -cne $env:SOURCE_SHA) { throw 'main differs from owner-requested immutable source.' }
+          $run = (& gh api "repos/$repo/actions/runs/$env:FULL_RUN_ID" | ConvertFrom-Json)
+          if ($run.name -cne 'FULL' -or $run.head_sha -cne $env:SOURCE_SHA -or $run.head_branch -cne 'main' -or $run.conclusion -cne 'success') { throw 'Selected FULL was not green on this main SHA.' }
+          $jobs = (& gh api "repos/$repo/actions/runs/$env:FULL_RUN_ID/jobs?per_page=100" | ConvertFrom-Json).jobs
+          foreach ($needed in @('preflight','older-windows-api-smoke','qualify-portable-candidate')) {
+            if (@($jobs | Where-Object { $_.name -ceq $needed -and $_.conclusion -ceq 'success' }).Count -ne 1) { throw "Missing exact successful FULL job: $needed" }
+          }
+          Write-Host "PRIVATE_HANDOFF_QUALIFICATION=PASS source=$env:SOURCE_SHA full_run=$env:FULL_RUN_ID"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify the checkout is the triggering FAST-qualified SHA
+        shell: pwsh
+        run: |
+          $actual = (& git rev-parse HEAD).Trim()
+          if ($actual -ne $env:SOURCE_SHA) {
+            throw "FULL checkout is not bound to the source commit."
+          }
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.402'
+
+      - name: Verify patched .NET SDK/WindowsDesktop security runtime
+        shell: pwsh
+        run: '& ./scripts/Assert-PatchedDotNet.ps1'
+
+      - name: Restore exact project inputs
+        shell: pwsh
+        run: |
+          dotnet restore $env:PRODUCT_PROJECT -r win-x64 --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw "Product restore failed." }
+          dotnet restore $env:TEST_PROJECT -r win-x64 --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw "Self-test restore failed." }
+
+      - name: Build and run deterministic self-tests
+        shell: pwsh
+        run: |
+          dotnet build $env:PRODUCT_PROJECT -c Release --no-restore
+          if ($LASTEXITCODE -ne 0) { throw "Product build failed." }
+          dotnet run --project $env:TEST_PROJECT -c Release --no-restore
+          if ($LASTEXITCODE -ne 0) { throw "Deterministic self-tests failed." }
+
+      - name: Verify automatic database-access compatibility sources
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force qualification | Out-Null
+          $output = (& dotnet run --project $env:TEST_PROJECT -c Release --no-restore -- --verify-remote-access-sources) -join [Environment]::NewLine
+          if ($LASTEXITCODE -ne 0) {
+            throw "Pinned automatic database-access source qualification failed."
+          }
+          $output | Set-Content qualification/database-access-source-audit.txt -Encoding UTF8
+          Write-Host $output
+
+      - name: Audit repository credential and privacy hygiene
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force qualification | Out-Null
+
+          $patternPath = ".github/security-patterns.json"
+          $patterns = @(Get-Content $patternPath -Raw | ConvertFrom-Json)
+          if ($patterns.Count -eq 0) {
+            throw "Repository hygiene pattern set is empty."
+          }
+
+          $tracked = @(git ls-files | Where-Object { $_ -ne $patternPath })
+          if ($LASTEXITCODE -ne 0 -or $tracked.Count -eq 0) {
+            throw "Could not enumerate tracked repository files for hygiene audit."
+          }
+
+          function Test-Content([string]$Label, [string]$Path, [string]$Content) {
+            if ($Path -eq $patternPath) { return }
+
+            # Historical versions of this workflow briefly contained the pattern
+            # definitions inline. Remove only those scanner-definition lines so
+            # they cannot self-trigger while the rest of the workflow stays scanned.
+            if ($Path -eq ".github/workflows/full.yml") {
+              $Content = (($Content -split "\r?\n") |
+                Where-Object {
+                  $_ -notmatch 'Regex\s*=' -and
+                  $_ -notmatch '"regex"\s*:'
+                }) -join [Environment]::NewLine
+            }
+
+            foreach ($pattern in $patterns) {
+              if ($Content -match [string]$pattern.Regex) {
+                $script:findings += [PSCustomObject]@{
+                  Location = $Label
+                  Pattern = [string]$pattern.Name
+                }
+              }
+            }
+          }
+
+          $findings = @()
+          foreach ($file in $tracked) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
+            try {
+              $content = Get-Content -LiteralPath $file -Raw -ErrorAction Stop
+            } catch {
+              continue
+            }
+            Test-Content "current:$file" $file $content
+          }
+
+          $historyObjects = @{}
+          foreach ($line in @(git rev-list --objects --all)) {
+            if ([string]::IsNullOrWhiteSpace($line)) { continue }
+            $parts = $line -split ' ', 2
+            if ($parts.Count -ne 2) { continue }
+            $sha = $parts[0]
+            $historyPath = $parts[1]
+            if ($historyPath -eq $patternPath -or $historyObjects.ContainsKey($sha)) {
+              continue
+            }
+            $historyObjects[$sha] = $historyPath
+          }
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not enumerate repository history for hygiene audit."
+          }
+
+          foreach ($pair in $historyObjects.GetEnumerator()) {
+            try {
+              $objectType = (& git cat-file -t $pair.Key) -join ""
+              if ($LASTEXITCODE -ne 0 -or $objectType -ne "blob") { continue }
+              $content = (& git cat-file -p $pair.Key) -join [Environment]::NewLine
+              if ($LASTEXITCODE -ne 0) { continue }
+            } catch {
+              continue
+            }
+            Test-Content ("history:" + $pair.Value + "@" + $pair.Key.Substring(0, 12)) $pair.Value $content
+          }
+
+          if ($findings.Count -gt 0) {
+            $findings |
+              Sort-Object Location, Pattern -Unique |
+              Format-Table |
+              Out-String |
+              Write-Host
+            throw "Repository hygiene audit found credential-like or private local-path material."
+          }
+
+          @(
+            "status=PASS"
+            "tracked_files=$($tracked.Count)"
+            "historical_blobs=$($historyObjects.Count)"
+            "checked_patterns=$($patterns.Count)"
+          ) | Set-Content qualification/repository-hygiene-audit.txt -Encoding ASCII
+
+      - name: Capture dependency graph and audit vulnerabilities
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force qualification | Out-Null
+
+          $dependencyJson = (& dotnet list $env:PRODUCT_PROJECT package --include-transitive --format json) -join [Environment]::NewLine
+          if ($LASTEXITCODE -ne 0) { throw "Dependency graph query failed." }
+          Set-Content -Path qualification/dependencies.json -Value $dependencyJson -Encoding UTF8
+
+          $vulnerabilityJson = (& dotnet list $env:PRODUCT_PROJECT package --vulnerable --include-transitive --format json) -join [Environment]::NewLine
+          if ($LASTEXITCODE -ne 0) { throw "NuGet vulnerability audit failed." }
+          Set-Content -Path qualification/vulnerability-audit.json -Value $vulnerabilityJson -Encoding UTF8
+
+          $audit = $vulnerabilityJson | ConvertFrom-Json
+          $vulnerable = @()
+          foreach ($project in @($audit.projects)) {
+            foreach ($framework in @($project.frameworks)) {
+              $packages = @($framework.topLevelPackages) + @($framework.transitivePackages)
+              foreach ($package in $packages) {
+                if ($null -ne $package.vulnerabilities -and @($package.vulnerabilities).Count -gt 0) {
+                  $vulnerable += [PSCustomObject]@{
+                    Id = $package.id
+                    Version = $package.resolvedVersion
+                    Vulnerabilities = @($package.vulnerabilities).Count
+                  }
+                }
+              }
+            }
+          }
+          if ($vulnerable.Count -gt 0) {
+            $vulnerable | Format-Table | Out-String | Write-Host
+            throw "FULL is blocked by vulnerable resolved NuGet packages."
+          }
+
+      - name: Audit resolved package licenses
+        shell: pwsh
+        run: |
+          $dependencyJson = Get-Content qualification/dependencies.json -Raw | ConvertFrom-Json
+          $packages = @()
+          foreach ($project in @($dependencyJson.projects)) {
+            foreach ($framework in @($project.frameworks)) {
+              foreach ($package in @($framework.topLevelPackages) + @($framework.transitivePackages)) {
+                $version = if ($package.resolvedVersion) { [string]$package.resolvedVersion } else { [string]$package.version }
+                if ($package.id -and $version) {
+                  $packages += [PSCustomObject]@{ Id = [string]$package.id; Version = $version }
+                }
+              }
+            }
+          }
+
+          $packages = $packages | Sort-Object Id, Version -Unique
+          $tab = [char]9
+          $rows = @("id" + $tab + "version" + $tab + "license_type" + $tab + "license")
+          foreach ($package in $packages) {
+            $folder = Join-Path $env:USERPROFILE (".nuget\packages\" + $package.Id.ToLowerInvariant() + "\" + $package.Version.ToLowerInvariant())
+            $nuspec = Get-ChildItem -Path $folder -Filter *.nuspec -File -ErrorAction Stop | Select-Object -First 1
+            [xml]$xml = Get-Content $nuspec.FullName -Raw
+            $licenseNode = $xml.package.metadata.license
+            $licenseUrl = [string]$xml.package.metadata.licenseUrl
+            $license = if ($null -ne $licenseNode -and -not [string]::IsNullOrWhiteSpace([string]$licenseNode.InnerText)) {
+              [string]$licenseNode.InnerText
+            } elseif (-not [string]::IsNullOrWhiteSpace($licenseUrl)) {
+              $licenseUrl
+            } else {
+              throw "Resolved package '$($package.Id) $($package.Version)' has no auditable license metadata."
+            }
+            $licenseType = if ($null -ne $licenseNode -and $licenseNode.type) { [string]$licenseNode.type } else { "url" }
+            $rows += $package.Id + $tab + $package.Version + $tab + $licenseType + $tab + $license
+          }
+          $rows | Set-Content qualification/license-audit.tsv -Encoding UTF8
+
+      - name: Publish twice and prove deterministic output
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+
+          function Publish-Candidate([string]$OutputPath) {
+            dotnet publish $env:PRODUCT_PROJECT -c Release -r win-x64 --self-contained true --no-restore -p:RuntimeFrameworkVersion=10.0.13 -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:ContinuousIntegrationBuild=true -p:Deterministic=true -p:DeterministicSourcePaths=true -p:DebugType=None -p:DebugSymbols=false -p:PublishReadyToRun=false -p:SourceRevisionId=${{ env.SOURCE_SHA }} -o $OutputPath
+            if ($LASTEXITCODE -ne 0) { throw "Publish failed for $OutputPath." }
+          }
+
+          Publish-Candidate "artifacts/publish-a"
+          Publish-Candidate "artifacts/publish-b"
+
+          function Get-HashMap([string]$Root) {
+            $map = @{}
+            Get-ChildItem $Root -File -Recurse | ForEach-Object {
+              $relative = [IO.Path]::GetRelativePath((Resolve-Path $Root), $_.FullName).Replace('\','/')
+              $map[$relative] = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            }
+            return $map
+          }
+
+          $a = Get-HashMap "artifacts/publish-a"
+          $b = Get-HashMap "artifacts/publish-b"
+          if ($a.Count -ne $b.Count) { throw "Repeated publish produced a different file count." }
+          foreach ($name in $a.Keys) {
+            if (-not $b.ContainsKey($name) -or $a[$name] -ne $b[$name]) {
+              throw "Repeated publish is not deterministic for '$name'."
+            }
+          }
+
+          $a.GetEnumerator() |
+            Sort-Object Name |
+            ForEach-Object { "$($_.Value)  $($_.Name)" } |
+            Set-Content qualification/publish-sha256.txt -Encoding ASCII
+
+      - name: Inventory actual embedded .NET/WPF/SQLCipher bundle members
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/audit-single-file-bundle.py --self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Bundle audit negative regression failed.' }
+          # The source root labels are version-bound, and the NuGet versions
+          # come from the locked project inputs restored earlier in this job.
+          # Missing optional packs are not silently declared matched; the
+          # inventory retains all unmatched entries for license review.
+          $nuget = Join-Path $env:USERPROFILE '.nuget/packages'
+          $dotnetPacks = Join-Path $env:ProgramFiles 'dotnet/packs'
+          $candidates = @(
+            @{id='NETCORE_RUNTIME_10.0.13'; path=(Join-Path $nuget 'microsoft.netcore.app.runtime.win-x64/10.0.13')},
+            @{id='WINDOWSDESKTOP_RUNTIME_10.0.13'; path=(Join-Path $nuget 'microsoft.windowsdesktop.app.runtime.win-x64/10.0.13')},
+            @{id='NETCORE_PACK_10.0.13'; path=(Join-Path $dotnetPacks 'Microsoft.NETCore.App.Runtime.win-x64/10.0.13')},
+            @{id='WINDOWSDESKTOP_PACK_10.0.13'; path=(Join-Path $dotnetPacks 'Microsoft.WindowsDesktop.App.Runtime.win-x64/10.0.13')},
+            @{id='SQLITE3MC_BUNDLE_2.4.0'; path=(Join-Path $nuget 'sqlite3mc.pclraw.bundle/2.4.0')},
+            @{id='SQLITE3MC_LIB_2.4.0'; path=(Join-Path $nuget 'sqlite3mc.pclraw.lib/2.4.0')},
+            @{id='SQLITE3MC_PROVIDER_2.4.0'; path=(Join-Path $nuget 'sqlite3mc.pclraw.provider/2.4.0')},
+            @{id='SQLITEPCLRAW_CORE_3.0.2'; path=(Join-Path $nuget 'sqlitepclraw.core/3.0.2')},
+            @{id='MICROSOFT_SQLITE_CORE_10.0.13'; path=(Join-Path $nuget 'microsoft.data.sqlite.core/10.0.13')}
+          )
+          $sourceArgs = @()
+          foreach ($candidate in $candidates) {
+            if (Test-Path -LiteralPath $candidate.path -PathType Container) {
+              $sourceArgs += @('--source-root', ($candidate.id + '=' + $candidate.path))
+            }
+          }
+          if ($sourceArgs.Count -eq 0) {
+            throw 'No pinned source package roots available for byte-provenance audit.'
+          }
+          python scripts/audit-single-file-bundle.py --exe 'artifacts/publish-a/rekordbox MyTagSync.exe' --publish-dir 'artifacts/publish-a' --output qualification/bundle-audit-a.json @sourceArgs
+          if ($LASTEXITCODE -ne 0) { throw 'Real Windows single-file A bundle/provenance audit failed.' }
+          python scripts/audit-single-file-bundle.py --exe 'artifacts/publish-b/rekordbox MyTagSync.exe' --publish-dir 'artifacts/publish-b' --output qualification/bundle-audit-b.json @sourceArgs
+          if ($LASTEXITCODE -ne 0) { throw 'Real Windows single-file B bundle/provenance audit failed.' }
+          $a = Get-Content qualification/bundle-audit-a.json -Raw | ConvertFrom-Json
+          $b = Get-Content qualification/bundle-audit-b.json -Raw | ConvertFrom-Json
+          if ($a.bundleSha256 -cne $b.bundleSha256 -or
+              $a.embeddedFileCount -ne $b.embeddedFileCount -or
+              $a.externalFileCount -ne $b.externalFileCount -or
+              $a.distributionLicenseStatus -cne 'REVIEW_REQUIRED_NOT_AUTHORIZED' -or
+              $b.distributionLicenseStatus -cne 'REVIEW_REQUIRED_NOT_AUTHORIZED') {
+            throw 'Actual single-file embedded inventory differs or incorrectly claims license approval.'
+          }
+          if ((Get-Content qualification/bundle-audit-a.json -Raw) -cne
+              (Get-Content qualification/bundle-audit-b.json -Raw)) {
+            throw 'Independent Windows publish evidence differs byte-for-byte.'
+          }
+          if ($a.sourceByteEvidence.status -cne 'REVIEW_REQUIRED_NOT_AUTHORIZED' -or
+              $a.sourceByteEvidence.pinnedSourceIds.Count -eq 0) {
+            throw 'Pinned source-byte evidence is missing or incorrectly approves distribution.'
+          }
+          if ($a.applicationOutputEvidence.status -cne 'APPLICATION_OUTPUT_IDENTITY_REVIEW_REQUIRED' -or
+              $a.applicationOutputEvidence.distributionLicenseStatus -cne 'REVIEW_REQUIRED_NOT_AUTHORIZED' -or
+              $a.applicationOutputEvidence.unexpectedUnmatchedCount -ne 0 -or
+              @($a.applicationOutputEvidence.applicationOutputs).Count -ne 3) {
+            throw 'Unexpected unmatched sealed binary or missing app-output evidence.'
+          }
+          Write-Host "Windows embedded component inventory PASS ($($a.embeddedFileCount) entries)."
+          Write-Host "Exact RAW source matches=$($a.sourceByteEvidence.counts.MATCHED_EXACT_RAW_BYTES); "
+          Write-Host "Unmatched=$($a.sourceByteEvidence.counts.UNMATCHED_REQUIRES_REVIEW); "
+          Write-Host "Compressed=$($a.sourceByteEvidence.counts.COMPRESSED_UNRESOLVED). Distribution BLOCKED."
+          # Raw source names are explicitly printed by the auditor. They are
+          # from the disposable public synthetic bundle, never user profiles.
+          # An unaccounted-for binary is NOT treated as licensed/distributable.
+          $expectedTotal = [int]$a.embeddedFileCount + [int]$a.externalFileCount
+          $observedTotal = [int]$a.sourceByteEvidence.counts.MATCHED_EXACT_RAW_BYTES +
+            [int]$a.sourceByteEvidence.counts.UNMATCHED_REQUIRES_REVIEW +
+            [int]$a.sourceByteEvidence.counts.COMPRESSED_UNRESOLVED
+          if ($observedTotal -ne $expectedTotal) {
+            throw 'Sealed byte-origin audit did not classify every bundled file.'
+          }
+      - name: Pin exact upstream license/NOTICE and Microsoft agreement source bytes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/verify-pinned-legal-source-texts.py --self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned legal source negative tests failed.' }
+          python scripts/verify-pinned-legal-source-texts.py --source-root . --stage-dir qualification/pinned-license-source-texts --output qualification/pinned-license-source-manifest.json
+          if ($LASTEXITCODE -ne 0) { throw 'Actual pinned upstream legal source Git blob mismatch.' }
+
+      - name: Preserve exact pinned license and third-party notice source texts (still not release clearance)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/audit-notice-source-texts.py --self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Notice source negative tests failed.' }
+          $dotnet = Join-Path $env:ProgramFiles 'dotnet'
+          $nuget = Join-Path $env:USERPROFILE '.nuget/packages'
+          $sourceFiles = @(
+            @{id='DOTNET_INSTALLATION_LICENSE'; path=(Join-Path $dotnet 'LICENSE.txt')},
+            @{id='DOTNET_INSTALLATION_THIRDPARTY'; path=(Join-Path $dotnet 'ThirdPartyNotices.txt')},
+            @{id='NETCORE_RUNTIME_10_0_13_THIRDPARTY'; path=(Join-Path $nuget 'microsoft.netcore.app.runtime.win-x64/10.0.13/THIRD-PARTY-NOTICES.TXT')},
+            @{id='WINDOWSDESKTOP_RUNTIME_10_0_13_THIRDPARTY'; path=(Join-Path $nuget 'microsoft.windowsdesktop.app.runtime.win-x64/10.0.13/THIRD-PARTY-NOTICES.TXT')},
+            @{id='SQLITE3MC_LIB_2_4_0_LICENSE'; path='licenses/source-texts/SQLite3MC-v2.4.0-LICENSE.txt'},
+            @{id='SQLITE3MC_NUGET_2_4_0_LICENSE'; path='licenses/source-texts/SQLite3MC-NuGet-v2.4.0-LICENSE.txt'},
+            @{id='SQLITEPCLRAW_CORE_3_0_2_LICENSE'; path='licenses/source-texts/SQLitePCLRaw-v3.0.2-LICENSE.txt'},
+            @{id='SQLITEPCLRAW_CORE_3_0_2_NOTICE'; path='licenses/source-texts/SQLitePCLRaw-v3.0.2-NOTICE.txt'},
+            @{id='DOTNET_CORE_MIT_LICENSE'; path='licenses/source-texts/dotnet-core-MIT-LICENSE.txt'},
+            @{id='MICROSOFT_SQLITE_CORE_10_0_13_LICENSE'; path='licenses/source-texts/Microsoft-Data-Sqlite-Core-v10.0.13-MIT-LICENSE.txt'},
+            @{id='MICROSOFT_DOTNET_LIBRARY_LICENSE'; path='licenses/source-texts/dotnet-SqlClient-NOTICE-Library-License.txt'},
+            @{id='WINDOWS_SDK_D3DCOMPILER_LICENSE'; path='licenses/source-texts/win32metadata-Windows10SDK-license.txt'}
+          )
+          $sourceArgs = @()
+          $required = @('DOTNET_INSTALLATION_LICENSE', 'DOTNET_INSTALLATION_THIRDPARTY')
+          foreach ($item in $sourceFiles) {
+            if (Test-Path -LiteralPath $item.path -PathType Leaf) {
+              $sourceArgs += @('--source-file', ($item.id + '=' + $item.path))
+              $required = @($required | Where-Object { $_ -ne $item.id })
+            }
+          }
+          if ($required.Count -ne 0) {
+            throw "Mandatory .NET installation notice sources absent: $($required -join ',')"
+          }
+          python scripts/audit-notice-source-texts.py @sourceArgs --output-dir qualification/notice-source-texts --report qualification/notice-source-manifest.json
+          if ($LASTEXITCODE -ne 0) { throw 'Exact pinned notice source preservation failed.' }
+          $report = Get-Content qualification/notice-source-manifest.json -Raw | ConvertFrom-Json
+          if ($report.distributionLicenseStatus -cne 'REVIEW_REQUIRED_NOT_AUTHORIZED' -or
+              $report.completeness -cne 'NOT_ESTABLISHED' -or
+              @($report.sourceTexts).Count -lt 2) {
+            throw 'Notice-source inventory incorrectly claims license completion.'
+          }
+          $pinned = Get-Content qualification/pinned-license-source-manifest.json -Raw | ConvertFrom-Json
+          if ($pinned.completeness -cne 'NOT_ESTABLISHED' -or
+              $pinned.distributionLicenseStatus -cne 'REVIEW_REQUIRED_NOT_AUTHORIZED' -or
+              @($pinned.frozenSourceTexts).Count -ne 8 -or
+              $pinned.microsoftAgreementSourcesCaptured -ne $true -or
+              $pinned.microsoftAgreementApplicability -cne 'HUMAN_VERSION_AND_DISTRIBUTION_REVIEW_PENDING') {
+            throw 'Frozen upstream notice-source manifest claims unauthorized clearance.'
+          }
+          foreach ($item in @($pinned.frozenSourceTexts)) {
+            $actual = @($report.sourceTexts | Where-Object { $_.sourceId -ceq $item.sourceId })
+            if ($actual.Count -ne 1 -or $actual[0].sha256 -cne $item.sha256 -or
+                $actual[0].bytes -ne $item.bytes) {
+              throw "Original legal source bytes differ from staged notice manifest for $($item.sourceId)"
+            }
+          }
+          Write-Host "Eight byte-pinned original legal/NOTICE sources verified, including two Microsoft agreement candidates; applicability and transfer remain BLOCKED."
+          Write-Host "Notice sources preserved=$(@($report.sourceTexts).Count); complete license review remains BLOCKED."
+
+      - name: Validate sealed member-to-notice obligations (unreviewed; no release permission)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/audit-notice-coverage.py --self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Notice coverage negative tests failed.' }
+          python scripts/audit-notice-coverage.py --bundle qualification/bundle-audit-a.json --notices qualification/notice-source-manifest.json --output qualification/notice-coverage-report.json
+          if ($LASTEXITCODE -ne 0) { throw 'Actual embedded payload notice coverage evidence failed.' }
+          $coverage = Get-Content qualification/notice-coverage-report.json -Raw | ConvertFrom-Json
+          $actual = Get-Content qualification/bundle-audit-a.json -Raw | ConvertFrom-Json
+          if ($coverage.coveredMemberCount -ne ($actual.embeddedFileCount + $actual.externalFileCount) -or
+              $coverage.distributionLicenseStatus -cne 'REVIEW_REQUIRED_NOT_AUTHORIZED' -or
+              $coverage.completeness -cne 'NOT_ESTABLISHED' -or
+              $coverage.copyrightAndLicenseApplicability -cne 'HUMAN_REVIEW_PENDING' -or
+              @($coverage.missingNoticeSourceIds).Count -ne 0) {
+            throw 'Notice matrix lost a bundled file or incorrectly lifted license hold.'
+          }
+          Write-Host "Actual sealed notice coverage=$($coverage.coveredMemberCount) components;"
+          Write-Host "missing notice-source identifiers=$(@($coverage.missingNoticeSourceIds).Count); distribution BLOCKED."
+      - name: Qualify exact WPF native compiler rename and .NET Library origin evidence
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/audit-microsoft-native-redist.py --self-test --source-root .
+          if ($LASTEXITCODE -ne 0) { throw 'Microsoft SDK/WPF native source negative tests failed.' }
+          python scripts/audit-microsoft-native-redist.py --source-root . --bundle qualification/bundle-audit-a.json --output qualification/microsoft-native-redist-a.json
+          if ($LASTEXITCODE -ne 0) { throw 'Actual Windows A native redist review failed.' }
+          python scripts/audit-microsoft-native-redist.py --source-root . --bundle qualification/bundle-audit-b.json --output qualification/microsoft-native-redist-b.json
+          if ($LASTEXITCODE -ne 0) { throw 'Actual Windows B native redist review failed.' }
+          if ((Get-Content qualification/microsoft-native-redist-a.json -Raw) -cne
+              (Get-Content qualification/microsoft-native-redist-b.json -Raw)) {
+            throw 'Two deterministic publishes disagree on original Microsoft native licensing evidence.'
+          }
+          $r = Get-Content qualification/microsoft-native-redist-a.json -Raw | ConvertFrom-Json
+          if ($r.distributionLicenseStatus -cne 'REVIEW_REQUIRED_NOT_AUTHORIZED' -or
+              $r.completeness -cne 'NOT_ESTABLISHED' -or
+              $r.copyrightAndEndUserTerms -cne 'HUMAN_REVIEW_PENDING' -or
+              $r.observedBundleMembers -ne 388 -or
+              @($r.originEvidence).Count -ne 3 -or
+              $r.netRuntimeProductLicenseModel -cne 'UPSTREAM_DOTNET_RUNTIME_V10_0_13_WINDOWS_PRODUCT_LICENSE_FAMILY_CONFIRMED' -or
+              $r.netRuntimeRedistributionConditions -cne 'HUMAN_END_USER_REVIEW_PENDING' -or
+              (@($r.capturedAgreementSourceIds).Count -ne 2 -or
+               $r.capturedAgreementSourceIds -cnotcontains 'MICROSOFT_DOTNET_LIBRARY_LICENSE' -or
+               $r.capturedAgreementSourceIds -cnotcontains 'WINDOWS_SDK_D3DCOMPILER_LICENSE' -or
+               $r.agreementVersionApplicability -cne 'HUMAN_REVIEW_PENDING')) {
+            throw 'Microsoft redist technical evidence incorrectly grants legal approval.'
+          }
+          Write-Host "Microsoft native-WPF source relationship PASS; 388 sealed members; final end-user/SDK redist rights still BLOCKED."
+
+      - name: Smoke-test published WPF application
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path "artifacts/publish-a/rekordbox MyTagSync.exe").Path
+          $process = Start-Process -FilePath $exe -ArgumentList "--ui-smoke" -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Published WPF UI smoke test failed with exit code $($process.ExitCode)."
+          }
+
+      - name: Build deterministic portable package and freeze hashes
+        id: package
+        shell: pwsh
+        run: |
+          $productExe = Resolve-Path "artifacts/publish-a/rekordbox MyTagSync.exe"
+          $productVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($productExe).ProductVersion
+          if ([string]::IsNullOrWhiteSpace($productVersion) -or
+              -not $productVersion.StartsWith("0.1.0-dev", [StringComparison]::Ordinal)) {
+            throw "FULL candidate product version '$productVersion' does not satisfy the required 0.1.0-dev pre-release identity."
+          }
+
+          $stage = Join-Path $PWD "artifacts/stage"
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          Copy-Item "artifacts/publish-a/*" $stage -Recurse
+          Copy-Item "qualification/dependencies.json" $stage
+          Copy-Item "qualification/vulnerability-audit.json" $stage
+          Copy-Item "qualification/database-access-source-audit.txt" $stage
+          Copy-Item "qualification/repository-hygiene-audit.txt" $stage
+          Copy-Item "qualification/license-audit.tsv" $stage
+          Copy-Item "qualification/bundle-audit-a.json" (Join-Path $stage "embedded-bundle-inventory.json")
+          Copy-Item "qualification/notice-source-manifest.json" (Join-Path $stage "notice-source-manifest.json")
+          Copy-Item "qualification/pinned-license-source-manifest.json" (Join-Path $stage "pinned-license-source-manifest.json")
+          Copy-Item "qualification/notice-coverage-report.json" (Join-Path $stage "notice-coverage-report.json")
+          Copy-Item "qualification/microsoft-native-redist-a.json" (Join-Path $stage "microsoft-native-redist-evidence.json")
+          New-Item -ItemType Directory -Force (Join-Path $stage "LEGAL-REVIEW-ORIGINAL-SOURCES") | Out-Null
+          Copy-Item "licenses/source-texts/WPF-v10.0.13-redistributables.md" (Join-Path $stage "LEGAL-REVIEW-ORIGINAL-SOURCES/WPF-v10.0.13-redistributables.md")
+          Copy-Item "licenses/source-texts/dotnet-core-windows-license-map.md" (Join-Path $stage "LEGAL-REVIEW-ORIGINAL-SOURCES/dotnet-core-windows-license-map.md")
+          Copy-Item "licenses/source-texts/dotnet-runtime-v10.0.13-licensing-assets.md" (Join-Path $stage "LEGAL-REVIEW-ORIGINAL-SOURCES/dotnet-runtime-v10.0.13-licensing-assets.md")
+          Copy-Item "qualification/notice-source-texts" (Join-Path $stage "NOTICE-SOURCES-UNREVIEWED") -Recurse
+          Copy-Item "qualification/publish-sha256.txt" $stage
+          Copy-Item "src/RekordboxMyTagSync/packages.lock.json" (Join-Path $stage "product-packages.lock.json")
+          Copy-Item "tests/RekordboxMyTagSync.SelfTests/packages.lock.json" (Join-Path $stage "selftest-packages.lock.json")
+          Set-Content -Path (Join-Path $stage "SOURCE_SHA.txt") -Value "${{ env.SOURCE_SHA }}" -Encoding ASCII
+
+          $publishedFiles = Get-ChildItem $stage -File -Recurse |
+            Sort-Object FullName |
+            ForEach-Object {
+              [ordered]@{
+                path = [IO.Path]::GetRelativePath($stage, $_.FullName).Replace('\','/')
+                sha256 = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+                bytes = $_.Length
+              }
+            }
+
+          $manifest = [ordered]@{
+            schemaVersion = 1
+            sourceSha = "${{ env.SOURCE_SHA }}"
+            productVersion = $productVersion
+            runtime = "win-x64"
+            selfContained = $true
+            singleFile = $true
+            files = @($publishedFiles)
+          }
+          $manifest | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $stage "candidate-manifest.json") -Encoding UTF8
+
+          Add-Type -AssemblyName System.IO.Compression
+          function New-DeterministicZip([string]$Source, [string]$Destination) {
+            if (Test-Path $Destination) { Remove-Item $Destination -Force }
+            $stream = [IO.File]::Open($Destination, [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+            try {
+              $archive = [IO.Compression.ZipArchive]::new($stream, [IO.Compression.ZipArchiveMode]::Create, $true)
+              try {
+                Get-ChildItem $Source -File -Recurse |
+                  Sort-Object { [IO.Path]::GetRelativePath($Source, $_.FullName) } |
+                  ForEach-Object {
+                    $relative = [IO.Path]::GetRelativePath($Source, $_.FullName).Replace('\','/')
+                    $entry = $archive.CreateEntry($relative, [IO.Compression.CompressionLevel]::NoCompression)
+                    $entry.LastWriteTime = [DateTimeOffset]::new(2000, 1, 1, 0, 0, 0, [TimeSpan]::Zero)
+                    $input = [IO.File]::OpenRead($_.FullName)
+                    try {
+                      $output = $entry.Open()
+                      try { $input.CopyTo($output) } finally { $output.Dispose() }
+                    } finally { $input.Dispose() }
+                  }
+              } finally { $archive.Dispose() }
+            } finally { $stream.Dispose() }
+          }
+
+          $zipA = Join-Path $PWD "artifacts/candidate-a.zip"
+          $zipB = Join-Path $PWD "artifacts/candidate-b.zip"
+          New-DeterministicZip $stage $zipA
+          New-DeterministicZip $stage $zipB
+
+          $hashA = (Get-FileHash $zipA -Algorithm SHA256).Hash.ToLowerInvariant()
+          $hashB = (Get-FileHash $zipB -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hashA -ne $hashB) { throw "Portable package creation is not deterministic." }
+
+          $candidateName = "RekordboxMyTagSync-win-x64-${{ env.SOURCE_SHA }}.zip"
+          $candidatePath = Join-Path $PWD ("artifacts/" + $candidateName)
+          Move-Item $zipA $candidatePath -Force
+          Remove-Item $zipB -Force
+
+          "$hashA  $candidateName" | Set-Content "artifacts/$candidateName.sha256" -Encoding ASCII
+          $qualification = [ordered]@{
+            schemaVersion = 1
+            sourceSha = "${{ env.SOURCE_SHA }}"
+            productVersion = $productVersion
+            artifactFile = $candidateName
+            artifactSha256 = $hashA
+            deterministicPublish = "PASS"
+            deterministicPackage = "PASS"
+            uiSmoke = "PASS"
+            repositoryHygieneAudit = "PASS"
+            databaseAccessSourceAudit = "PASS"
+            dependencyAudit = "PASS"
+            dependencyLockAudit = "PASS"
+            licenseAudit = "PASS"
+            vulnerabilityAudit = "PASS"
+          }
+          $qualification | ConvertTo-Json -Depth 4 | Set-Content "artifacts/FULL-QUALIFICATION.json" -Encoding UTF8
+
+          "candidate_name=$candidateName" >> $env:GITHUB_OUTPUT
+          "artifact_sha256=$hashA" >> $env:GITHUB_OUTPUT
+
+      - name: Completion audit
+        shell: pwsh
+        run: |
+          $candidate = "artifacts/${{ steps.package.outputs.candidate_name }}"
+          $shaFile = "$candidate.sha256"
+          $qualificationPath = "artifacts/FULL-QUALIFICATION.json"
+          if (-not (Test-Path $candidate)) { throw "Candidate ZIP is missing." }
+          if (-not (Test-Path $shaFile)) { throw "Candidate SHA-256 file is missing." }
+          if (-not (Test-Path $qualificationPath)) { throw "FULL qualification metadata is missing." }
+
+          $candidateHash = (Get-FileHash $candidate -Algorithm SHA256).Hash.ToLowerInvariant()
+          $shaLine = (Get-Content $shaFile -Raw).Trim()
+          if ($shaLine -notmatch '^([0-9a-fA-F]{64})\s+(.+)$') {
+            throw "Candidate SHA-256 sidecar has invalid format."
+          }
+          if ($Matches[1].ToLowerInvariant() -ne $candidateHash) {
+            throw "Candidate SHA-256 sidecar does not match the candidate ZIP."
+          }
+          if ($Matches[2] -ne [IO.Path]::GetFileName($candidate)) {
+            throw "Candidate SHA-256 sidecar names a different artifact."
+          }
+
+          $qualification = Get-Content $qualificationPath -Raw | ConvertFrom-Json
+          if ([string]$qualification.sourceSha -ne "${{ env.SOURCE_SHA }}") {
+            throw "FULL qualification source SHA does not match the workflow SHA."
+          }
+          if ([string]$qualification.artifactFile -ne [IO.Path]::GetFileName($candidate)) {
+            throw "FULL qualification artifact file does not match the candidate."
+          }
+          if ([string]$qualification.artifactSha256 -ne $candidateHash) {
+            throw "FULL qualification artifact SHA-256 does not match the candidate."
+          }
+          foreach ($gate in @(
+            "deterministicPublish",
+            "deterministicPackage",
+            "uiSmoke",
+            "repositoryHygieneAudit",
+            "databaseAccessSourceAudit",
+            "dependencyAudit",
+            "dependencyLockAudit",
+            "licenseAudit",
+            "vulnerabilityAudit")) {
+            if ([string]$qualification.$gate -ne "PASS") {
+              throw "FULL qualification gate '$gate' is not PASS."
+            }
+          }
+          if ([string]::IsNullOrWhiteSpace([string]$qualification.productVersion) -or
+              -not ([string]$qualification.productVersion).StartsWith("0.1.0-dev", [StringComparison]::Ordinal)) {
+            throw "FULL qualification product version is not the required 0.1.0-dev identity."
+          }
+
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [IO.Compression.ZipFile]::OpenRead((Resolve-Path $candidate))
+          try {
+            $entries = @{}
+            foreach ($entry in $archive.Entries) {
+              if ($entries.ContainsKey($entry.FullName)) {
+                throw "Candidate contains duplicate entry '$($entry.FullName)'."
+              }
+              $entries[$entry.FullName] = $entry
+            }
+
+            foreach ($required in @(
+              "rekordbox MyTagSync.exe",
+              "SOURCE_SHA.txt",
+              "candidate-manifest.json",
+              "dependencies.json",
+              "vulnerability-audit.json",
+              "database-access-source-audit.txt",
+              "repository-hygiene-audit.txt",
+              "license-audit.tsv",
+              "embedded-bundle-inventory.json",
+              "notice-source-manifest.json",
+              "pinned-license-source-manifest.json",
+              "notice-coverage-report.json",
+              "microsoft-native-redist-evidence.json",
+              "LEGAL-REVIEW-ORIGINAL-SOURCES/WPF-v10.0.13-redistributables.md",
+              "LEGAL-REVIEW-ORIGINAL-SOURCES/dotnet-core-windows-license-map.md",
+              "LEGAL-REVIEW-ORIGINAL-SOURCES/dotnet-runtime-v10.0.13-licensing-assets.md",
+              "NOTICE-SOURCES-UNREVIEWED/SQLITE3MC_LIB_2_4_0_LICENSE.txt",
+              "NOTICE-SOURCES-UNREVIEWED/SQLITE3MC_NUGET_2_4_0_LICENSE.txt",
+              "NOTICE-SOURCES-UNREVIEWED/SQLITEPCLRAW_CORE_3_0_2_LICENSE.txt",
+              "NOTICE-SOURCES-UNREVIEWED/SQLITEPCLRAW_CORE_3_0_2_NOTICE.txt",
+              "NOTICE-SOURCES-UNREVIEWED/DOTNET_CORE_MIT_LICENSE.txt",
+              "NOTICE-SOURCES-UNREVIEWED/MICROSOFT_SQLITE_CORE_10_0_13_LICENSE.txt",
+              "NOTICE-SOURCES-UNREVIEWED/MICROSOFT_DOTNET_LIBRARY_LICENSE.txt",
+              "NOTICE-SOURCES-UNREVIEWED/WINDOWS_SDK_D3DCOMPILER_LICENSE.txt",
+              "NOTICE-SOURCES-UNREVIEWED/DOTNET_INSTALLATION_LICENSE.txt",
+              "NOTICE-SOURCES-UNREVIEWED/DOTNET_INSTALLATION_THIRDPARTY.txt",
+              "publish-sha256.txt",
+              "product-packages.lock.json",
+              "selftest-packages.lock.json")) {
+              if (-not $entries.ContainsKey($required)) { throw "Candidate is missing '$required'." }
+            }
+
+            function Read-ZipText([IO.Compression.ZipArchiveEntry]$Entry) {
+              $stream = $Entry.Open()
+              try {
+                $reader = [IO.StreamReader]::new($stream, [Text.UTF8Encoding]::new($false), $true)
+                try { return $reader.ReadToEnd() } finally { $reader.Dispose() }
+              } finally { $stream.Dispose() }
+            }
+
+            $sourceSha = (Read-ZipText $entries["SOURCE_SHA.txt"]).Trim()
+            if ($sourceSha -ne "${{ env.SOURCE_SHA }}") {
+              throw "Candidate SOURCE_SHA.txt does not match the workflow SHA."
+            }
+
+            $manifest = (Read-ZipText $entries["candidate-manifest.json"]) | ConvertFrom-Json
+            if ([string]$manifest.sourceSha -ne "${{ env.SOURCE_SHA }}") {
+              throw "Candidate manifest source SHA does not match the workflow SHA."
+            }
+            if ([string]$manifest.productVersion -ne [string]$qualification.productVersion) {
+              throw "Candidate manifest product version does not match FULL qualification metadata."
+            }
+            if ([string]$manifest.runtime -ne "win-x64" -or
+                -not [bool]$manifest.selfContained -or
+                -not [bool]$manifest.singleFile) {
+              throw "Candidate manifest runtime/package mode is invalid."
+            }
+
+            $manifestNames = @{}
+            foreach ($file in @($manifest.files)) {
+              $name = [string]$file.path
+              if ([string]::IsNullOrWhiteSpace($name) -or $manifestNames.ContainsKey($name)) {
+                throw "Candidate manifest has an empty or duplicate file path '$name'."
+              }
+              $manifestNames[$name] = $true
+              if (-not $entries.ContainsKey($name)) {
+                throw "Candidate manifest references missing entry '$name'."
+              }
+              $entry = $entries[$name]
+              if ([long]$file.bytes -ne $entry.Length) {
+                throw "Candidate manifest length mismatch for '$name'."
+              }
+
+              $stream = $entry.Open()
+              try {
+                $sha = [Security.Cryptography.SHA256]::Create()
+                try {
+                  $actual = [Convert]::ToHexString($sha.ComputeHash($stream)).ToLowerInvariant()
+                } finally {
+                  $sha.Dispose()
+                }
+              } finally {
+                $stream.Dispose()
+              }
+              if ([string]$file.sha256 -ne $actual) {
+                throw "Candidate manifest SHA-256 mismatch for '$name'."
+              }
+            }
+            $expectedEntries = @($manifestNames.Keys) + @("candidate-manifest.json")
+            if ($entries.Count -ne $expectedEntries.Count) {
+              throw "Candidate archive contains unmanifested entries or omits an expected entry."
+            }
+            foreach ($name in $entries.Keys) {
+              if ($name -ne "candidate-manifest.json" -and -not $manifestNames.ContainsKey($name)) {
+                throw "Candidate contains an unmanifested entry '$name'."
+              }
+            }
+          } finally {
+            $archive.Dispose()
+          }
+
+          Write-Host "FULL candidate source SHA: ${{ env.SOURCE_SHA }}"
+          Write-Host "FULL candidate artifact SHA-256: $candidateHash"
+          Write-Host "FULL candidate product version: $($qualification.productVersion)"
+
+      - name: Transfer exact FULL-matched candidate ONLY into a private Draft
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER_ACK: ${{ inputs.legal_ack }}
+          EXPECTED_ZIP: ${{ inputs.expected_zip_sha256 }}
+        run: |
+          & ./scripts/Upload-OwnerPrivateDraft.ps1 -SourceSha $env:SOURCE_SHA -ExpectedZipSha256 $env:EXPECTED_ZIP -CandidateName '${{ steps.package.outputs.candidate_name }}' -Acknowledgement $env:OWNER_ACK
+          if ($LASTEXITCODE -ne 0) { throw 'Owner-only Draft handoff refused.' }
