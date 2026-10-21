@@ -39,6 +39,19 @@ SOURCE = {
         "licenses/source-texts/Microsoft-Data-Sqlite-Core-v10.0.13-MIT-LICENSE.txt",
         "a616ed188dfce68ee308f674350ad242d8588c2b",
         "dotnet/efcore@v10.0.13:LICENSE.txt"),
+    # Official Microsoft-owned originals containing the entire agreement,
+    # preserved unmodified. The SqlClient NOTICE embeds .NET Library terms;
+    # the win32metadata SDK agreement is explicitly EULAID WIN10SDK.RTM.AUG_2018.
+    # Capturing source bytes does NOT resolve .NET 10.0.13 applicability,
+    # redistribution, downstream terms or owner's legal acceptance.
+    "MICROSOFT_DOTNET_LIBRARY_LICENSE": (
+        "licenses/source-texts/dotnet-SqlClient-NOTICE-Library-License.txt",
+        "0b936c6bb60efa99c0c1e4c853cc516eb3f7835b",
+        "dotnet/SqlClient:NOTICE.txt (complete original source blob, untagged)"),
+    "WINDOWS_SDK_D3DCOMPILER_LICENSE": (
+        "licenses/source-texts/win32metadata-Windows10SDK-license.txt",
+        "efaf451b29e15921362cdb5888da9ee8f67acd1b",
+        "microsoft/win32metadata:licenses/sdk_license.txt (WIN10SDK.RTM.AUG_2018_en-US)"),
 }
 BLOCKED = "REVIEW_REQUIRED_NOT_AUTHORIZED"
 
@@ -76,6 +89,19 @@ def verify(root, stage):
             raise LegalEvidenceError("actual license/NOTICE differs from upstream tagged blob: " + sid)
         prepared.append((sid, payload, upstream, expected_blob))
 
+    # Exact Git-byte identity is not enough to assert that the intended
+    # agreement occurs in an official NOTICE or that the SDK edition matches
+    # the particular WPF D3DCompiler binary. Keep those distinctions explicit.
+    library_notice = (root / SOURCE["MICROSOFT_DOTNET_LIBRARY_LICENSE"][0]).read_text(encoding="utf-8")
+    sdk_agreement = (root / SOURCE["WINDOWS_SDK_D3DCOMPILER_LICENSE"][0]).read_text(encoding="utf-8")
+    for text, tokens in (
+        (library_notice, ("MICROSOFT .NET LIBRARY",
+                          "DISTRIBUTABLE CODE", "Germany and Austria")),
+        (sdk_agreement, ("MICROSOFT WINDOWS SOFTWARE DEVELOPMENT KIT",
+                         "REDIST.TXT", "EULAID:WIN10SDK.RTM.AUG_2018_en-US"))):
+        if any(token.casefold() not in text.casefold() for token in tokens):
+            raise LegalEvidenceError("complete original Microsoft agreement scope markers absent")
+
     stage.mkdir(parents=True, exist_ok=False)
     items = []
     for sid, payload, upstream, blob in prepared:
@@ -88,6 +114,8 @@ def verify(root, stage):
                           verification="ORIGINAL_SOURCE_BYTES_ONLY",
                           noticeApplicability="REQUIRES_COMPONENT_REVIEW"))
     return dict(schemaVersion=1,
+                microsoftAgreementSourcesCaptured=True,
+                microsoftAgreementApplicability="HUMAN_VERSION_AND_DISTRIBUTION_REVIEW_PENDING",
                 frozenSourceTexts=items,
                 completeness="NOT_ESTABLISHED",
                 distributionLicenseStatus=BLOCKED,
