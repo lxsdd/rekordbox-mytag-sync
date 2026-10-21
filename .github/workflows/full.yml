@@ -646,6 +646,7 @@ jobs:
               "repository-hygiene-audit.txt",
               "license-audit.tsv",
               "embedded-bundle-inventory.json",
+              "component-license-obligations.json",
               "notice-source-manifest.json",
               "NOTICE-SOURCES-UNREVIEWED/DOTNET_INSTALLATION_LICENSE.txt",
               "NOTICE-SOURCES-UNREVIEWED/DOTNET_INSTALLATION_THIRDPARTY.txt",
