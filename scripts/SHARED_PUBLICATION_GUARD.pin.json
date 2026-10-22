@@ -1,0 +1,7 @@
+{
+  "source_repo": "lxsdd/dev-infrastructure-public",
+  "source_commit": "bb611c0a55ae23a4e85b8e38c03424b76bc2747f",
+  "source_path": "shared/ci/publication_guard.py",
+  "source_git_blob_sha1": "2de36b9f8ff429aca93841907f9106f11ebe9886",
+  "license_and_scope": "synthetic-tested source-only scanner; existing owner-only Draft, workflow privilege and release guards remain"
+}
