@@ -178,9 +178,20 @@ public static class PathPairVerifier
         }).ToArray();
         // Reject contradictory root definitions even with no source rows.
         _ = WindowsPathMatcher.Normalize(aliases[0].SourceRoot, aliases);
-        var sources = bridge.Select(t => new Source(
-            t, WindowsPathMatcher.Normalize(t.Path),
-            WindowsPathMatcher.Normalize(t.Path, aliases))).ToArray();
+        // Virtual foobar segments cannot supply an independently verified
+        // physical file identity. Normalize *only* file-level candidates.
+        // Unsupported virtual-only paths remain counted as exclusions and
+        // never invalidate a valid physical path scan.
+        var sources = bridge.Where(t => t.Subsong == 0)
+            .Select(t => new Source(
+                t, WindowsPathMatcher.Normalize(t.Path),
+                WindowsPathMatcher.Normalize(t.Path, aliases))).ToArray();
+        var virtualCount = bridge.Count(t => t.Subsong != 0);
+        // The producer uses the same raw path for a file and its virtual
+        // siblings. Count recovered mixed groups without treating those
+        // siblings as physical duplicates or normalizing unsafe virtual URIs.
+        var virtualSiblingPaths = bridge.Where(t => t.Subsong != 0)
+            .Select(t => t.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var destinations = target.Select(t => new Target(
             t, WindowsPathMatcher.Normalize(t.Path))).ToArray();
 
@@ -213,7 +224,7 @@ public static class PathPairVerifier
             if (string.Equals(item.OriginalPath, destination.Path, StringComparison.OrdinalIgnoreCase))
                 continue;
             pairs.Add((item.OriginalPath, destination.Path));
-            if (group.Value.Length > 1)
+            if (virtualSiblingPaths.Contains(item.Track.Path))
                 recoveredMixedSubsongPaths++;
         }
 
@@ -224,7 +235,7 @@ public static class PathPairVerifier
             eligible,
             sourceGroups.Values.Count(x => x.Length > 1),
             destGroups.Values.Count(x => x.Length > 1),
-            sources.Count(x => x.Track.Subsong != 0),
+            virtualCount,
             recoveredMixedSubsongPaths);
     }
 
