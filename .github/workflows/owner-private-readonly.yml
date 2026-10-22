@@ -794,5 +794,9 @@ jobs:
           OWNER_ACK: ${{ inputs.legal_ack }}
           EXPECTED_ZIP: ${{ inputs.expected_zip_sha256 }}
         run: |
+          # A PowerShell script propagates terminating errors under
+          # ErrorActionPreference=Stop. It performs no native command whose
+          # exit code can establish upload success. $LASTEXITCODE may be null
+          # (or stale), so comparing it with 0 caused a false workflow FAIL
+          # *after* all private Draft/asset/privacy checks passed.
           & ./scripts/Upload-OwnerPrivateDraft.ps1 -SourceSha $env:SOURCE_SHA -ExpectedZipSha256 $env:EXPECTED_ZIP -CandidateName '${{ steps.package.outputs.candidate_name }}' -Acknowledgement $env:OWNER_ACK
-          if ($LASTEXITCODE -ne 0) { throw 'Owner-only Draft handoff refused.' }
