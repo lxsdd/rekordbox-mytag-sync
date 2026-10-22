@@ -79,11 +79,34 @@ public static class PathPairVerifierSelfTest
             new BridgeTrack(equalPath, 3, empty, empty)
         }).ToArray();
         var excluded = PathPairVerifier.Verify(physicalAndVirtual, target, new PathAlias(left, right));
-        if (excluded.AmbiguousSourcePaths != 1 ||
+        if (excluded.AmbiguousSourcePaths != 0 ||
             excluded.ExcludedSubsongs != 2 ||
             excluded.UniqueFilePairs != 4)
             throw new InvalidOperationException(
                 "Unique file-level subsong-0 should be recognized beside virtual children, without adding virtual ContentIDs.");
+
+        // A virtual segment may refer to a non-file URI. It must remain an
+        // exclusion without interrupting the real physical file scan.
+        var invalidVirtual = physicalAndVirtual.Concat(new[]
+        {
+            new BridgeTrack("https://example.invalid/virtual/1", 7, empty, empty)
+        }).ToArray();
+        var invalidVirtualResult = PathPairVerifier.CollectPairs(
+            invalidVirtual, target, new PathAlias(left, right));
+        if (invalidVirtualResult.Pairs.Count != 4 ||
+            invalidVirtualResult.ExcludedSubsongs != 3 ||
+            invalidVirtualResult.AmbiguousSourcePaths != 0 ||
+            invalidVirtualResult.RecoveredMixedSubsongPaths != 1)
+            throw new InvalidOperationException(
+                "Non-file virtual subsong blocked unambiguous physical file pairing.");
+
+        var virtualOnly = PathPairVerifier.CollectPairs(
+            new[] { new BridgeTrack("https://example.invalid/virtual/2", 1, empty, empty) },
+            target, new PathAlias(left, right));
+        if (virtualOnly.Pairs.Count != 0 || virtualOnly.AmbiguousSourcePaths != 0 ||
+            virtualOnly.ExcludedSubsongs != 1)
+            throw new InvalidOperationException(
+                "Virtual-only malformed path incorrectly became physical identity evidence.");
 
         var rejected = false;
         try { _ = PathPairVerifier.Verify(bridge, target, new PathAlias(left, left)); }
