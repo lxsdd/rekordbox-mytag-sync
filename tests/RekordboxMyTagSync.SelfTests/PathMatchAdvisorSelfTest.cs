@@ -41,11 +41,82 @@ public static class PathMatchAdvisorSelfTest
 
         var multiSubsong = PathMatchAdvisor.Analyze(
             bridges.Concat(new[] { Bridge(files[0], 1) }).ToArray(), targets, aliases);
-        if (multiSubsong.AmbiguousBridgePaths != 1 ||
+        if (multiSubsong.BridgeItems != 5 ||
+            multiSubsong.AmbiguousBridgePaths != 0 ||
             multiSubsong.NonFileSubsongs != 1 ||
-            multiSubsong.ConfiguredAliasMatches != 3 ||
-            multiSubsong.UnmatchedBridgeItems != 2)
-            throw new InvalidOperationException("Multiple bridge subsongs were incorrectly collapsed.");
+            multiSubsong.ConfiguredAliasMatches != 4 ||
+            multiSubsong.UnmatchedBridgeItems != 1 ||
+            multiSubsong.Proposals.Count != 0)
+            throw new InvalidOperationException(
+                "Virtual CUE siblings were incorrectly counted as ambiguous physical paths.");
+
+        // A second virtual track on the same source path is diagnostic only.
+        // The physical subsong 0 remains a unique match; virtual rows still
+        // appear in the total/unmatched counts, never as extra ContentIDs.
+        var severalVirtual = PathMatchAdvisor.Analyze(
+            bridges.Concat(new[] { Bridge(files[0], 1), Bridge(files[0], 2) }).ToArray(),
+            targets, aliases);
+        if (severalVirtual.BridgeItems != 6 ||
+            severalVirtual.NonFileSubsongs != 2 ||
+            severalVirtual.AmbiguousBridgePaths != 0 ||
+            severalVirtual.ConfiguredAliasMatches != 4 ||
+            severalVirtual.UnmatchedBridgeItems != 2)
+            throw new InvalidOperationException(
+                "Two virtual CUE siblings stole the unique physical file match.");
+
+        // Only virtual rows for a path MUST NOT produce a physical candidate,
+        // even where their file path is an exact string match.
+        var virtualOnly = PathMatchAdvisor.Analyze(
+            new[] { Bridge(files[0], 1), Bridge(files[0], 2) },
+            new[] { Target(files[0]) }, aliases);
+        if (virtualOnly.BridgeItems != 2 ||
+            virtualOnly.NonFileSubsongs != 2 ||
+            virtualOnly.ExactPathMatches != 0 ||
+            virtualOnly.ConfiguredAliasMatches != 0 ||
+            virtualOnly.AmbiguousBridgePaths != 0 ||
+            virtualOnly.UnmatchedBridgeItems != 2 ||
+            virtualOnly.Proposals.Count != 0)
+            throw new InvalidOperationException(
+                "Virtual-only CUE tracks were treated as a rekordbox file.");
+
+        // Invalid/non-file paths from virtual subsongs must not prevent an
+        // otherwise valid physical source from being counted and matched.
+        // The invalid row remains visible as an excluded virtual entry.
+        var malformedVirtual = PathMatchAdvisor.Analyze(
+            bridges.Concat(new[] {
+                new BridgeTrack("https://example.invalid/cue/1", 3, empty, empty)
+            }).ToArray(), targets, aliases);
+        if (malformedVirtual.BridgeItems != 5 ||
+            malformedVirtual.NonFileSubsongs != 1 ||
+            malformedVirtual.AmbiguousBridgePaths != 0 ||
+            malformedVirtual.ConfiguredAliasMatches != 4 ||
+            malformedVirtual.UnmatchedBridgeItems != 1 ||
+            malformedVirtual.Proposals.Count != 0)
+            throw new InvalidOperationException(
+                "Non-file virtual subsong path blocked valid physical-only diagnostics.");
+
+        // Even when the entire Bridge snapshot contains only a virtual
+        // non-file path, no identity or root proposal must be inferred.
+        var malformedVirtualOnly = PathMatchAdvisor.Analyze(
+            new[] { new BridgeTrack("https://example.invalid/cue/2", 8, empty, empty) },
+            targets, aliases);
+        if (malformedVirtualOnly.BridgeItems != 1 ||
+            malformedVirtualOnly.NonFileSubsongs != 1 ||
+            malformedVirtualOnly.UnmatchedBridgeItems != 1 ||
+            malformedVirtualOnly.ExactPathMatches != 0 ||
+            malformedVirtualOnly.ConfiguredAliasMatches != 0 ||
+            malformedVirtualOnly.Proposals.Count != 0)
+            throw new InvalidOperationException(
+                "Virtual-only unsupported path incorrectly became file-level evidence.");
+
+        // Two real subsong-0 sources sharing a normalized path remain unsafe.
+        var ambiguousPhysical = PathMatchAdvisor.Analyze(
+            bridges.Concat(new[] { Bridge(files[0]) }).ToArray(), targets, aliases);
+        if (ambiguousPhysical.AmbiguousBridgePaths != 1 ||
+            ambiguousPhysical.ConfiguredAliasMatches != 3 ||
+            ambiguousPhysical.UnmatchedBridgeItems != 2)
+            throw new InvalidOperationException(
+                "Duplicate physical subsong-0 source paths lost ambiguity guard.");
 
         var ambiguousTarget = PathMatchAdvisor.Analyze(bridges,
             targets.Concat(new[] {

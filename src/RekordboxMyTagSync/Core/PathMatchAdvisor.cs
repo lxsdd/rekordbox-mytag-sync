@@ -47,7 +47,12 @@ public static class PathMatchAdvisor
         foreach (var alias in aliases)
             _ = WindowsPathMatcher.Normalize(alias.SourceRoot, aliases);
 
-        var source = bridge.Select(x => new Source(
+        // Only physical source entries require path normalization. Some
+        // virtual CUE segments carry non-file/unsupported bridge paths, but
+        // they are NOT ContentID matching candidates and must not poison the
+        // diagnostic analysis of otherwise safe subsong-0 source files.
+        var physicalSources = bridge.Where(x => x.Subsong == 0)
+            .Select(x => new Source(
                 x, WindowsPathMatcher.Normalize(x.Path),
                 WindowsPathMatcher.Normalize(x.Path, aliases)))
             .ToArray();
@@ -56,7 +61,11 @@ public static class PathMatchAdvisor
                 WindowsPathMatcher.Normalize(x.Path, aliases)))
             .ToArray();
 
-        var sourceGroups = source.GroupBy(x => x.MappedPath, StringComparer.OrdinalIgnoreCase)
+        // Mirror PreviewEngine and VerifiedPreviewScope: one long file can have
+        // multiple foobar virtual CUE/subsong records sharing its path.
+        // These are useful diagnostics, but cannot create physical path
+        // ambiguity or authorize rekordbox file-level ContentID matches.
+        var sourceGroups = physicalSources.GroupBy(x => x.MappedPath, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.ToArray(), StringComparer.OrdinalIgnoreCase);
         var targetGroups = destination.GroupBy(x => x.MappedPath, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.ToArray(), StringComparer.OrdinalIgnoreCase);
@@ -65,7 +74,7 @@ public static class PathMatchAdvisor
         var aliased = 0;
         foreach (var (path, entries) in sourceGroups)
         {
-            if (entries.Length != 1 || entries[0].Track.Subsong != 0 ||
+            if (entries.Length != 1 ||
                 !targetGroups.TryGetValue(path, out var matches) || matches.Length != 1)
                 continue;
             matched.Add(entries[0].Track);
@@ -81,8 +90,8 @@ public static class PathMatchAdvisor
         // individual artist/filename pairs. A suffix is useful only when it
         // is unique on both sides. This suggests a broad Z:\Music -> R:\
         // mapping when justified, instead of dozens of artist-level aliases.
-        var possibleSource = source
-            .Where(x => !matched.Contains(x.Track) && x.Track.Subsong == 0)
+        var possibleSource = physicalSources
+            .Where(x => !matched.Contains(x.Track))
             .Where(x => sourceGroups[x.MappedPath].Length == 1)
             .SelectMany(x => EnumerateSuffixes(x.OriginalPath)
                 .Select(s => (Item: x, s.Key, s.Root)))
@@ -143,8 +152,11 @@ public static class PathMatchAdvisor
             bridge.Count, target.Count, exact, aliased,
             sourceGroups.Values.Count(x => x.Length > 1),
             targetGroups.Values.Count(x => x.Length > 1),
-            source.Count(x => x.Track.Subsong != 0),
-            source.Count(x => !matched.Contains(x.Track)),
+            bridge.Count(x => x.Subsong != 0),
+            // Virtual rows count as diagnostic-only unmatched entries,
+            // regardless of whether their paths can be normalized.
+            physicalSources.Count(x => !matched.Contains(x.Track)) +
+                bridge.Count(x => x.Subsong != 0),
             unique);
     }
 
