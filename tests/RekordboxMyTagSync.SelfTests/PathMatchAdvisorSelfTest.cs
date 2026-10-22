@@ -79,6 +79,36 @@ public static class PathMatchAdvisorSelfTest
             throw new InvalidOperationException(
                 "Virtual-only CUE tracks were treated as a rekordbox file.");
 
+        // Invalid/non-file paths from virtual subsongs must not prevent an
+        // otherwise valid physical source from being counted and matched.
+        // The invalid row remains visible as an excluded virtual entry.
+        var malformedVirtual = PathMatchAdvisor.Analyze(
+            bridges.Concat(new[] {
+                new BridgeTrack("https://example.invalid/cue/1", 3, empty, empty)
+            }).ToArray(), targets, aliases);
+        if (malformedVirtual.BridgeItems != 5 ||
+            malformedVirtual.NonFileSubsongs != 1 ||
+            malformedVirtual.AmbiguousBridgePaths != 0 ||
+            malformedVirtual.ConfiguredAliasMatches != 4 ||
+            malformedVirtual.UnmatchedBridgeItems != 1 ||
+            malformedVirtual.Proposals.Count != 0)
+            throw new InvalidOperationException(
+                "Non-file virtual subsong path blocked valid physical-only diagnostics.");
+
+        // Even when the entire Bridge snapshot contains only a virtual
+        // non-file path, no identity or root proposal must be inferred.
+        var malformedVirtualOnly = PathMatchAdvisor.Analyze(
+            new[] { new BridgeTrack("https://example.invalid/cue/2", 8, empty, empty) },
+            targets, aliases);
+        if (malformedVirtualOnly.BridgeItems != 1 ||
+            malformedVirtualOnly.NonFileSubsongs != 1 ||
+            malformedVirtualOnly.UnmatchedBridgeItems != 1 ||
+            malformedVirtualOnly.ExactPathMatches != 0 ||
+            malformedVirtualOnly.ConfiguredAliasMatches != 0 ||
+            malformedVirtualOnly.Proposals.Count != 0)
+            throw new InvalidOperationException(
+                "Virtual-only unsupported path incorrectly became file-level evidence.");
+
         // Two real subsong-0 sources sharing a normalized path remain unsafe.
         var ambiguousPhysical = PathMatchAdvisor.Analyze(
             bridges.Concat(new[] { Bridge(files[0]) }).ToArray(), targets, aliases);
