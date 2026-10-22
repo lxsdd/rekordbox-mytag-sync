@@ -685,10 +685,10 @@ public partial class MainWindow : Window
                 $"{result.TargetTracks:N0} rekordbox tracks; " +
                 $"{result.ExactPathMatches:N0} exact path matches, " +
                 $"{result.ConfiguredAliasMatches:N0} matches using configured aliases, " +
-                $"{result.UnmatchedBridgeItems:N0} unmatched foobar entries, " +
-                $"{result.AmbiguousBridgePaths:N0} ambiguous foobar paths, " +
+                $"{result.UnmatchedBridgeItems - result.NonFileSubsongs:N0} unmatched physical foobar entries, " +
+                $"{result.AmbiguousBridgePaths:N0} ambiguous physical foobar paths, " +
                 $"{result.AmbiguousTargetPaths:N0} ambiguous rekordbox paths, " +
-                $"{result.NonFileSubsongs:N0} nonzero subsongs. " +
+                $"{result.NonFileSubsongs:N0} virtual foobar subsongs (diagnostic only, excluded from file-level matching). " +
                 $"{result.Proposals.Count:N0} UNVERIFIED root suggestion(s); " +
                 "never applied automatically. Matching names do not prove identical files. No changes made.";
             SetOperationStatus("Path analysis complete — no files, settings or database rows changed.");
