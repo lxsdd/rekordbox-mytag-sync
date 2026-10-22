@@ -243,6 +243,15 @@ _synthetic_owner = _OWNER_TEXT.replace("github.actor == 'lxsdd'",
                                        "github.actor != 'lxsdd'", 1)
 if all(r in _synthetic_owner for r in _OWNER_REQUIRED):
     sys.exit("FAIL synthetic owner-auth bypass escaped the draft gate")
+# The owner-only Draft script is PowerShell, not a native executable.
+# A stale or null $LASTEXITCODE after an otherwise successful .ps1 call is NOT
+# a valid result and previously produced a misleading failed Actions run.
+_owner_workflow_tail = _OWNER_TEXT.split(
+    "- name: Transfer exact FULL-matched candidate ONLY into a private Draft", 1)
+if len(_owner_workflow_tail) != 2:
+    sys.exit("FAIL: owner-only Draft transfer step missing or ambiguous")
+if "if ($LASTEXITCODE -ne 0)" in _owner_workflow_tail[1]:
+    sys.exit("FAIL: owner Draft transfer checks unrelated native LASTEXITCODE")
 print("PASS owner-only, terms-acknowledged, version/ZIP-qualified draft upload guard")
 
 def _reject_bad_capabilities(changed):
