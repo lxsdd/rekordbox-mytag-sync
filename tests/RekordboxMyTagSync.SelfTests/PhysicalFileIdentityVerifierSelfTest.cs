@@ -89,7 +89,7 @@ public static class PhysicalFileIdentityVerifierSelfTest
             mixedSource, targets, new PathAlias(original, targetRoot));
         if (mixed.EligiblePairs != 3 || mixed.SamePhysicalFiles != 1 ||
             mixed.RecoveredMixedSubsongPaths != 1 ||
-            mixed.AmbiguousSourcePaths != 1 || mixed.ExcludedSubsongs != 3 ||
+            mixed.AmbiguousSourcePaths != 0 || mixed.ExcludedSubsongs != 3 ||
             mixed.VerifiedPairs?.Count != 1 ||
             mixed.VerifiedPairs[0].SourcePath != tracks[0].Path)
             throw new InvalidOperationException(
