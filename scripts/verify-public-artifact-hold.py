@@ -23,6 +23,24 @@ print("PASS: MyTagSync FAST/FULL builds and self-tests preserved; uploads blocke
 # Use the common, SHA-pinned synthetically qualified publication scanner.
 # All original MyTagSync-specific workflow/token/owner-private checks BELOW
 # remain in effect, along with disabled FULL and release checks ABOVE.
+# Fail locally on shared implementation or provenance drift. The reviewed owner
+# Git blob is immutable; this check runs during each product's normal CI.
+import hashlib as _shared_hashlib
+import json as _shared_json
+_SHARED_EXPECTED_BLOB = "2de36b9f8ff429aca93841907f9106f11ebe9886"
+# Normalize only checkout CRLF to Git-canonical LF (Windows core.autocrlf).
+_SHARED_CONTENT = (root / "scripts/_shared_publication_guard.py").read_bytes().replace(b"\r\n", b"\n")
+_SHARED_PREFIX = ("blob " + str(len(_SHARED_CONTENT)) + "\0").encode("ascii")
+_SHARED_ACTUAL_BLOB = _shared_hashlib.sha1(
+    _SHARED_PREFIX + _SHARED_CONTENT
+).hexdigest()
+_SHARED_PIN = _shared_json.loads(
+    (root / "scripts/SHARED_PUBLICATION_GUARD.pin.json").read_text(encoding="utf-8")
+)
+if (_SHARED_ACTUAL_BLOB != _SHARED_EXPECTED_BLOB or
+        _SHARED_PIN.get("source_git_blob_sha1") != _SHARED_EXPECTED_BLOB):
+    sys.exit("FAIL: local shared publication guard or immutable provenance pin drift")
+
 from _shared_publication_guard import scan_workflows as _scan_publication_surface
 
 _D_EXPECTED = {"full.yml": 1}
