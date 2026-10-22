@@ -173,6 +173,12 @@ public partial class App : Application
                 if (!HorizontalScrollSupport.IsEnabled(table))
                     throw new InvalidOperationException(
                         $"Production table '{name}' is missing DJ Library precision-touchpad horizontal routing.");
+                // Verify the old production API delegates to the canonical
+                // attached-property owner, including idempotent re-registration.
+                HorizontalScrollSupport.Enable(table);
+                if (!Lxsdd.SharedDesktop.Wpf.HorizontalScrollSupport.IsEnabled(table))
+                    throw new InvalidOperationException(
+                        $"Production table '{name}' did not use the canonical shared touchpad router.");
                 if (!table.EnableRowVirtualization || !table.EnableColumnVirtualization ||
                     !System.Windows.Controls.ScrollViewer.GetCanContentScroll(table))
                     throw new InvalidOperationException(
