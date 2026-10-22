@@ -1,0 +1,8 @@
+{
+  "source_repo": "lxsdd/dev-infrastructure-public",
+  "source_commit": "e3f97bf4b2cbad054e230054f520007e907c8cd8",
+  "source_path": "shared/wpf/HorizontalScrollSupport.cs",
+  "source_git_blob_sha1": "23046d3df6b6490ba31576ec5b46859704cf6a17",
+  "legacy_api": "RekordboxMyTagSync.HorizontalScrollSupport",
+  "compatibility": "net10.0-windows; distinct WPF host lifecycle remains protected; no app/database write"
+}
