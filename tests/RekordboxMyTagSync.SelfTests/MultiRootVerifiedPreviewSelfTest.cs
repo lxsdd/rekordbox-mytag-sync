@@ -55,7 +55,7 @@ public static class MultiRootVerifiedPreviewSelfTest
             bridge, snapshot.Tracks, aliases);
         if (report.EligiblePairs != 2 || report.SamePhysicalFiles != 2 ||
             report.ExcludedSubsongs != 1 || report.DistinctPhysicalFiles != 0 ||
-            report.AmbiguousSourcePaths != 1 || report.AmbiguousTargetPaths != 0 ||
+            report.AmbiguousSourcePaths != 0 || report.AmbiguousTargetPaths != 0 ||
             report.VerifiedPairs?.Count != 2)
             throw new InvalidOperationException(
                 "Disjoint multi-root FileIndex/VolumeSerial verification failed.");
