@@ -1,0 +1,4 @@
+path	subsong	artist	artists	title	original_title	remixed_by	album	album_artist	track_number	total_tracks	disc_number	total_discs	date	genre	style	bpm	label	catalog_number	duration_seconds	isrc	codec	bitrate	tag_fingerprint	extra_metadata_json	metadata_vectors_json
+SYNTHETIC:/Cue Mix.flac	0	Fixture Artist		Cue Track										Trance					300		FLAC		6bdf07c7a9d808bb	{"MOOD":["Driving"]}	[{"name":"DATE","values":["2026-10-22"]},{"name":"GENRE","values":["Trance"]},{"name":"MOOD","values":["Driving"]}]
+SYNTHETIC:/Cue Mix.flac	1	Fixture Artist		Cue Track										Trance					300		FLAC		0c95c0e3940677be	{"MOOD":["Driving"]}	[{"name":"DATE","values":["2026-10-22"]},{"name":"GENRE","values":["Trance"]},{"name":"MOOD","values":["Driving"]}]
+SYNTHETIC:/Cue Mix.flac	2	Fixture Artist		Cue Track										Trance					300		FLAC		b100d8197d7d3f95	{"MOOD":["Driving"]}	[{"name":"DATE","values":["2026-10-22"]},{"name":"GENRE","values":["Trance"]},{"name":"MOOD","values":["Driving"]}]
