@@ -46,13 +46,54 @@ keinen Downloadlink zu einem unveröffentlichten Programm.
 | No-write-Sicherheit | Suche, Discovery, Inspection, Validate, Path Scan, Preview, Abbruch und Fenster-Schließen dürfen weder `master.db` noch Audiodateien/physische Tags/embedded CUEs verändern. Write-Aktionen bleiben gesperrt, bis später *separat* freigegeben |
 | XDJ-RX3 | Nach Beendigung der PC-Prüfung rekordbox regulär starten und Sammlung, My Tags, Cue-Daten und RX3-Browsing unverändert wiederfinden; keine RX3-Firmware-/Geräteänderungen |
 
+### Zusätzliches CUE-/Subsong-Abnahmekriterium (physisch/virtuell)
+
+Die foobar-Bridge exportiert jeden Eintrag mit **`(path, subsong)`**; nur
+`subsong=0` ist ein *möglicher* physischer Dateikandidat (nicht automatisch
+ein bewiesener Treffer). Ein Eintrag mit `subsong>0` ist ein virtueller
+Track — beispielsweise aus einem eingebetteten oder externen CUE, aber nicht
+zwingend. Er darf **niemals** einem unabhängigen rekordbox-ContentID oder
+einer zusätzlichen physischen Datei gleichgesetzt werden.
+
+- **PASS:** Existieren für einen Audiodateipfad sowohl ein `subsong=0` als
+  auch ein oder mehrere virtuelle Tracks, bleibt der physische Pfad in der
+  reinen Pfad- und Datei-ID-Diagnose *eindeutig*, sofern keine zweite physische
+  Quelle kollidiert. Virtuelle Einträge werden getrennt als ausgeschlossen
+  gezählt. Ein tatsächlicher Match erfordert weiterhin native
+  `VolumeSerial/FileIndex`-Identität.
+- **PASS:** Exportiert die Bridge für ein CUE-Album nur `subsong>0`, erzeugt
+  MyTagSync **keinen** erfundenen `subsong=0`-Eintrag, keine physische
+  Aliaszuordnung und keinen MyTag-Änderungsvorschlag für diese Segmente.
+  Diagnostischer Ausschlussgrund bei einem entsprechenden rekordbox-Ziel:
+  `VIRTUAL_SUBSONG_ONLY`.
+- **PASS:** Zwei *echte* physische `subsong=0`-Einträge für denselben
+  normalisierten Pfad bleiben unaufgelöste Mehrdeutigkeiten. Unterschiedliche
+  Dateien mit gleichem Namen oder gleichen Bytes gelten weiterhin nicht als
+  identisches Dateiobjekt.
+- **PASS:** Selbst ein nicht interpretierbarer Dateipfad eines rein virtuellen
+  Eintrags darf die lesende *physische Pfadanalyse* nicht unterbrechen. Diese
+  Bedingung wird bereits mit synthetischen Windows-CI-Daten geprüft; sie muss
+  auf dem DJ-Laptop **nicht künstlich erzeugt** werden.
+
+Falls die reale Sammlung keine geeignete physisch/virtuell-Kombination
+enthält, bitte **keine Musikdateien oder CUEs dafür erstellen oder ändern**.
+Der synthetische CI-Nachweis bleibt dann bestehen; die tatsächliche
+Quellkonstellation wird nur anonymisiert als `NICHT VORHANDEN` festgehalten.
+
+**Versionsgrenze:** Diese zusätzlichen Diagnosekorrekturen sind erst mit
+dem Merge der hierfür qualifizierten Quellcodeänderungen Bestandteil eines
+neuen Builds. Der bereits separat privat übergebene Kandidat
+`31ff9950f48e7e40828caf6a04846a6a6fda8d28` enthält diese neueren
+Änderungen **nicht** und darf dafür nicht als PASS abgenommen werden.
+
 Bei einem FAIL werden **nur lokale, anonymisierte Ergebnisse** weitergegeben (Schritt, erwarteter/tatsächlicher Zustand, Windows-Version, App-Source-SHA); **keine** privaten `master.db`, Musikdateien, ContentIDs, Tokens, Pfade oder vollständigen Debug-Dumps in GitHub-Issues veröffentlichen. Die vollständige Testreihe soll möglichst einmalig und gebündelt stattfinden, nicht in vielen Mini-Runden.
 
 **Grenze dieser Abnahme:** Eine erfolgreiche read-only-Abnahme erteilt **keine** Genehmigung für `Apply` oder `Restore`. Für jede spätere reale Transaktion sind nachvollziehbare Vorschau, neu geprüfte Identität, separates Rolling Backup und eine eigene ausdrückliche Zustimmung notwendig.
 
-## Bisheriger softwareseitiger Nachweis, nicht Client-Abnahme
+## Softwareseitige Nachweise, nicht Client-Abnahme
 
-- Produkt-`main`: `71939b9d91258f6bb40ef7509e7744a8c7c8d5e7`
+- Bislang privat übergebener eingefrorener Kandidat (ohne die oben beschriebenen neuesten CUE-Diagnosekorrekturen): `31ff9950f48e7e40828caf6a04846a6a6fda8d28`, [FAST #39644213830](https://github.com/lxsdd/rekordbox-mytag-sync/actions/runs/39644213830) und [FULL #39644673181](https://github.com/lxsdd/rekordbox-mytag-sync/actions/runs/39644673181) SUCCESS. Innerer ZIP-SHA-256 `0fcdb11d190e68b4a3ee714aee1147b4c27bd3114a6521dc4affab1d18e93cb9`; Draft release ID `420369311`, **nicht öffentlich**. Der Eigentümerworkflow stellte alle drei Assets privat mit anonymen 404-Negativtests bereit; der nachträgliche `$LASTEXITCODE`-Statusfehler meldete den erfolgreichen Transfer irrtümlich als FAILURE. Kein Hardwaretest erfolgt.
+- Historischer früherer Produkt-`main`: `71939b9d91258f6bb40ef7509e7744a8c7c8d5e7`
 - [FAST #39446071413](https://github.com/lxsdd/rekordbox-mytag-sync/actions/runs/39446071413) – SUCCESS, einschließlich nativer foobar-Bridge-Publisher→verschlüsselter SQLCipher-Preview-Test
 - [FULL #39446568359](https://github.com/lxsdd/rekordbox-mytag-sync/actions/runs/39446568359) – SUCCESS, inklusive Win-x64 ZIP-Determinismus und ältere Windows-Server-API-Probe
 - Innerer, nur temporär im Runner erzeugter ZIP-SHA-256: `bb82d68ff36300efee274017ac09af347c2e43843d53bc6199c6b43a860d2cf0`
