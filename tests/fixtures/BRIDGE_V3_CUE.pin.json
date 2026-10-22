@@ -1,8 +1,9 @@
 {
   "source_owner": "lxsdd/foo_dj_library_bridge",
-  "source_branch": "contracts/golden-v3-cue-identity-20261022",
   "source_path": "tests/contracts/bridge-v3-cue-identity.tsv",
   "source_git_blob_sha1": "f3b75d4608bacba23b2fd21b3350a7966e668a2e",
   "contract": "schema=3; 26 columns; same path subsongs 0/1/2; multivalue metadata; no inferred physical write target",
-  "licensing": "all data synthetic; read-only fixture; no third-party media"
+  "licensing": "all data synthetic; read-only fixture; no third-party media",
+  "source_commit": "8751488881d34b74841076a05080e8c153476f3b",
+  "qualification_run": "https://github.com/lxsdd/foo_dj_library_bridge/actions/runs/39859305383"
 }
