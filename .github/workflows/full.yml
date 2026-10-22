@@ -138,7 +138,15 @@ jobs:
             throw "Could not enumerate tracked repository files for hygiene audit."
           }
 
-          function Test-Content([string]$Label, [string]$Path, [string]$Content) {
+          # A distinct unmerged read-only diagnostic-history Draft contains
+          # one deliberately synthetic filename that exercises real path
+          # redaction. This exception is bound to its COMPLETE immutable blob
+          # hash + exact fixture path + ONLY the Windows-path warning; all
+          # credentials and every other blob still fail closed.
+          $syntheticHistoryFixtureBlob = '9e35339addd5cd07241e70cf2d8afadccd9cce42'
+          $syntheticHistoryFixturePath = 'tests/RekordboxMyTagSync.SelfTests/DiagnosticHistoryStoreSelfTest.cs'
+
+          function Test-Content([string]$Label, [string]$Path, [string]$Content, [string]$BlobSha = '') {
             if ($Path -eq $patternPath) { return }
 
             # Historical versions of this workflow briefly contained the pattern
@@ -154,6 +162,17 @@ jobs:
 
             foreach ($pattern in $patterns) {
               if ($Content -match [string]$pattern.Regex) {
+                if ($BlobSha -ceq $syntheticHistoryFixtureBlob -and
+                    $Path -ceq $syntheticHistoryFixturePath -and
+                    [string]$pattern.Name -ceq 'Local Windows user path' -and
+                    $Content.Contains('const string privatePath = @') -and
+                    $Content.Contains('private-file.flac') -and
+                    [regex]::Matches($Content, [string]$pattern.Regex).Count -eq 1) {
+                  # One documented, exact historical synthetic fixture only.
+                  # Never exempt a user path in any other file/blob, nor a
+                  # token/private key inside the same synthetic fixture.
+                  continue
+                }
                 $script:findings += [PSCustomObject]@{
                   Location = $Label
                   Pattern = [string]$pattern.Name
@@ -198,7 +217,7 @@ jobs:
             } catch {
               continue
             }
-            Test-Content ("history:" + $pair.Value + "@" + $pair.Key.Substring(0, 12)) $pair.Value $content
+            Test-Content ("history:" + $pair.Value + "@" + $pair.Key.Substring(0, 12)) $pair.Value $content $pair.Key
           }
 
           if ($findings.Count -gt 0) {
