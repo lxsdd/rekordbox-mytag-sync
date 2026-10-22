@@ -56,7 +56,12 @@ public static class PathMatchAdvisor
                 WindowsPathMatcher.Normalize(x.Path, aliases)))
             .ToArray();
 
-        var sourceGroups = source.GroupBy(x => x.MappedPath, StringComparer.OrdinalIgnoreCase)
+        // Mirror PreviewEngine and VerifiedPreviewScope: one long file can have
+        // multiple foobar virtual CUE/subsong records sharing its path.
+        // These are useful diagnostics, but cannot create physical path
+        // ambiguity or authorize rekordbox file-level ContentID matches.
+        var physicalSources = source.Where(x => x.Track.Subsong == 0).ToArray();
+        var sourceGroups = physicalSources.GroupBy(x => x.MappedPath, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.ToArray(), StringComparer.OrdinalIgnoreCase);
         var targetGroups = destination.GroupBy(x => x.MappedPath, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.ToArray(), StringComparer.OrdinalIgnoreCase);
@@ -65,7 +70,7 @@ public static class PathMatchAdvisor
         var aliased = 0;
         foreach (var (path, entries) in sourceGroups)
         {
-            if (entries.Length != 1 || entries[0].Track.Subsong != 0 ||
+            if (entries.Length != 1 ||
                 !targetGroups.TryGetValue(path, out var matches) || matches.Length != 1)
                 continue;
             matched.Add(entries[0].Track);
@@ -81,8 +86,8 @@ public static class PathMatchAdvisor
         // individual artist/filename pairs. A suffix is useful only when it
         // is unique on both sides. This suggests a broad Z:\Music -> R:\
         // mapping when justified, instead of dozens of artist-level aliases.
-        var possibleSource = source
-            .Where(x => !matched.Contains(x.Track) && x.Track.Subsong == 0)
+        var possibleSource = physicalSources
+            .Where(x => !matched.Contains(x.Track))
             .Where(x => sourceGroups[x.MappedPath].Length == 1)
             .SelectMany(x => EnumerateSuffixes(x.OriginalPath)
                 .Select(s => (Item: x, s.Key, s.Root)))
@@ -144,6 +149,8 @@ public static class PathMatchAdvisor
             sourceGroups.Values.Count(x => x.Length > 1),
             targetGroups.Values.Count(x => x.Length > 1),
             source.Count(x => x.Track.Subsong != 0),
+            // Unmatched includes the virtual diagnostic rows, never as
+            // mistaken duplicate physical files.
             source.Count(x => !matched.Contains(x.Track)),
             unique);
     }
