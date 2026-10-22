@@ -52,6 +52,11 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
+        foreach (var previous in DiagnosticHistoryStore.Load())
+            _diagnosticEvents.Add(DiagnosticHistoryStore.FormatForUi(previous));
+        if (_diagnosticEvents.Count != 0)
+            DiagnosticsTextBox.Text = string.Join(Environment.NewLine, _diagnosticEvents) + Environment.NewLine;
+
         // DataGrid.FrozenColumnCount is coerced against Columns.Count during
         // XAML initialization; set it only AFTER the five columns exist.
         PreviewInvestigationGrid.FrozenColumnCount = 2;
@@ -1410,6 +1415,8 @@ public partial class MainWindow : Window
         var line = $"[{DateTime.Now:HH:mm:ss}] {message}";
         _diagnosticEvents.Add(line);
         if (_diagnosticEvents.Count > 500) _diagnosticEvents.RemoveAt(0);
+        try { DiagnosticHistoryStore.Append(message); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException) { }
         DiagnosticsTextBox.AppendText(
             (DiagnosticsTextBox.Text.Length == 0 ? string.Empty : Environment.NewLine) + line);
         DiagnosticsTextBox.ScrollToEnd();

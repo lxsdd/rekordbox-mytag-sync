@@ -306,6 +306,7 @@ try
     VerifiedMutationAuthoritySelfTest.Run(temp);
     RekordboxDatabaseAccessResolverSelfTest.Run(temp);
     AppSettingsStoreSelfTest.Run(temp);
+    DiagnosticHistoryStoreSelfTest.Run(temp);
     RekordboxDatabaseSelfTest.Run(temp);
     ProvenanceSelfTest.Run(temp);
     BackupRestoreSelfTest.Run(temp);
