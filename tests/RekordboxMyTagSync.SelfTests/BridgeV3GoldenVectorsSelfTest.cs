@@ -16,7 +16,11 @@ public static class BridgeV3GoldenVectorsSelfTest
     {
         var fixture = Path.GetFullPath(
             Path.Combine("tests", "fixtures", "bridge-v3-cue-identity.tsv"));
-        byte[] source = File.ReadAllBytes(fixture);
+        // Windows Git checkouts may apply autocrlf to a text fixture.
+        // Validate the immutable Git *logical LF blob* while preserving
+        // fail-closed behavior for all other content changes.
+        byte[] source = Encoding.UTF8.GetBytes(
+            File.ReadAllText(fixture, Encoding.UTF8).Replace("\r\n", "\n"));
         byte[] blobPrefix = Encoding.ASCII.GetBytes("blob " + source.Length + "\0");
         byte[] gitBlob = new byte[blobPrefix.Length + source.Length];
         Buffer.BlockCopy(blobPrefix, 0, gitBlob, 0, blobPrefix.Length);
