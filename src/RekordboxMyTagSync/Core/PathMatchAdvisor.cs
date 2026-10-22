@@ -47,7 +47,12 @@ public static class PathMatchAdvisor
         foreach (var alias in aliases)
             _ = WindowsPathMatcher.Normalize(alias.SourceRoot, aliases);
 
-        var source = bridge.Select(x => new Source(
+        // Only physical source entries require path normalization. Some
+        // virtual CUE segments carry non-file/unsupported bridge paths, but
+        // they are NOT ContentID matching candidates and must not poison the
+        // diagnostic analysis of otherwise safe subsong-0 source files.
+        var physicalSources = bridge.Where(x => x.Subsong == 0)
+            .Select(x => new Source(
                 x, WindowsPathMatcher.Normalize(x.Path),
                 WindowsPathMatcher.Normalize(x.Path, aliases)))
             .ToArray();
@@ -60,7 +65,6 @@ public static class PathMatchAdvisor
         // multiple foobar virtual CUE/subsong records sharing its path.
         // These are useful diagnostics, but cannot create physical path
         // ambiguity or authorize rekordbox file-level ContentID matches.
-        var physicalSources = source.Where(x => x.Track.Subsong == 0).ToArray();
         var sourceGroups = physicalSources.GroupBy(x => x.MappedPath, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.ToArray(), StringComparer.OrdinalIgnoreCase);
         var targetGroups = destination.GroupBy(x => x.MappedPath, StringComparer.OrdinalIgnoreCase)
@@ -148,10 +152,11 @@ public static class PathMatchAdvisor
             bridge.Count, target.Count, exact, aliased,
             sourceGroups.Values.Count(x => x.Length > 1),
             targetGroups.Values.Count(x => x.Length > 1),
-            source.Count(x => x.Track.Subsong != 0),
-            // Unmatched includes the virtual diagnostic rows, never as
-            // mistaken duplicate physical files.
-            source.Count(x => !matched.Contains(x.Track)),
+            bridge.Count(x => x.Subsong != 0),
+            // Virtual rows count as diagnostic-only unmatched entries,
+            // regardless of whether their paths can be normalized.
+            physicalSources.Count(x => !matched.Contains(x.Track)) +
+                bridge.Count(x => x.Subsong != 0),
             unique);
     }
 
