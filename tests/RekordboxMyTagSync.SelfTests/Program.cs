@@ -165,6 +165,7 @@ try
     AssertSequence("bridge v2 true multivalue extra", v2[0].GetFieldValues("mood"), "Euphoric", "Dark");
     AssertSequence("bridge v2 custom multivalue extra", v2[0].GetFieldValues("CUSTOM_TAG"), "Foo", "Bar");
 
+    BridgeV3GoldenVectorsSelfTest.Run(temp);
     BridgeAtomicContractSelfTest.Run(temp);
 
     var v3 = BridgeSnapshot.Read(WriteBridgeV3Fixture(temp));
