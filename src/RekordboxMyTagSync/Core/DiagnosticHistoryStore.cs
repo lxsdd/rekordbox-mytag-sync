@@ -139,6 +139,42 @@ public static class DiagnosticHistoryStore
             + "RekordboxMyTagSync.DiagnosticHistory." + hash;
     }
 
+    /// <summary>
+    /// Builds a deliberately minimal, deterministic support summary from
+    /// allowlisted *saved* categories. Never includes paths, DBIDs, MyTag
+    /// values, user messages, timestamps, secrets, or acceptance claims.
+    /// The caller may present this text for review before a user-initiated copy.
+    /// </summary>
+    public static string BuildRedactedSupportReport(IReadOnlyList<Entry> savedEvents)
+    {
+        if (savedEvents is null || savedEvents.Count > Limit)
+            throw new InvalidDataException("Redacted support input exceeds the allowed event limit.");
+
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var entry in savedEvents)
+        {
+            if (entry is null || !Codes.Contains(entry.Code) ||
+                entry.AtUtc == default || entry.AtUtc.Offset != TimeSpan.Zero)
+                throw new InvalidDataException("Invalid redacted support event.");
+            counts.TryGetValue(entry.Code, out var count);
+            counts[entry.Code] = count + 1;
+        }
+
+        var report = new StringBuilder();
+        report.AppendLine("MYTAGSYNC_REDACTED_SUPPORT_REPORT=V1");
+        report.AppendLine("SOURCE=ALLOWLISTED_SAVED_HISTORY_ONLY");
+        report.AppendLine("HISTORY_COMPLETENESS=NOT_ATTESTED");
+        report.AppendLine("EVENTS=" + savedEvents.Count.ToString(CultureInfo.InvariantCulture));
+        foreach (var code in counts.Keys.OrderBy(code => code, StringComparer.Ordinal))
+            report.Append("CATEGORY=").Append(code).Append(" COUNT=")
+                .AppendLine(counts[code].ToString(CultureInfo.InvariantCulture));
+        report.AppendLine("REAL_WINDOWS11_X64_ACCEPTANCE=NOT_ATTESTED");
+        report.AppendLine("REKORDBOX6_7_XDJ_RX3_ACCEPTANCE=NOT_ATTESTED");
+        report.AppendLine("DISTRIBUTION_PERMISSION=NOT_ATTESTED_BY_REPORT");
+        report.AppendLine("LIVE_APPLY_RESTORE=NOT_AUTHORIZED_BY_REPORT");
+        return report.ToString();
+    }
+
     public static string FormatForUi(Entry entry) =>
         $"[previous {entry.AtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)} UTC] {entry.Code} (details not retained)";
 

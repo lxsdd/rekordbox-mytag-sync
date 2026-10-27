@@ -21,6 +21,51 @@ public static class DiagnosticHistoryStoreSelfTest
             !DiagnosticHistoryStore.FormatForUi(first[0]).Contains("previous", StringComparison.Ordinal))
             throw new InvalidOperationException("Redacted history roundtrip failed.");
 
+        // A safe support report must be reproducible, deliberately
+        // incomplete, and contain ONLY fixed category counters.
+        var beforeReport = File.ReadAllBytes(path);
+        var safeReport = DiagnosticHistoryStore.BuildRedactedSupportReport(first);
+        var expectedReport = DiagnosticHistoryStore.BuildRedactedSupportReport(first);
+        if (safeReport != expectedReport ||
+            !safeReport.StartsWith("MYTAGSYNC_REDACTED_SUPPORT_REPORT=V1", StringComparison.Ordinal) ||
+            !safeReport.Contains("EVENTS=2", StringComparison.Ordinal) ||
+            !safeReport.Contains("CATEGORY=READ_ONLY_WRITE_BLOCK COUNT=1", StringComparison.Ordinal) ||
+            !safeReport.Contains("CATEGORY=SOURCE_VERIFIED COUNT=1", StringComparison.Ordinal) ||
+            !safeReport.Contains("REAL_WINDOWS11_X64_ACCEPTANCE=NOT_ATTESTED", StringComparison.Ordinal) ||
+            !safeReport.Contains("REKORDBOX6_7_XDJ_RX3_ACCEPTANCE=NOT_ATTESTED", StringComparison.Ordinal) ||
+            !safeReport.Contains("DISTRIBUTION_PERMISSION=NOT_ATTESTED_BY_REPORT", StringComparison.Ordinal) ||
+            safeReport.Contains("Someone", StringComparison.Ordinal) ||
+            safeReport.Contains("private-file", StringComparison.Ordinal) ||
+            !File.ReadAllBytes(path).SequenceEqual(beforeReport))
+            throw new InvalidOperationException("Support report leaked private data, claimed acceptance or touched saved history.");
+
+        var emptyReport = DiagnosticHistoryStore.BuildRedactedSupportReport(Array.Empty<DiagnosticHistoryStore.Entry>());
+        if (!emptyReport.Contains("EVENTS=0", StringComparison.Ordinal) ||
+            !emptyReport.Contains("HISTORY_COMPLETENESS=NOT_ATTESTED", StringComparison.Ordinal))
+            throw new InvalidOperationException("Empty support report implied completed acceptance.");
+
+        // Never serialize an arbitrary event code, even if supplied by a
+        // malicious caller rather than by the on-disk allowlisted parser.
+        var malicious = new DiagnosticHistoryStore.Entry(
+            DateTimeOffset.UtcNow, "SOURCE_VERIFIED\\nSECRET=C:\\private-music");
+        var invalidUtc = new DiagnosticHistoryStore.Entry(
+            DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(2)), "SOURCE_VERIFIED");
+        foreach (var candidate in new[] { malicious, invalidUtc })
+        {
+            var rejected = false;
+            try { DiagnosticHistoryStore.BuildRedactedSupportReport(new[] { candidate }); }
+            catch (InvalidDataException) { rejected = true; }
+            if (!rejected)
+                throw new InvalidOperationException("Untrusted support report input was accepted.");
+        }
+        var tooMany = Enumerable.Repeat(first[0], 201).ToList();
+        var overflowRejected = false;
+        try { DiagnosticHistoryStore.BuildRedactedSupportReport(tooMany); }
+        catch (InvalidDataException) { overflowRejected = true; }
+        if (!overflowRejected)
+            throw new InvalidOperationException("Unbounded redacted report was accepted.");
+        Console.WriteLine("MYTAGSYNC_REDACTED_SUPPORT_REPORT=PASS");
+
         for (var i = 0; i < 205; i++)
             DiagnosticHistoryStore.Append("Path analysis complete.", path);
         var bounded = DiagnosticHistoryStore.Load(path);

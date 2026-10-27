@@ -52,6 +52,11 @@ internal static class WpfReadOnlyUiRegression
                 AssertToolbar(window, root, tabs, "Preview / Changes",
                     "BuildPreviewButton", "BuildVerifiedPreviewButton",
                     "CancelVerifiedPreviewButton");
+                tabs.SelectedIndex = 6; // Diagnostics toolbar must fit small laptops.
+                Measure(root, width, height);
+                AssertToolbar(window, root, tabs, "Diagnostics / Logs",
+                    "RefreshDiagnosticsButton", "ClearDiagnosticHistoryButton",
+                    "PrepareRedactedReportButton", "CopyRedactedReportButton");
             }
 
             // Click the actual production discovery handler, not a mock.
@@ -83,6 +88,27 @@ internal static class WpfReadOnlyUiRegression
                 throw new InvalidOperationException(
                     "Failed synthetic source discovery unexpectedly permitted a database write.");
 
+            // Run actual production WPF preview wiring. The diagnostic log now
+            // includes a synthetic sensitive path; the safe support report may
+            // include ONLY pre-approved category/count lines, never that path.
+            if (window.FindName("PrepareRedactedReportButton") is not Button prepare ||
+                window.FindName("CopyRedactedReportButton") is not Button copy ||
+                window.FindName("RedactedSupportReportTextBox") is not TextBox safePreview ||
+                string.IsNullOrWhiteSpace(
+                    System.Windows.Automation.AutomationProperties.GetName(safePreview)))
+                throw new InvalidOperationException(
+                    "Privacy-safe support report controls are missing or inaccessible.");
+            prepare.RaiseEvent(new RoutedEventArgs(
+                System.Windows.Controls.Primitives.ButtonBase.ClickEvent, prepare));
+            if (!copy.IsEnabled ||
+                !safePreview.Text.StartsWith("MYTAGSYNC_REDACTED_SUPPORT_REPORT=V1", StringComparison.Ordinal) ||
+                !safePreview.Text.Contains("HISTORY_COMPLETENESS=NOT_ATTESTED", StringComparison.Ordinal) ||
+                !safePreview.Text.Contains("REAL_WINDOWS11_X64_ACCEPTANCE=NOT_ATTESTED", StringComparison.Ordinal) ||
+                safePreview.Text.Contains(missing, StringComparison.OrdinalIgnoreCase) ||
+                safePreview.Text.Contains("master.db", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    "A live WPF safe report exposed paths or asserted unsupported acceptance.");
+
             // A recipient candidate must NEVER accept live writes, including
             // direct programmatic Clicks that bypass WPF IsEnabled.
             if (!MainWindow.LiveWritesHardLocked ||
@@ -110,6 +136,11 @@ internal static class WpfReadOnlyUiRegression
                 window.ApplyButton.IsEnabled || window.RestoreButton.IsEnabled)
                 throw new InvalidOperationException(
                     "Direct Restore Click escaped the read-only candidate hold.");
+            if (window.FindName("CopyRedactedReportButton") is not Button staleCopy ||
+                window.FindName("RedactedSupportReportTextBox") is not TextBox staleReport ||
+                staleCopy.IsEnabled || !string.IsNullOrEmpty(staleReport.Text))
+                throw new InvalidOperationException(
+                    "New diagnostics did not revoke the old support report snapshot.");
             
             // A click on Inspect with no selected source must always produce a
             // visible, *synchronous* failure and restore the clickable action.
@@ -144,7 +175,8 @@ internal static class WpfReadOnlyUiRegression
             {
                 "DiscoverSourceButton", "InspectSourceButton",
                 "DiscoverTargetButton", "BrowseTargetButton",
-                "ValidateDatabaseAccessButton", "RefreshDiagnosticsButton"
+                "ValidateDatabaseAccessButton", "RefreshDiagnosticsButton",
+                "PrepareRedactedReportButton"
             }.Select(name => window.FindName(name) as Button ??
                 throw new InvalidOperationException(
                     "Missing busy-aware production action: " + name)).ToArray();
