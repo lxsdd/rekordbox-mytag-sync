@@ -10,7 +10,8 @@ public static class DiagnosticHistoryStoreSelfTest
         if (DiagnosticHistoryStore.Load(path).Count != 0)
             throw new InvalidOperationException("Missing history was not empty.");
 
-        const string privatePath = @"C:\Users\Someone\Music\private-file.flac";
+        // Synthetic non-user-profile path; never add real Windows profile paths to sources.
+        const string privatePath = @"X:\SyntheticLibrary\Music\private-file.flac";
         DiagnosticHistoryStore.Append("Source verified: " + privatePath, path);
         DiagnosticHistoryStore.Append("Apply refused: " + privatePath, path);
         if (File.ReadAllText(path).Contains("private-file", StringComparison.Ordinal))
@@ -34,7 +35,7 @@ public static class DiagnosticHistoryStoreSelfTest
             !safeReport.Contains("REAL_WINDOWS11_X64_ACCEPTANCE=NOT_ATTESTED", StringComparison.Ordinal) ||
             !safeReport.Contains("REKORDBOX6_7_XDJ_RX3_ACCEPTANCE=NOT_ATTESTED", StringComparison.Ordinal) ||
             !safeReport.Contains("DISTRIBUTION_PERMISSION=NOT_ATTESTED_BY_REPORT", StringComparison.Ordinal) ||
-            safeReport.Contains("Someone", StringComparison.Ordinal) ||
+            safeReport.Contains("SyntheticLibrary", StringComparison.Ordinal) ||
             safeReport.Contains("private-file", StringComparison.Ordinal) ||
             !File.ReadAllBytes(path).SequenceEqual(beforeReport))
             throw new InvalidOperationException("Support report leaked private data, claimed acceptance or touched saved history.");
@@ -106,7 +107,7 @@ public static class DiagnosticHistoryStoreSelfTest
         });
         var mixedEntries = DiagnosticHistoryStore.Load(mixed);
         if (mixedEntries.Any(e => e.Code != "SOURCE_VERIFIED") ||
-            (File.Exists(mixed) && File.ReadAllText(mixed).Contains("Someone", StringComparison.Ordinal)))
+            (File.Exists(mixed) && File.ReadAllText(mixed).Contains("SyntheticLibrary", StringComparison.Ordinal)))
             throw new InvalidOperationException("Mixed clear/append corrupted or leaked history.");
 
         // Multiple WPF processes/threads must not lose read-modify-write events.
@@ -116,7 +117,7 @@ public static class DiagnosticHistoryStoreSelfTest
         var concurrentEvents = DiagnosticHistoryStore.Load(concurrent);
         if (concurrentEvents.Count != 32 ||
             concurrentEvents.Any(e => e.Code != "SOURCE_VERIFIED") ||
-            File.ReadAllText(concurrent).Contains("Someone", StringComparison.Ordinal))
+            File.ReadAllText(concurrent).Contains("SyntheticLibrary", StringComparison.Ordinal))
             throw new InvalidOperationException("Concurrent redacted history lost or leaked events.");
 
         // Reject a linked ancestor even when the final history file is new.

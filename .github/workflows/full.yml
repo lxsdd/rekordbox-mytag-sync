@@ -138,12 +138,14 @@ jobs:
             throw "Could not enumerate tracked repository files for hygiene audit."
           }
 
-          # A distinct unmerged read-only diagnostic-history Draft contains
-          # one deliberately synthetic filename that exercises real path
-          # redaction. This exception is bound to its COMPLETE immutable blob
-          # hash + exact fixture path + ONLY the Windows-path warning; all
-          # credentials and every other blob still fail closed.
-          $syntheticHistoryFixtureBlob = '9e35339addd5cd07241e70cf2d8afadccd9cce42'
+          # Immutable historical synthetic-only fixture blobs already committed
+          # before the no-user-profile fixture correction. The exception is for
+          # precisely these Git object identities and one regex category, never
+          # for arbitrary current content or newly added user paths/secrets.
+          $syntheticHistoryFixtureBlobs = @(
+            '9e35339addd5cd07241e70cf2d8afadccd9cce42',
+            '9fc78008a50e67f8ee01110f5ee4939935edb8a9'
+          )
           $syntheticHistoryFixturePath = 'tests/RekordboxMyTagSync.SelfTests/DiagnosticHistoryStoreSelfTest.cs'
 
           function Test-Content([string]$Label, [string]$Path, [string]$Content, [string]$BlobSha = '') {
@@ -162,7 +164,7 @@ jobs:
 
             foreach ($pattern in $patterns) {
               if ($Content -match [string]$pattern.Regex) {
-                if ($BlobSha -ceq $syntheticHistoryFixtureBlob -and
+                if ($syntheticHistoryFixtureBlobs -ccontains $BlobSha -and
                     $Path -ceq $syntheticHistoryFixturePath -and
                     [string]$pattern.Name -ceq 'Local Windows user path' -and
                     $Content.Contains('const string privatePath = @') -and
@@ -181,7 +183,43 @@ jobs:
             }
           }
 
-          $findings = @()
+          # Self-test this *same* scanner against the exact immutable
+          # historical test blob. An unrelated identity/path, an extra
+          # profile-path occurrence, or an injected credential must be flagged.
+          # Assemble negative fixtures at runtime so the scanner will not
+          # self-trigger on its own regression definitions.
+          $verifiedHistoricalBlob = '9fc78008a50e67f8ee01110f5ee4939935edb8a9'
+          $fixtureObjectType = (& git cat-file -t $verifiedHistoricalBlob) -join ''
+          if ($LASTEXITCODE -ne 0 -or $fixtureObjectType -ne 'blob') {
+            throw 'Immutable historical synthetic fixture blob is unavailable.'
+          }
+          $historicalFixture = (& git cat-file -p $verifiedHistoricalBlob) -join [Environment]::NewLine
+          if ($LASTEXITCODE -ne 0 -or -not $historicalFixture.Contains('private-file.flac')) {
+            throw 'Immutable historical synthetic fixture could not be verified.'
+          }
+          $script:findings = @()
+          Test-Content 'selftest:pinned-history' $syntheticHistoryFixturePath $historicalFixture $verifiedHistoricalBlob
+          if ($script:findings.Count -ne 0) {
+            throw 'Hygiene audit rejected an exact pinned historical synthetic test fixture.'
+          }
+          $separator = [string][char]92
+          $additionalProfile = 'C:' + $separator + 'Users' + $separator + 'InjectedFixture' + $separator + 'other.flac'
+          $fakeCredential = 'ghp_' + ('A' * 24)
+          $negativeCases = @(
+            @{ kind = 'wrong-sha'; file = $syntheticHistoryFixturePath; text = $historicalFixture; sha = ('0' * 40) },
+            @{ kind = 'wrong-path'; file = 'tests/unrelated.cs'; text = $historicalFixture; sha = $verifiedHistoricalBlob },
+            @{ kind = 'second-profile'; file = $syntheticHistoryFixturePath; text = $historicalFixture + [Environment]::NewLine + $additionalProfile; sha = $verifiedHistoricalBlob },
+            @{ kind = 'credential'; file = $syntheticHistoryFixturePath; text = $historicalFixture + [Environment]::NewLine + $fakeCredential; sha = $verifiedHistoricalBlob }
+          )
+          foreach ($case in $negativeCases) {
+            $script:findings = @()
+            Test-Content ("selftest:" + $case.kind) $case.file $case.text $case.sha
+            if ($script:findings.Count -eq 0) {
+              throw "Hygiene audit mistakenly accepted a negative fixture: $($case.kind)"
+            }
+          }
+          $script:findings = @()
+          Write-Host 'MYTAGSYNC_STRICT_HISTORICAL_HYGIENE_REGRESSION=PASS'
           foreach ($file in $tracked) {
             if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
             try {
