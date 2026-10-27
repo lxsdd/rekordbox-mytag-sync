@@ -118,6 +118,7 @@ public partial class MainWindow : Window
                 "Physical file identities have not been checked for this selection. No alias is approved.";
         };
         RefreshDiagnosticsButton.Click += (_, _) => RefreshDiagnostics();
+        ClearDiagnosticHistoryButton.Click += (_, _) => ClearSavedDiagnosticHistory();
         BuildPreviewButton.Click += async (_, _) => await BuildPreviewAsync();
         BuildVerifiedPreviewButton.Click += async (_, _) => await BuildVerifiedPreviewAsync();
         InvestigatePhysicalExceptionsButton.Click += async (_, _) => await InspectPhysicalExceptionsAsync();
@@ -1317,6 +1318,7 @@ public partial class MainWindow : Window
         BrowseTargetButton.IsEnabled = !_operationBusy;
         ValidateDatabaseAccessButton.IsEnabled = !_operationBusy;
         RefreshDiagnosticsButton.IsEnabled = !_operationBusy;
+        ClearDiagnosticHistoryButton.IsEnabled = !_operationBusy;
 
         BuildPreviewButton.IsEnabled = !_operationBusy && state.CanBuildPreview;
         BuildVerifiedPreviewButton.IsEnabled = !_operationBusy && state.CanBuildPreview;
@@ -1370,6 +1372,30 @@ public partial class MainWindow : Window
             : state.Blockers.Count == 0
             ? "No write authorized without exact one-operation local confirmation."
             : string.Join(Environment.NewLine, state.Blockers.Select(x => "• " + x));
+    }
+
+    private void ClearSavedDiagnosticHistory()
+    {
+        if (_operationBusy) return;
+        if (MessageBox.Show(this,
+            "Delete the locally saved, redacted diagnostic history? " +
+            "Messages from this session remain visible. No rekordbox database, music or metadata is affected.",
+            "Clear saved diagnostic history",
+            MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            return;
+        try
+        {
+            DiagnosticHistoryStore.Clear();
+            _diagnosticEvents.RemoveAll(line =>
+                line.StartsWith("[previous ", StringComparison.Ordinal));
+            RefreshDiagnostics();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            MessageBox.Show(this,
+                "The saved history could not be cleared. No other files were changed.",
+                "Diagnostic history", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     private void RefreshDiagnostics()
