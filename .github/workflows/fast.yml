@@ -18,6 +18,13 @@ jobs:
       TEST_PROJECT: tests/RekordboxMyTagSync.SelfTests/RekordboxMyTagSync.SelfTests.csproj
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Historical privacy audit requires all reachable Git blobs.
+      - name: Verify shared hygiene audit wiring and negative regression fixtures
+        run: python tests/test_shared_repository_hygiene_wiring.py
+      - name: Audit repository credential and privacy hygiene
+        shell: pwsh
+        run: '& ./scripts/Assert-RepositoryHygiene.ps1'
       - name: Validate exact-SHA FAST dispatcher regression without GitHub requests
         run: python tests/test_recover_main_fast.py
       - name: Verify Windows 11 candidate ZIP preflight with synthetic tampering
