@@ -40,6 +40,30 @@ public static class DiagnosticHistoryStoreSelfTest
         DiagnosticHistoryStore.Append("Restore refused: read-only", path);
         if (DiagnosticHistoryStore.Load(path).Single().Code != "READ_ONLY_WRITE_BLOCK")
             throw new InvalidOperationException("Oversized history did not recover.");
+        // Explicitly clearing the saved history is idempotent. Subsequent
+        // events are independent and remain redacted.
+        DiagnosticHistoryStore.Clear(path);
+        DiagnosticHistoryStore.Clear(path);
+        if (File.Exists(path) || DiagnosticHistoryStore.Load(path).Count != 0)
+            throw new InvalidOperationException("Saved history was not erased.");
+        DiagnosticHistoryStore.Append("Source verified: " + privatePath, path);
+        if (DiagnosticHistoryStore.Load(path).Single().Code != "SOURCE_VERIFIED" ||
+            File.ReadAllText(path).Contains("private-file", StringComparison.Ordinal))
+            throw new InvalidOperationException("History did not resume privately after clear.");
+
+        // Clear and append must serialize even when concurrent WPF instances
+        // mutate the same history. No saved personal paths or invalid JSON.
+        var mixed = Path.Combine(root, "mixed-clear-append.json");
+        Parallel.For(0, 48, i =>
+        {
+            if (i % 7 == 0) DiagnosticHistoryStore.Clear(mixed);
+            else DiagnosticHistoryStore.Append("Source verified: " + privatePath + i, mixed);
+        });
+        var mixedEntries = DiagnosticHistoryStore.Load(mixed);
+        if (mixedEntries.Any(e => e.Code != "SOURCE_VERIFIED") ||
+            (File.Exists(mixed) && File.ReadAllText(mixed).Contains("Someone", StringComparison.Ordinal)))
+            throw new InvalidOperationException("Mixed clear/append corrupted or leaked history.");
+
         // Multiple WPF processes/threads must not lose read-modify-write events.
         var concurrent = Path.Combine(root, "parallel.json");
         Parallel.For(0, 32, i =>
@@ -64,10 +88,30 @@ public static class DiagnosticHistoryStoreSelfTest
             catch (InvalidDataException) { refused = true; }
             if (!refused || Directory.Exists(Path.Combine(actual, "child")))
                 throw new InvalidOperationException("Linked ancestor bypassed history write guard.");
+            var clearRefused = false;
+            try { DiagnosticHistoryStore.Clear(Path.Combine(linked, "child", "history.json")); }
+            catch (InvalidDataException) { clearRefused = true; }
+            if (!clearRefused || Directory.Exists(Path.Combine(actual, "child")))
+                throw new InvalidOperationException("Linked ancestor bypassed history clear guard.");
             Console.WriteLine("MYTAGSYNC_DIAGNOSTIC_HISTORY_LINK_GUARD=PASS");
         }
         else Console.WriteLine("MYTAGSYNC_DIAGNOSTIC_HISTORY_LINK_GUARD=NOT_TESTED_PRIVILEGE");
 
+        // Existing symbolic file links must never be deleted or followed.
+        var unrelated = Path.Combine(root, "unrelated.txt");
+        var fileLink = Path.Combine(root, "history-link.json");
+        File.WriteAllText(unrelated, "Unrelated file unchanged");
+        try { File.CreateSymbolicLink(fileLink, unrelated); }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or PlatformNotSupportedException) { }
+        if (File.Exists(fileLink))
+        {
+            var clearRefused = false;
+            try { DiagnosticHistoryStore.Clear(fileLink); }
+            catch (InvalidDataException) { clearRefused = true; }
+            if (!clearRefused || File.ReadAllText(unrelated) != "Unrelated file unchanged")
+                throw new InvalidOperationException("History clear followed another file's link.");
+        }
+        Console.WriteLine("MYTAGSYNC_DIAGNOSTIC_HISTORY_CLEAR=PASS");
         Console.WriteLine("MYTAGSYNC_DIAGNOSTIC_HISTORY_CONCURRENCY=PASS");
         Console.WriteLine("MYTAGSYNC_REDACTED_DIAGNOSTIC_HISTORY=PASS");
     }
