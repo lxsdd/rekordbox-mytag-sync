@@ -56,11 +56,7 @@ public static class DiagnosticHistoryStore
         // Two application instances can otherwise overwrite one another's
         // read-modify-replace history. The mutex contains only a path hash.
         path = Path.GetFullPath(path ?? DefaultPath);
-        var key = OperatingSystem.IsWindows() ? path.ToUpperInvariant() : path;
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)));
-        var mutexName = (OperatingSystem.IsWindows() ? @"Local\" : string.Empty)
-            + "RekordboxMyTagSync.DiagnosticHistory." + hash;
-        using var mutex = new Mutex(false, mutexName);
+        using var mutex = new Mutex(false, DiagnosticHistoryMutexName(path));
         var acquired = false;
         try
         {
@@ -112,11 +108,7 @@ public static class DiagnosticHistoryStore
     public static void Clear(string? path = null)
     {
         path = Path.GetFullPath(path ?? DefaultPath);
-        var key = OperatingSystem.IsWindows() ? path.ToUpperInvariant() : path;
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)));
-        var mutexName = (OperatingSystem.IsWindows() ? @"Local\\" : string.Empty)
-            + "RekordboxMyTagSync.DiagnosticHistory." + hash;
-        using var mutex = new Mutex(false, mutexName);
+        using var mutex = new Mutex(false, DiagnosticHistoryMutexName(path));
         var acquired = false;
         try
         {
@@ -136,6 +128,15 @@ public static class DiagnosticHistoryStore
         {
             if (acquired) mutex.ReleaseMutex();
         }
+    }
+
+    private static string DiagnosticHistoryMutexName(string path)
+    {
+        // One name for both Append and Clear, never an alias-specific lock.
+        var key = OperatingSystem.IsWindows() ? path.ToUpperInvariant() : path;
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)));
+        return (OperatingSystem.IsWindows() ? @"Local\" : string.Empty)
+            + "RekordboxMyTagSync.DiagnosticHistory." + hash;
     }
 
     public static string FormatForUi(Entry entry) =>
