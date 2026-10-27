@@ -104,6 +104,40 @@ public static class DiagnosticHistoryStore
         }
     }
 
+    /// <summary>
+    /// Explicitly erases only the locally saved, redacted history. Appends and
+    /// clears share the same named Windows mutex so concurrent instances cannot
+    /// reintroduce events read before the deletion.
+    /// </summary>
+    public static void Clear(string? path = null)
+    {
+        path = Path.GetFullPath(path ?? DefaultPath);
+        var key = OperatingSystem.IsWindows() ? path.ToUpperInvariant() : path;
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)));
+        var mutexName = (OperatingSystem.IsWindows() ? @"Local\\" : string.Empty)
+            + "RekordboxMyTagSync.DiagnosticHistory." + hash;
+        using var mutex = new Mutex(false, mutexName);
+        var acquired = false;
+        try
+        {
+            try { acquired = mutex.WaitOne(TimeSpan.FromSeconds(10)); }
+            catch (AbandonedMutexException) { acquired = true; }
+            if (!acquired)
+                throw new IOException("Timed out waiting for diagnostic history lock.");
+
+            // Never follow file links, junctions, dangling symlinks or linked
+            // parent directories, even when the target itself does not exist.
+            if (Linked(path))
+                throw new InvalidDataException("Linked diagnostic history path is not deletable.");
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        finally
+        {
+            if (acquired) mutex.ReleaseMutex();
+        }
+    }
+
     public static string FormatForUi(Entry entry) =>
         $"[previous {entry.AtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)} UTC] {entry.Code} (details not retained)";
 
