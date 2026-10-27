@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.IO;
+using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 using System.Text.Json;
 
 namespace RekordboxMyTagSync.Core;
@@ -51,44 +53,76 @@ public static class DiagnosticHistoryStore
 
     public static void Append(string message, string? path = null)
     {
-        path ??= DefaultPath;
-        if (Linked(path))
-            throw new InvalidDataException("Linked diagnostic history is not writable.");
-        var parent = Path.GetDirectoryName(Path.GetFullPath(path))
-            ?? throw new InvalidDataException("Diagnostic history has no parent.");
-        if (Directory.Exists(parent) && Linked(parent))
-            throw new InvalidDataException("Linked diagnostic directory is not writable.");
-        var events = Load(path).ToList();
-        events.Add(new Entry(DateTimeOffset.UtcNow, Classify(message)));
-        if (events.Count > Limit) events.RemoveRange(0, events.Count - Limit);
-        Directory.CreateDirectory(parent);
-        var json = JsonSerializer.Serialize(new Document(1, events));
-        if (Encoding.UTF8.GetByteCount(json) > ByteLimit)
-            throw new InvalidDataException("Diagnostic history exceeded size limit.");
-        var temp = path + ".tmp-" + Guid.NewGuid().ToString("N");
+        // Two application instances can otherwise overwrite one another's
+        // read-modify-replace history. The mutex contains only a path hash.
+        path = Path.GetFullPath(path ?? DefaultPath);
+        var key = OperatingSystem.IsWindows() ? path.ToUpperInvariant() : path;
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)));
+        var mutexName = (OperatingSystem.IsWindows() ? @"Local\" : string.Empty)
+            + "RekordboxMyTagSync.DiagnosticHistory." + hash;
+        using var mutex = new Mutex(false, mutexName);
+        var acquired = false;
         try
         {
-            File.WriteAllText(temp, json, new UTF8Encoding(false));
-            if (File.Exists(path))
+            try { acquired = mutex.WaitOne(TimeSpan.FromSeconds(10)); }
+            catch (AbandonedMutexException) { acquired = true; }
+            if (!acquired)
+                throw new IOException("Timed out waiting for diagnostic history lock.");
+
+            if (Linked(path))
+                throw new InvalidDataException("Linked diagnostic history path is not writable.");
+            var parent = Path.GetDirectoryName(path)
+                ?? throw new InvalidDataException("Diagnostic history has no parent.");
+            var events = Load(path).ToList();
+            events.Add(new Entry(DateTimeOffset.UtcNow, Classify(message)));
+            if (events.Count > Limit) events.RemoveRange(0, events.Count - Limit);
+            Directory.CreateDirectory(parent);
+            if (Linked(path))
+                throw new InvalidDataException("Diagnostic history directory became a link.");
+            var json = JsonSerializer.Serialize(new Document(1, events));
+            if (Encoding.UTF8.GetByteCount(json) > ByteLimit)
+                throw new InvalidDataException("Diagnostic history exceeded size limit.");
+            var temp = path + ".tmp-" + Guid.NewGuid().ToString("N");
+            try
             {
+                File.WriteAllText(temp, json, new UTF8Encoding(false));
                 if (Linked(path))
-                    throw new InvalidDataException("Diagnostic history became a link.");
-                File.Replace(temp, path, null);
+                    throw new InvalidDataException("Diagnostic history path became a link.");
+                if (File.Exists(path))
+                    File.Replace(temp, path, null);
+                else
+                    File.Move(temp, path);
             }
-            else File.Move(temp, path);
+            finally
+            {
+                if (File.Exists(temp)) File.Delete(temp);
+            }
         }
         finally
         {
-            if (File.Exists(temp)) File.Delete(temp);
+            if (acquired) mutex.ReleaseMutex();
         }
     }
 
     public static string FormatForUi(Entry entry) =>
         $"[previous {entry.AtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)} UTC] {entry.Code} (details not retained)";
 
-    private static bool Linked(string path) =>
-        (File.Exists(path) || Directory.Exists(path)) &&
-        (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
+    private static bool Linked(string path)
+    {
+        // Checking only the file and immediate parent misses junctions or
+        // symbolic links in higher ancestors, including dangling file links.
+        var file = new FileInfo(Path.GetFullPath(path));
+        if (file.LinkTarget is not null ||
+            (file.Exists && (file.Attributes & FileAttributes.ReparsePoint) != 0))
+            return true;
+        for (var directory = file.Directory; directory is not null; directory = directory.Parent)
+        {
+            if (directory.LinkTarget is not null ||
+                (directory.Exists && (directory.Attributes & FileAttributes.ReparsePoint) != 0))
+                return true;
+        }
+        return false;
+    }
 
     private static string Classify(string? raw)
     {
