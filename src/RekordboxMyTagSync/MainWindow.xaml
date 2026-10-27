@@ -557,11 +557,31 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
-                    <Button x:Name="RefreshDiagnosticsButton"
-                            HorizontalAlignment="Left"
-                            Padding="16,7"
-                            Content="Refresh diagnostics"/>
+                    <StackPanel Orientation="Horizontal">
+                        <Button x:Name="RefreshDiagnosticsButton"
+                                Padding="12,7"
+                                Content="Refresh diagnostics"/>
+                        <Button x:Name="ClearDiagnosticHistoryButton"
+                                Margin="8,0,0,0"
+                                Padding="12,7"
+                                AutomationProperties.AutomationId="ClearDiagnosticHistoryButton"
+                                Content="Clear saved history"/>
+                        <Button x:Name="PrepareRedactedReportButton"
+                                Margin="8,0,0,0"
+                                Padding="12,7"
+                                AutomationProperties.AutomationId="PrepareRedactedReportButton"
+                                ToolTip="Prepare a privacy-safe preview using only saved, allowlisted diagnostic categories."
+                                Content="Prepare safe report"/>
+                        <Button x:Name="CopyRedactedReportButton"
+                                Margin="8,0,0,0"
+                                Padding="12,7"
+                                IsEnabled="False"
+                                AutomationProperties.AutomationId="CopyRedactedReportButton"
+                                ToolTip="Copy only the reviewed safe report, never the detailed diagnostic log."
+                                Content="Copy safe report"/>
+                    </StackPanel>
                     <TextBox x:Name="DiagnosticsTextBox"
                              Grid.Row="1"
                              Margin="0,12,0,0"
@@ -571,6 +591,19 @@
                              TextWrapping="NoWrap"
                              HorizontalScrollBarVisibility="Auto"
                              VerticalScrollBarVisibility="Auto"/>
+                    <TextBox x:Name="RedactedSupportReportTextBox"
+                             Grid.Row="2"
+                             Margin="0,10,0,0"
+                             Height="132"
+                             FontFamily="Consolas"
+                             IsReadOnly="True"
+                             AcceptsReturn="True"
+                             TextWrapping="NoWrap"
+                             HorizontalScrollBarVisibility="Auto"
+                             VerticalScrollBarVisibility="Auto"
+                             AutomationProperties.AutomationId="RedactedSupportReportTextBox"
+                             AutomationProperties.Name="Privacy-safe support summary preview"
+                             AutomationProperties.HelpText="Review the saved category counts before manually copying. This does not prove hardware or legal acceptance."/>
                 </Grid>
             </TabItem>
         </TabControl>

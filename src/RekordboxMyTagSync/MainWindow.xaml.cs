@@ -26,6 +26,9 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<AliasRow> _aliases = new();
     private AppSettings _settings = new();
     private readonly List<string> _diagnosticEvents = new();
+    // The copy source is always a generated, allowlisted report, NEVER the
+    // detailed diagnostic TextBox or its potentially sensitive path strings.
+    private string? _preparedRedactedSupportReport;
     private bool _operationBusy;
     // A verified preview/restore point never grants write permission.
     // The local operator must type a database- and scope-bound one-shot challenge.
@@ -51,6 +54,11 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+
+        foreach (var previous in DiagnosticHistoryStore.Load())
+            _diagnosticEvents.Add(DiagnosticHistoryStore.FormatForUi(previous));
+        if (_diagnosticEvents.Count != 0)
+            DiagnosticsTextBox.Text = string.Join(Environment.NewLine, _diagnosticEvents) + Environment.NewLine;
 
         // DataGrid.FrozenColumnCount is coerced against Columns.Count during
         // XAML initialization; set it only AFTER the five columns exist.
@@ -113,6 +121,9 @@ public partial class MainWindow : Window
                 "Physical file identities have not been checked for this selection. No alias is approved.";
         };
         RefreshDiagnosticsButton.Click += (_, _) => RefreshDiagnostics();
+        ClearDiagnosticHistoryButton.Click += (_, _) => ClearSavedDiagnosticHistory();
+        PrepareRedactedReportButton.Click += (_, _) => PrepareRedactedSupportReport();
+        CopyRedactedReportButton.Click += (_, _) => CopyRedactedSupportReport();
         BuildPreviewButton.Click += async (_, _) => await BuildPreviewAsync();
         BuildVerifiedPreviewButton.Click += async (_, _) => await BuildVerifiedPreviewAsync();
         InvestigatePhysicalExceptionsButton.Click += async (_, _) => await InspectPhysicalExceptionsAsync();
@@ -1312,6 +1323,12 @@ public partial class MainWindow : Window
         BrowseTargetButton.IsEnabled = !_operationBusy;
         ValidateDatabaseAccessButton.IsEnabled = !_operationBusy;
         RefreshDiagnosticsButton.IsEnabled = !_operationBusy;
+        ClearDiagnosticHistoryButton.IsEnabled = !_operationBusy;
+        PrepareRedactedReportButton.IsEnabled = !_operationBusy;
+        CopyRedactedReportButton.IsEnabled = !_operationBusy &&
+            _preparedRedactedSupportReport is not null &&
+            string.Equals(RedactedSupportReportTextBox.Text,
+                _preparedRedactedSupportReport, StringComparison.Ordinal);
 
         BuildPreviewButton.IsEnabled = !_operationBusy && state.CanBuildPreview;
         BuildVerifiedPreviewButton.IsEnabled = !_operationBusy && state.CanBuildPreview;
@@ -1367,8 +1384,82 @@ public partial class MainWindow : Window
             : string.Join(Environment.NewLine, state.Blockers.Select(x => "• " + x));
     }
 
+    private void ClearSavedDiagnosticHistory()
+    {
+        if (_operationBusy) return;
+        if (MessageBox.Show(this,
+            "Delete the locally saved, redacted diagnostic history? " +
+            "Messages from this session remain visible. No rekordbox database, music or metadata is affected.",
+            "Clear saved diagnostic history",
+            MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            return;
+        try
+        {
+            DiagnosticHistoryStore.Clear();
+            InvalidateRedactedSupportReport();
+            _diagnosticEvents.RemoveAll(line =>
+                line.StartsWith("[previous ", StringComparison.Ordinal));
+            RefreshDiagnostics();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            MessageBox.Show(this,
+                "The saved history could not be cleared. No other files were changed.",
+                "Diagnostic history", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void InvalidateRedactedSupportReport()
+    {
+        _preparedRedactedSupportReport = null;
+        RedactedSupportReportTextBox.Clear();
+        CopyRedactedReportButton.IsEnabled = false;
+    }
+
+    private void PrepareRedactedSupportReport()
+    {
+        if (_operationBusy) return;
+        InvalidateRedactedSupportReport();
+        try
+        {
+            // Only the category-only local store is read. This cannot open a
+            // rekordbox DB, foobar library, metadata file or user audio.
+            var report = DiagnosticHistoryStore.BuildRedactedSupportReport(
+                DiagnosticHistoryStore.Load());
+            _preparedRedactedSupportReport = report;
+            RedactedSupportReportTextBox.Text = report;
+            CopyRedactedReportButton.IsEnabled = true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            RedactedSupportReportTextBox.Text = "Support report unavailable; nothing was copied.";
+            CopyRedactedReportButton.IsEnabled = false;
+        }
+    }
+
+    private void CopyRedactedSupportReport()
+    {
+        if (_operationBusy || _preparedRedactedSupportReport is null ||
+            !string.Equals(RedactedSupportReportTextBox.Text,
+                _preparedRedactedSupportReport, StringComparison.Ordinal))
+            return;
+        try
+        {
+            // Clipboard access happens ONLY after the operator clicks Copy.
+            System.Windows.Clipboard.SetText(_preparedRedactedSupportReport);
+        }
+        catch (Exception ex) when (
+            ex is System.Runtime.InteropServices.ExternalException or InvalidOperationException)
+        {
+            MessageBox.Show(this,
+                "The safe report could not be copied. No diagnostic details were copied.",
+                "Copy safe report", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     private void RefreshDiagnostics()
     {
+        InvalidateRedactedSupportReport();
         var builder = new StringBuilder();
         builder.AppendLine($"Settings: {_settingsPath}");
         builder.AppendLine($"Bridge: {BridgeDirectoryTextBox.Text.Trim()}");
@@ -1407,9 +1498,12 @@ public partial class MainWindow : Window
 
     private void AppendDiagnostic(string message)
     {
+        InvalidateRedactedSupportReport();
         var line = $"[{DateTime.Now:HH:mm:ss}] {message}";
         _diagnosticEvents.Add(line);
         if (_diagnosticEvents.Count > 500) _diagnosticEvents.RemoveAt(0);
+        try { DiagnosticHistoryStore.Append(message); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException) { }
         DiagnosticsTextBox.AppendText(
             (DiagnosticsTextBox.Text.Length == 0 ? string.Empty : Environment.NewLine) + line);
         DiagnosticsTextBox.ScrollToEnd();
